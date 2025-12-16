@@ -1,13 +1,45 @@
 import { type NextRequest, NextResponse } from "next/server"
 
+// CORS 헤더 설정
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+}
+
+// OPTIONS 요청 처리 (CORS preflight)
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders })
+}
+
 // Google Apps Script에서 POST로 데이터를 받는 API
 export async function POST(request: NextRequest) {
   try {
-    const data = await request.json()
+    // 요청 본문 읽기
+    let data
+    try {
+      const body = await request.text()
+      if (!body) {
+        return NextResponse.json(
+          { success: false, error: "Request body is empty" },
+          { status: 400, headers: corsHeaders }
+        )
+      }
+      data = JSON.parse(body)
+    } catch (parseError) {
+      console.error("[API] JSON parse error:", parseError)
+      return NextResponse.json(
+        { success: false, error: "Invalid JSON format", details: String(parseError) },
+        { status: 400, headers: corsHeaders }
+      )
+    }
 
     // 데이터 유효성 검사
     if (!Array.isArray(data) || data.length === 0) {
-      return NextResponse.json({ error: "Invalid data format" }, { status: 400 })
+      return NextResponse.json(
+        { success: false, error: "Invalid data format: expected non-empty array" },
+        { status: 400, headers: corsHeaders }
+      )
     }
 
     // 헤더 행 추출 (첫 번째 행)
@@ -21,28 +53,42 @@ export async function POST(request: NextRequest) {
     // 현재는 메모리에 저장 (실제 배포시 DB 연동 필요)
     console.log(`[v0] Synced ${parsedData.evaluations.length} evaluations`)
 
-    return NextResponse.json({
-      success: true,
-      message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다.`,
-      timestamp: new Date().toISOString(),
-      summary: {
-        agents: parsedData.agents.length,
-        evaluations: parsedData.evaluations.length,
+    return NextResponse.json(
+      {
+        success: true,
+        message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다.`,
+        timestamp: new Date().toISOString(),
+        summary: {
+          agents: parsedData.agents.length,
+          evaluations: parsedData.evaluations.length,
+        },
       },
-    })
+      { headers: corsHeaders }
+    )
   } catch (error) {
-    console.error("[v0] Sync error:", error)
-    return NextResponse.json({ error: "데이터 동기화 중 오류가 발생했습니다." }, { status: 500 })
+    console.error("[API] Sync error:", error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return NextResponse.json(
+      {
+        success: false,
+        error: "데이터 동기화 중 오류가 발생했습니다.",
+        details: errorMessage,
+      },
+      { status: 500, headers: corsHeaders }
+    )
   }
 }
 
 // GET 요청으로 동기화 상태 확인
 export async function GET() {
-  return NextResponse.json({
-    status: "ready",
-    lastSync: new Date().toISOString(),
-    message: "동기화 API가 정상 작동 중입니다.",
-  })
+  return NextResponse.json(
+    {
+      status: "ready",
+      lastSync: new Date().toISOString(),
+      message: "동기화 API가 정상 작동 중입니다.",
+    },
+    { headers: corsHeaders }
+  )
 }
 
 // 스프레드시트 데이터 파싱 함수
