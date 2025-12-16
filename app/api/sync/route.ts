@@ -54,10 +54,16 @@ export async function POST(request: NextRequest) {
     
     // 형식 1: Apps Script 형식 { yonsan: [...], gwangju: [...] } (배치 지원)
     // data가 객체이고 yonsan 또는 gwangju 속성이 있는지 확인
-    const hasYonsan = data && typeof data === 'object' && !Array.isArray(data) && 'yonsan' in data
-    const hasGwangju = data && typeof data === 'object' && !Array.isArray(data) && 'gwangju' in data
+    const isObject = data && typeof data === 'object' && !Array.isArray(data)
+    const hasYonsan = isObject && (data.yonsan !== undefined || 'yonsan' in data)
+    const hasGwangju = isObject && (data.gwangju !== undefined || 'gwangju' in data)
     
-    console.log(`[API] 데이터 검증: hasYonsan=${hasYonsan}, hasGwangju=${hasGwangju}, isArray=${Array.isArray(data)}, type=${typeof data}`)
+    console.log(`[API] 데이터 검증: isObject=${isObject}, hasYonsan=${hasYonsan}, hasGwangju=${hasGwangju}, isArray=${Array.isArray(data)}, type=${typeof data}`)
+    if (isObject) {
+      console.log(`[API] 데이터 키: ${Object.keys(data).join(', ')}`)
+      console.log(`[API] yonsan 타입: ${typeof data.yonsan}, isArray: ${Array.isArray(data.yonsan)}`)
+      console.log(`[API] gwangju 타입: ${typeof data.gwangju}, isArray: ${Array.isArray(data.gwangju)}`)
+    }
     
     if (hasYonsan || hasGwangju) {
       const batchNumber = data.batch || 0
