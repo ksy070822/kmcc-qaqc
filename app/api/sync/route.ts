@@ -26,6 +26,21 @@ export async function POST(request: NextRequest) {
         )
       }
       data = JSON.parse(body)
+      
+      // 디버깅: 수신된 데이터 구조 로깅
+      console.log("[API] 수신된 데이터 타입:", typeof data)
+      console.log("[API] 데이터 키:", Object.keys(data || {}))
+      if (data && typeof data === 'object') {
+        console.log("[API] yonsan 존재:", 'yonsan' in data, "타입:", Array.isArray(data.yonsan))
+        console.log("[API] gwangju 존재:", 'gwangju' in data, "타입:", Array.isArray(data.gwangju))
+        console.log("[API] batch:", data.batch)
+        if (data.yonsan) {
+          console.log("[API] yonsan 길이:", Array.isArray(data.yonsan) ? data.yonsan.length : "배열 아님")
+        }
+        if (data.gwangju) {
+          console.log("[API] gwangju 길이:", Array.isArray(data.gwangju) ? data.gwangju.length : "배열 아님")
+        }
+      }
     } catch (parseError) {
       console.error("[API] JSON parse error:", parseError)
       return NextResponse.json(
@@ -38,7 +53,7 @@ export async function POST(request: NextRequest) {
     let parsedData
     
     // 형식 1: Apps Script 형식 { yonsan: [...], gwangju: [...] } (배치 지원)
-    if (data.hasOwnProperty('yonsan') || data.hasOwnProperty('gwangju')) {
+    if (data && typeof data === 'object' && ('yonsan' in data || 'gwangju' in data)) {
       const batchNumber = data.batch || 0
       const isLast = data.isLast === true
       const processedSoFar = data.processedSoFar || 0
