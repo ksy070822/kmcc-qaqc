@@ -1,4 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
+import { saveBatchToFirestore, saveEvaluationsToFirestore } from "@/lib/firebase-admin"
 
 // CORS 헤더 설정
 const corsHeaders = {
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
         )
       }
       data = JSON.parse(body)
-      
+
       // 디버깅: 수신된 데이터 구조 로깅
       console.log("[API] 수신된 데이터 타입:", typeof data)
       console.log("[API] 데이터 키:", Object.keys(data || {}))
@@ -51,33 +52,33 @@ export async function POST(request: NextRequest) {
 
     // 데이터 형식 확인 및 처리
     let parsedData
-    
+
     // 형식 1: Apps Script 형식 { yonsan: [...], gwangju: [...] } (배치 지원)
     // data가 객체이고 yonsan 또는 gwangju 속성이 있는지 확인
     const isObject = data && typeof data === 'object' && !Array.isArray(data)
     const hasYonsan = isObject && (data.yonsan !== undefined || 'yonsan' in data)
     const hasGwangju = isObject && (data.gwangju !== undefined || 'gwangju' in data)
-    
+
     console.log(`[API] 데이터 검증: isObject=${isObject}, hasYonsan=${hasYonsan}, hasGwangju=${hasGwangju}, isArray=${Array.isArray(data)}, type=${typeof data}`)
     if (isObject) {
       console.log(`[API] 데이터 키: ${Object.keys(data).join(', ')}`)
       console.log(`[API] yonsan 타입: ${typeof data.yonsan}, isArray: ${Array.isArray(data.yonsan)}`)
       console.log(`[API] gwangju 타입: ${typeof data.gwangju}, isArray: ${Array.isArray(data.gwangju)}`)
     }
-    
+
     if (hasYonsan || hasGwangju) {
       const batchNumber = data.batch || 0
       const isLast = data.isLast === true
       const processedSoFar = data.processedSoFar || 0
       const totalRecords = data.totalRecords || 0
-      
+
       console.log(`[API] Apps Script 배치 데이터 수신: 배치 ${batchNumber}, ${isLast ? '마지막' : '진행중'}`)
-      
+
       const yonsanRecords = Array.isArray(data.yonsan) ? data.yonsan : []
       const gwangjuRecords = Array.isArray(data.gwangju) ? data.gwangju : []
-      
+
       console.log(`[API] 배치 데이터: 용산 ${yonsanRecords.length}건, 광주 ${gwangjuRecords.length}건`)
-      
+
       // 빈 배치도 허용 (배치 처리 중일 수 있음)
       if (yonsanRecords.length === 0 && gwangjuRecords.length === 0) {
         return NextResponse.json(
@@ -96,9 +97,9 @@ export async function POST(request: NextRequest) {
           { headers: corsHeaders }
         )
       }
-      
+
       parsedData = parseAppsScriptData(yonsanRecords, gwangjuRecords)
-      
+
       // 배치 정보 포함
       ;(parsedData as any).batchInfo = {
         batchNumber,
@@ -134,18 +135,37 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // 여기서 실제로는 데이터베이스에 저장하거나 상태 관리
-    // 현재는 메모리에 저장 (실제 배포시 DB 연동 필요)
+    // Firebase에 데이터 저장
     const batchInfo = (parsedData as any).batchInfo
-    
+
     if (batchInfo) {
-      // 배치 처리
-      console.log(`[API] 배치 ${batchInfo.batchNumber} 처리: ${parsedData.evaluations.length}건`)
-      
+      // 배치 처리 - Firebase에 저장
+      console.log(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 시작: ${parsedData.evaluations.length}건`)
+
+      const saveResult = await saveBatchToFirestore(
+        parsedData.evaluations,
+        parsedData.agents,
+        batchInfo.batchNumber
+      )
+
+      if (!saveResult.success) {
+        console.error(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 실패:`, saveResult.error)
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Firebase 저장 실패: ${saveResult.error}`,
+            batch: batchInfo,
+          },
+          { status: 500, headers: corsHeaders }
+        )
+      }
+
+      console.log(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 완료: ${saveResult.savedCount}건`)
+
       return NextResponse.json(
         {
           success: true,
-          message: `배치 ${batchInfo.batchNumber} 처리 완료: ${parsedData.evaluations.length}건`,
+          message: `배치 ${batchInfo.batchNumber} 처리 완료: ${parsedData.evaluations.length}건 (Firebase 저장됨)`,
           timestamp: new Date().toISOString(),
           batch: {
             batchNumber: batchInfo.batchNumber,
@@ -157,21 +177,47 @@ export async function POST(request: NextRequest) {
               agents: parsedData.agents.length,
             },
           },
+          firebase: {
+            saved: saveResult.savedCount,
+            agents: saveResult.agents,
+          },
         },
         { headers: corsHeaders }
       )
     } else {
-      // 일반 처리
-      console.log(`[API] Synced ${parsedData.evaluations.length} evaluations, ${parsedData.agents.length} agents`)
+      // 일반 처리 - Firebase에 저장
+      console.log(`[API] Firebase 저장 시작: ${parsedData.evaluations.length} evaluations, ${parsedData.agents.length} agents`)
+
+      const saveResult = await saveEvaluationsToFirestore(
+        parsedData.evaluations,
+        parsedData.agents
+      )
+
+      if (!saveResult.success) {
+        console.error(`[API] Firebase 저장 실패:`, saveResult.error)
+        return NextResponse.json(
+          {
+            success: false,
+            error: `Firebase 저장 실패: ${saveResult.error}`,
+          },
+          { status: 500, headers: corsHeaders }
+        )
+      }
+
+      console.log(`[API] Firebase 저장 완료: ${saveResult.evaluations}건`)
 
       return NextResponse.json(
         {
           success: true,
-          message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다.`,
+          message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다. (Firebase 저장됨)`,
           timestamp: new Date().toISOString(),
           summary: {
             agents: parsedData.agents.length,
             evaluations: parsedData.evaluations.length,
+          },
+          firebase: {
+            saved: saveResult.evaluations,
+            agents: saveResult.agents,
           },
         },
         { headers: corsHeaders }
@@ -357,6 +403,10 @@ function parseAppsScriptData(yonsanRecords: any[], gwangjuRecords: any[]) {
         evaluations.push({
           date: record.evalDate,
           agentId,
+          agentName,
+          center: record.center || "",
+          service: record.service || "",
+          tenure: record.tenure || "",
           items,
           totalCalls: 0, // Apps Script 데이터에 없으면 0
           errorRate: record.totalErrors || 0,
