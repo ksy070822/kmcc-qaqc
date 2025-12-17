@@ -43,8 +43,9 @@ try {
   console.error('[Firebase] Initialization error:', error)
 }
 
-// Firestore 인스턴스
-export const db = firebaseApp ? getFirestore(firebaseApp) : null
+// Firestore 인스턴스 (커스텀 데이터베이스 ID 사용)
+const DATABASE_ID = process.env.FIREBASE_DATABASE_ID || '(default)'
+export const db = firebaseApp ? getFirestore(firebaseApp, DATABASE_ID) : null
 
 // 데이터 저장 함수
 export async function saveEvaluationsToFirestore(evaluations: any[], agents: any[]) {
