@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 
 // API 기본 URL
 const API_BASE = "/api/data"
@@ -45,8 +45,10 @@ export function useDashboardData(selectedDate?: string) {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [centerStats, setCenterStats] = useState<CenterStats[]>([])
   const [trendData, setTrendData] = useState<TrendData[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false) // 초기값을 false로 변경 (hydration 안전)
   const [error, setError] = useState<string | null>(null)
+  const [mounted, setMounted] = useState(false) // hydration 완료 추적
+  const hasFetched = useRef(false)
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -85,15 +87,30 @@ export function useDashboardData(selectedDate?: string) {
     }
   }, [selectedDate])
 
+  // Hydration이 완료된 후에만 데이터 fetch
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (mounted && !hasFetched.current) {
+      hasFetched.current = true
+      fetchData()
+    }
+  }, [mounted, fetchData])
+
+  // selectedDate가 변경되면 다시 fetch
+  useEffect(() => {
+    if (mounted && hasFetched.current && selectedDate !== undefined) {
+      fetchData()
+    }
+  }, [selectedDate, mounted, fetchData])
 
   return {
     stats,
     centerStats,
     trendData,
-    loading,
+    loading: !mounted || loading, // mount 전에는 loading 상태로 표시
     error,
     refresh: fetchData,
   }
@@ -109,5 +126,5 @@ export const defaultStats: DashboardStats = {
   attitudeErrorRate: 0,
   businessErrorRate: 0,
   overallErrorRate: 0,
-  date: new Date().toISOString().split("T")[0],
+  date: "", // 서버/클라이언트 hydration 불일치 방지를 위해 빈 문자열
 }
