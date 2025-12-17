@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { OverviewSection } from "./overview-section"
 import { CenterComparison } from "./center-comparison"
 import { ErrorTrendChart } from "./error-trend-chart"
@@ -25,6 +25,12 @@ export function Dashboard({ onNavigateToFocus }: DashboardProps) {
   const [selectedService, setSelectedService] = useState("all")
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
+  const [isMounted, setIsMounted] = useState(false)
+
+  // 클라이언트 마운트 확인 (hydration 안전)
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Firebase에서 실제 데이터 가져오기
   const { stats, centerStats, trendData, loading, error, refresh } = useDashboardData()
@@ -70,18 +76,21 @@ export function Dashboard({ onNavigateToFocus }: DashboardProps) {
     ? centerData
     : centerData.filter((c) => c.name === selectedCenter)
 
+  // 서버 렌더링 시에는 로딩 표시를 하지 않음 (hydration 안전)
+  const showLoading = isMounted && loading
+
   return (
     <div className="space-y-6">
-      {/* 로딩 표시 */}
-      {loading && (
+      {/* 로딩 표시 (클라이언트에서만) */}
+      {showLoading && (
         <div className="flex items-center justify-center py-4 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin mr-2" />
           <span>데이터 로딩 중...</span>
         </div>
       )}
 
-      {/* 에러 표시 */}
-      {error && (
+      {/* 에러 표시 (클라이언트에서만) */}
+      {isMounted && error && (
         <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
           데이터 로드 오류: {error}
           <button onClick={refresh} className="ml-2 underline">
