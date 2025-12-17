@@ -11,8 +11,10 @@ import { DailyErrorTable } from "./daily-error-table"
 import { WeeklyErrorTable } from "./weekly-error-table"
 import { TenureErrorTable } from "./tenure-error-table"
 import { ServiceWeeklyTable } from "./service-weekly-table"
-import { generateTrendData, groups } from "@/lib/mock-data"
+import { useDashboardData, defaultStats } from "@/lib/use-dashboard-data"
+import { generateTrendData } from "@/lib/mock-data"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Loader2 } from "lucide-react"
 
 interface DashboardProps {
   onNavigateToFocus: () => void
@@ -24,52 +26,83 @@ export function Dashboard({ onNavigateToFocus }: DashboardProps) {
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
 
-  const trendData = generateTrendData(14)
+  // Firebase에서 실제 데이터 가져오기
+  const { stats, centerStats, trendData, loading, error, refresh } = useDashboardData()
 
-  const centerData = [
-    {
-      name: "용산",
-      errorRate: 2.85,
-      trend: -0.32,
-      targetRate: 3.0,
-      groups: groups["용산"].map((g) => ({
-        name: g,
-        errorRate: Number((Math.random() * 2 + 2).toFixed(2)),
-        agentCount: Math.floor(Math.random() * 15) + 20,
-        trend: Number((Math.random() * 1 - 0.5).toFixed(2)),
-      })),
-    },
-    {
-      name: "광주",
-      errorRate: 3.12,
-      trend: 0.15,
-      targetRate: 3.0,
-      groups: groups["광주"].map((g) => ({
-        name: g,
-        errorRate: Number((Math.random() * 2 + 2.5).toFixed(2)),
-        agentCount: Math.floor(Math.random() * 15) + 15,
-        trend: Number((Math.random() * 1 - 0.5).toFixed(2)),
-      })),
-    },
-  ]
+  // 로딩 중이거나 데이터가 없으면 기본값 사용
+  const dashboardStats = stats || defaultStats
 
-  const filteredCenters = selectedCenter === "all" ? centerData : centerData.filter((c) => c.name === selectedCenter)
+  // 트렌드 차트 데이터 (현재는 mock 데이터 사용 - 추후 Firebase 연동)
+  const chartTrendData = generateTrendData(14)
+
+  // 센터 데이터 변환 (CenterComparison 컴포넌트용)
+  const centerData = centerStats.length > 0
+    ? centerStats.map(center => ({
+        name: center.name,
+        errorRate: center.errorRate,
+        trend: 0, // 트렌드는 별도 계산 필요
+        targetRate: 3.0,
+        groups: center.services.map(svc => ({
+          name: svc.name,
+          errorRate: svc.errorRate,
+          agentCount: Math.floor(svc.evaluations / 10) || 1,
+          trend: 0,
+        })),
+      }))
+    : [
+        {
+          name: "용산",
+          errorRate: 0,
+          trend: 0,
+          targetRate: 3.0,
+          groups: [],
+        },
+        {
+          name: "광주",
+          errorRate: 0,
+          trend: 0,
+          targetRate: 3.0,
+          groups: [],
+        },
+      ]
+
+  const filteredCenters = selectedCenter === "all"
+    ? centerData
+    : centerData.filter((c) => c.name === selectedCenter)
 
   return (
     <div className="space-y-6">
+      {/* 로딩 표시 */}
+      {loading && (
+        <div className="flex items-center justify-center py-4 text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <span>데이터 로딩 중...</span>
+        </div>
+      )}
+
+      {/* 에러 표시 */}
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+          데이터 로드 오류: {error}
+          <button onClick={refresh} className="ml-2 underline">
+            다시 시도
+          </button>
+        </div>
+      )}
+
       {/* 상단 통계 요약 */}
       <OverviewSection
-        totalAgentsYongsan={180}
-        totalAgentsGwangju={120}
-        totalEvaluations={1847}
-        watchlistYongsan={7}
-        watchlistGwangju={5}
-        attitudeErrorRate={1.85}
-        attitudeErrorTrend={-0.12}
-        consultErrorRate={2.45}
-        consultErrorTrend={0.08}
-        overallErrorRate={2.94}
-        overallErrorTrend={-0.04}
+        totalAgentsYongsan={dashboardStats.totalAgentsYongsan}
+        totalAgentsGwangju={dashboardStats.totalAgentsGwangju}
+        totalEvaluations={dashboardStats.totalEvaluations}
+        watchlistYongsan={dashboardStats.watchlistYongsan}
+        watchlistGwangju={dashboardStats.watchlistGwangju}
+        attitudeErrorRate={dashboardStats.attitudeErrorRate}
+        attitudeErrorTrend={0}
+        consultErrorRate={dashboardStats.businessErrorRate}
+        consultErrorTrend={0}
+        overallErrorRate={dashboardStats.overallErrorRate}
+        overallErrorTrend={0}
         onWatchlistClick={onNavigateToFocus}
       />
 
@@ -88,10 +121,10 @@ export function Dashboard({ onNavigateToFocus }: DashboardProps) {
         setSelectedTenure={setSelectedTenure}
       />
 
-      {/* 센터별 오류율 추이 (위로 이동) */}
-      <ErrorTrendChart data={trendData} targetRate={3.0} />
+      {/* 센터별 오류율 추이 */}
+      <ErrorTrendChart data={chartTrendData} targetRate={3.0} />
 
-      {/* 서비스별 현황 (아래로 이동) */}
+      {/* 서비스별 현황 */}
       <CenterComparison centers={filteredCenters} />
 
       {/* 상세 분석 탭 */}
