@@ -296,18 +296,73 @@ export async function getDashboardStats(targetDate?: string) {
         // 샘플에서 날짜 형식 확인 후 필터링
         const allEvaluations = await db.collection('evaluations').get()
         
+        // 날짜 형식 정규화 함수: "2025. 12. 19", "2025.12.19", "2025-12-19" 등을 "2025-12-19"로 변환
+        const normalizeDate = (dateStr: string): string | null => {
+          if (!dateStr) return null
+          
+          // 이미 YYYY-MM-DD 형식
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return dateStr
+          }
+          
+          // "2025. 12. 19" 또는 "2025.12.19" 형식 처리
+          const dotMatch = dateStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/)
+          if (dotMatch) {
+            const year = dotMatch[1]
+            const month = String(parseInt(dotMatch[2], 10)).padStart(2, '0')
+            const day = String(parseInt(dotMatch[3], 10)).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+          
+          // "2025/12/19" 형식 처리
+          const slashMatch = dateStr.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+          if (slashMatch) {
+            const year = slashMatch[1]
+            const month = String(parseInt(slashMatch[2], 10)).padStart(2, '0')
+            const day = String(parseInt(slashMatch[3], 10)).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+          
+          // Date 객체인 경우
+          try {
+            const dateObj = new Date(dateStr)
+            if (!isNaN(dateObj.getTime())) {
+              const year = dateObj.getFullYear()
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+              const day = String(dateObj.getDate()).padStart(2, '0')
+              return `${year}-${month}-${day}`
+            }
+          } catch (e) {
+            // Date 파싱 실패
+          }
+          
+          return null
+        }
+        
         dateEvaluations = allEvaluations.docs
           .map(doc => doc.data())
           .filter((data: any) => {
             const dateStr = String(data.date || '')
-            // 여러 형식 시도: 정확한 일치, 부분 일치, 날짜만 추출
+            const normalizedDate = normalizeDate(dateStr)
+            
+            // 정규화된 날짜와 조회 날짜 비교
+            if (normalizedDate === queryDate) {
+              return true
+            }
+            
+            // 원본 문자열에서 직접 비교 (혹시 모를 경우)
             if (dateStr === queryDate) return true
             if (dateStr.startsWith(queryDate)) return true
-            if (dateStr.includes(queryDate)) return true
             
-            // 날짜 문자열에서 YYYY-MM-DD 형식 추출 시도
-            const dateMatch = dateStr.match(/(\d{4}-\d{2}-\d{2})/)
-            if (dateMatch && dateMatch[1] === queryDate) return true
+            // "2025. 12. 19" 형식에서 날짜 추출하여 비교
+            const dotMatch = dateStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/)
+            if (dotMatch) {
+              const year = dotMatch[1]
+              const month = String(parseInt(dotMatch[2], 10)).padStart(2, '0')
+              const day = String(parseInt(dotMatch[3], 10)).padStart(2, '0')
+              const formattedDate = `${year}-${month}-${day}`
+              if (formattedDate === queryDate) return true
+            }
             
             return false
           })
