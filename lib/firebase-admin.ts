@@ -39,13 +39,25 @@ let firebaseApp: ReturnType<typeof initializeApp> | null = null
 
 try {
   firebaseApp = initializeFirebaseAdmin()
+  console.log('[Firebase] Firebase Admin initialized successfully')
 } catch (error) {
   console.error('[Firebase] Initialization error:', error)
+  console.error('[Firebase] Error details:', error instanceof Error ? error.stack : String(error))
 }
 
 // Firestore 인스턴스 (커스텀 데이터베이스 ID 사용)
 const DATABASE_ID = process.env.FIREBASE_DATABASE_ID || '(default)'
 export const db = firebaseApp ? getFirestore(firebaseApp, DATABASE_ID) : null
+
+if (!db) {
+  console.error('[Firebase] Firestore instance is null. Check Firebase initialization.')
+  console.error('[Firebase] Environment variables check:', {
+    hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
+    hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+    hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY,
+    databaseId: DATABASE_ID,
+  })
+}
 
 // 데이터 저장 함수
 export async function saveEvaluationsToFirestore(evaluations: any[], agents: any[]) {

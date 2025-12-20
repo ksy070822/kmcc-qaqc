@@ -34,8 +34,20 @@ export async function GET(request: Request) {
     switch (type) {
       case "dashboard":
         console.log(`[API] Fetching dashboard stats for date: ${date || 'yesterday'}`)
-        result = await getDashboardStats(date)
-        console.log(`[API] Dashboard stats result:`, result)
+        try {
+          result = await getDashboardStats(date)
+          console.log(`[API] Dashboard stats result:`, result)
+        } catch (dashboardError) {
+          console.error("[API] Dashboard stats error:", dashboardError)
+          return NextResponse.json(
+            { 
+              success: false, 
+              error: `Dashboard stats error: ${dashboardError instanceof Error ? dashboardError.message : String(dashboardError)}`,
+              details: dashboardError instanceof Error ? dashboardError.stack : undefined
+            },
+            { status: 500, headers: corsHeaders }
+          )
+        }
         break
 
       case "centers":
@@ -61,9 +73,15 @@ export async function GET(request: Request) {
         )
     }
 
-    if (!result.success) {
+    if (!result || !result.success) {
+      const errorMessage = result?.error || "Unknown error"
+      console.error(`[API] Result error for type ${type}:`, errorMessage)
       return NextResponse.json(
-        { success: false, error: result.error },
+        { 
+          success: false, 
+          error: errorMessage,
+          type 
+        },
         { status: 500, headers: corsHeaders }
       )
     }
@@ -74,8 +92,16 @@ export async function GET(request: Request) {
     )
   } catch (error) {
     console.error("[API] Data fetch error:", error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    const errorStack = error instanceof Error ? error.stack : undefined
+    
     return NextResponse.json(
-      { success: false, error: String(error) },
+      { 
+        success: false, 
+        error: errorMessage,
+        stack: errorStack,
+        type 
+      },
       { status: 500, headers: corsHeaders }
     )
   }
