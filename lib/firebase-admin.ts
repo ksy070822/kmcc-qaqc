@@ -237,9 +237,21 @@ export async function getDashboardStats(targetDate?: string) {
     // targetDate가 없으면 어제 날짜 사용 (전일 평가건수 표시용)
     let queryDate = targetDate
     if (!queryDate) {
-      const yesterday = new Date()
-      yesterday.setDate(yesterday.getDate() - 1)
-      queryDate = yesterday.toISOString().split('T')[0]
+      // 한국 시간대(KST) 기준으로 어제 날짜 계산
+      const now = new Date()
+      // UTC 시간을 한국 시간으로 변환 (UTC+9)
+      const kstOffset = 9 * 60 * 60 * 1000 // 9시간을 밀리초로
+      const kstTime = new Date(now.getTime() + kstOffset)
+      
+      // 어제 날짜 계산
+      const yesterday = new Date(kstTime)
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+      
+      // YYYY-MM-DD 형식으로 변환
+      const year = yesterday.getUTCFullYear()
+      const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0')
+      const day = String(yesterday.getUTCDate()).padStart(2, '0')
+      queryDate = `${year}-${month}-${day}`
     }
     
     // 날짜 형식이 다를 수 있으므로 정규화
@@ -258,11 +270,47 @@ export async function getDashboardStats(targetDate?: string) {
     }
     
     console.log(`[Firebase] 조회 날짜: ${queryDate} (targetDate: ${targetDate || '없음'})`)
+    console.log(`[Firebase] 현재 시간: ${new Date().toISOString()}`)
     
-    // 날짜 필드로 조회
-    const evaluationsSnapshot = await db.collection('evaluations')
+    // 날짜 필드로 조회 (정확한 일치)
+    let evaluationsSnapshot = await db.collection('evaluations')
       .where('date', '==', queryDate)
       .get()
+    
+    // 데이터가 없으면 날짜 형식 변형 시도 (예: 2025-12-19 vs 2025-12-19T00:00:00)
+    if (evaluationsSnapshot.empty) {
+      console.log(`[Firebase] 정확한 일치로 데이터를 찾지 못했습니다. 다른 형식 시도 중...`)
+      
+      // 날짜 범위로 조회 시도 (하루 전체)
+      const startOfDay = `${queryDate}T00:00:00`
+      const endOfDay = `${queryDate}T23:59:59`
+      
+      evaluationsSnapshot = await db.collection('evaluations')
+        .where('date', '>=', queryDate)
+        .where('date', '<=', queryDate)
+        .get()
+      
+      // 여전히 없으면 문자열 포함 검색 시도
+      if (evaluationsSnapshot.empty) {
+        const allEvaluations = await db.collection('evaluations')
+          .limit(100)
+          .get()
+        
+        const matchingDocs = allEvaluations.docs.filter(doc => {
+          const data = doc.data()
+          const dateStr = String(data.date || '')
+          return dateStr.includes(queryDate) || dateStr.startsWith(queryDate)
+        })
+        
+        if (matchingDocs.length > 0) {
+          console.log(`[Firebase] 부분 일치로 ${matchingDocs.length}건 발견`)
+          evaluationsSnapshot = {
+            docs: matchingDocs,
+            empty: false,
+          } as any
+        }
+      }
+    }
 
     dateEvaluations = evaluationsSnapshot.docs.map(doc => {
       const data = doc.data()
