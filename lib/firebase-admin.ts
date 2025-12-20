@@ -217,10 +217,19 @@ export async function getEvaluations(startDate?: string, endDate?: string, limit
 
 // 대시보드 통계 데이터 조회
 export async function getDashboardStats(targetDate?: string) {
+  console.log(`[Firebase] getDashboardStats called with targetDate: ${targetDate || 'undefined'}`)
+  
   if (!db) {
-    console.error('[Firebase] Firestore not initialized')
+    console.error('[Firebase] Firestore not initialized - db is null')
+    console.error('[Firebase] Environment check:', {
+      hasProjectId: !!process.env.FIREBASE_PROJECT_ID,
+      hasClientEmail: !!process.env.FIREBASE_CLIENT_EMAIL,
+      hasPrivateKey: !!process.env.FIREBASE_PRIVATE_KEY ? '***' : false,
+    })
     return { success: false, error: 'Firestore not initialized', data: null }
   }
+
+  console.log('[Firebase] Firestore initialized, starting query...')
 
   try {
     // 변수 초기화 (스코프 문제 방지)
