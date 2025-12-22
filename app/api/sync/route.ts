@@ -81,20 +81,35 @@ export async function POST(request: NextRequest) {
     if (isObject) {
       console.log(`[API] 데이터 키: ${Object.keys(data).join(', ')}`)
       if ('data' in data) {
-        console.log(`[API] data 타입: ${typeof data.data}, isArray: ${Array.isArray(data.data)}, length: ${Array.isArray(data.data) ? data.data.length : 'N/A'}`)
+        console.log(`[API] data 속성 존재: true`)
+        console.log(`[API] data 타입: ${typeof data.data}`)
+        console.log(`[API] data isArray: ${Array.isArray(data.data)}`)
+        console.log(`[API] data 값: ${typeof data.data === 'object' ? JSON.stringify(data.data).substring(0, 200) : String(data.data).substring(0, 200)}`)
+        if (Array.isArray(data.data)) {
+          console.log(`[API] data 배열 길이: ${data.data.length}`)
+          if (data.data.length > 0) {
+            console.log(`[API] data 첫 번째 요소: ${JSON.stringify(data.data[0]).substring(0, 200)}`)
+          }
+        }
+      } else {
+        console.log(`[API] data 속성이 없습니다!`)
       }
     }
 
     // 새 데이터 구조 처리 (agg_agent_daily)
-    if (isObject && hasDataArray) {
-      console.log(`[API] 새 데이터 구조 감지: data 배열 길이=${data.data.length}`)
-      const batchNumber = data.batch || 0
-      const isLast = data.isLast === true
-      const processedSoFar = data.processedSoFar || 0
-      const totalRecords = data.totalRecords || 0
-      const records = Array.isArray(data.data) ? data.data : []
+    // hasDataArray가 false여도 batch가 있고 data 속성이 있으면 시도
+    if (isObject && hasBatch && 'data' in data) {
+      const dataArray = Array.isArray(data.data) ? data.data : []
+      console.log(`[API] 새 데이터 구조 감지 시도: batch=${data.batch}, data 배열 길이=${dataArray.length}`)
+      
+      if (dataArray.length > 0) {
+        const batchNumber = data.batch || 0
+        const isLast = data.isLast === true
+        const processedSoFar = data.processedSoFar || 0
+        const totalRecords = data.totalRecords || 0
+        const records = dataArray
 
-      console.log(`[API] 새 데이터 구조 배치 수신: 배치 ${batchNumber}, ${records.length}건`)
+        console.log(`[API] 새 데이터 구조 배치 수신: 배치 ${batchNumber}, ${records.length}건`)
 
       if (records.length === 0) {
         return NextResponse.json(
