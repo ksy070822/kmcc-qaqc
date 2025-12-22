@@ -540,3 +540,147 @@ function parseAppsScriptData(yonsanRecords: any[], gwangjuRecords: any[]) {
     evaluations,
   }
 }
+
+// 새 데이터 구조 파싱 (agg_agent_daily 시트)
+function parseNewStructureData(records: any[]) {
+  const agents: any[] = []
+  const evaluations: any[] = []
+  const agentMap = new Map()
+
+  records.forEach((record, index) => {
+    try {
+      const agentId = record.agentId || record.id || `AGT${index}`
+      const agentName = record.agentName || record.name || ""
+      const center = record.center || record.center_name || ""
+      const group = record.group || record.service || record.group_name || ""
+      const service = group // 그룹 = 서비스
+      const tenure = record.tenure || ""
+
+      // 상담사 정보 저장
+      if (!agentMap.has(agentId) && agentName) {
+        agentMap.set(agentId, {
+          id: agentId,
+          name: agentName,
+          center: center,
+          group: group,
+          service: service,
+          tenure: tenure,
+          hireDate: "",
+          manager: `${group || ""}장`,
+        })
+      }
+
+      // 평가 데이터 추가
+      if (record.date && agentId) {
+        // 날짜 형식 통일 (YYYY-MM-DD)
+        let normalizedDate = record.date
+        
+        // 날짜 정규화 함수
+        const normalizeDateString = (dateStr: string): string | null => {
+          if (!dateStr) return null
+          
+          // 이미 YYYY-MM-DD 형식
+          if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+            return dateStr
+          }
+          
+          // "2025. 12. 19" 또는 "2025.12.19" 형식 처리
+          const dotMatch = dateStr.match(/(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})/)
+          if (dotMatch) {
+            const year = dotMatch[1]
+            const month = String(parseInt(dotMatch[2], 10)).padStart(2, '0')
+            const day = String(parseInt(dotMatch[3], 10)).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+          
+          // "2025/12/19" 형식 처리
+          const slashMatch = dateStr.match(/(\d{4})\/(\d{1,2})\/(\d{1,2})/)
+          if (slashMatch) {
+            const year = slashMatch[1]
+            const month = String(parseInt(slashMatch[2], 10)).padStart(2, '0')
+            const day = String(parseInt(slashMatch[3], 10)).padStart(2, '0')
+            return `${year}-${month}-${day}`
+          }
+          
+          // Date 객체로 파싱 시도
+          try {
+            const dateObj = new Date(dateStr)
+            if (!isNaN(dateObj.getTime())) {
+              const year = dateObj.getFullYear()
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+              const day = String(dateObj.getDate()).padStart(2, '0')
+              return `${year}-${month}-${day}`
+            }
+          } catch (e) {
+            // Date 파싱 실패
+          }
+          
+          return null
+        }
+        
+        // 날짜 정규화
+        if (typeof normalizedDate === 'string') {
+          const normalized = normalizeDateString(normalizedDate)
+          if (normalized) {
+            normalizedDate = normalized
+          } else {
+            console.error(`[API] 날짜 변환 실패: ${normalizedDate}`)
+            return
+          }
+        } else {
+          // Date 객체인 경우
+          try {
+            const dateObj = normalizedDate instanceof Date ? normalizedDate : new Date(normalizedDate)
+            if (!isNaN(dateObj.getTime())) {
+              const year = dateObj.getFullYear()
+              const month = String(dateObj.getMonth() + 1).padStart(2, '0')
+              const day = String(dateObj.getDate()).padStart(2, '0')
+              normalizedDate = `${year}-${month}-${day}`
+            } else {
+              console.error(`[API] 날짜 변환 실패: ${normalizedDate}`)
+              return
+            }
+          } catch (e) {
+            console.error(`[API] 날짜 변환 실패: ${normalizedDate}`, e)
+            return
+          }
+        }
+
+        // 오류 건수 (새 구조에서는 이미 계산되어 있음)
+        const attitudeErrors = record.attitudeErrors || record.attitude_err_cnt || 0
+        const businessErrors = record.businessErrors || record.ops_err_cnt || 0
+        const totalErrors = record.totalErrors || record.total_err_cnt || 0
+
+        // 오류율 (비중)
+        const attitudeErrorRate = record.attitudeErrorRate || record.attitude_err_rate || 0
+        const businessErrorRate = record.businessErrorRate || record.ops_err_rate || 0
+        const totalErrorRate = record.totalErrorRate || record.total_err_rate || 0
+
+        evaluations.push({
+          date: normalizedDate,
+          agentId,
+          agentName,
+          center: center,
+          service: service,
+          tenure: tenure,
+          items: {}, // 새 구조에서는 항목별 상세 정보 없음
+          totalCalls: 0, // 새 구조에서는 총 콜수 정보 없을 수 있음
+          errorRate: totalErrorRate,
+          attitudeErrors: attitudeErrors,
+          businessErrors: businessErrors,
+          totalErrors: totalErrors,
+          attitudeErrorRate: attitudeErrorRate,
+          businessErrorRate: businessErrorRate,
+          totalErrorRate: totalErrorRate,
+        })
+      }
+    } catch (e) {
+      console.error(`[API] Record ${index} parsing error (new structure):`, e)
+    }
+  })
+
+  return {
+    agents: Array.from(agentMap.values()),
+    evaluations,
+  }
+}
