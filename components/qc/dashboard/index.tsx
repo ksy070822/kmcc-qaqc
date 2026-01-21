@@ -51,7 +51,7 @@ export function Dashboard({ onNavigateToFocus }: DashboardProps) {
         groups: center.services.map(svc => ({
           name: svc.name,
           errorRate: svc.errorRate,
-          agentCount: Math.floor(svc.evaluations / 10) || 1,
+          agentCount: svc.agentCount || 0,
           trend: 0,
         })),
       }))

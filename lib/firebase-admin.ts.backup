@@ -614,3 +614,85 @@ export async function getDailyTrend(days = 14) {
     return { success: false, error: String(error), data: [] }
   }
 }
+
+// Firebase 데이터 전체 삭제 (재초기화용)
+export async function deleteAllFirestoreData() {
+  if (!db) {
+    console.error('[Firebase] Firestore not initialized')
+    return { success: false, error: 'Firestore not initialized' }
+  }
+
+  try {
+    console.log('[Firebase] 전체 데이터 삭제 시작...')
+    
+    // evaluations 컬렉션 삭제
+    const evaluationsSnapshot = await db.collection('evaluations').get()
+    let evalCount = 0
+    const evalBatches: FirebaseFirestore.WriteBatch[] = []
+    let currentBatch = db.batch()
+    let batchOpCount = 0
+    
+    evaluationsSnapshot.docs.forEach((doc) => {
+      currentBatch.delete(doc.ref)
+      batchOpCount++
+      evalCount++
+      
+      // Firestore 배치 제한 (500개)
+      if (batchOpCount >= 500) {
+        evalBatches.push(currentBatch)
+        currentBatch = db.batch()
+        batchOpCount = 0
+      }
+    })
+    
+    if (batchOpCount > 0) {
+      evalBatches.push(currentBatch)
+    }
+    
+    // 모든 배치 커밋
+    for (const batch of evalBatches) {
+      await batch.commit()
+    }
+    console.log(`[Firebase] evaluations ${evalCount}건 삭제 완료`)
+
+    // agents 컬렉션 삭제
+    const agentsSnapshot = await db.collection('agents').get()
+    let agentCount = 0
+    const agentBatches: FirebaseFirestore.WriteBatch[] = []
+    currentBatch = db.batch()
+    batchOpCount = 0
+    
+    agentsSnapshot.docs.forEach((doc) => {
+      currentBatch.delete(doc.ref)
+      batchOpCount++
+      agentCount++
+      
+      if (batchOpCount >= 500) {
+        agentBatches.push(currentBatch)
+        currentBatch = db.batch()
+        batchOpCount = 0
+      }
+    })
+    
+    if (batchOpCount > 0) {
+      agentBatches.push(currentBatch)
+    }
+    
+    for (const batch of agentBatches) {
+      await batch.commit()
+    }
+    console.log(`[Firebase] agents ${agentCount}건 삭제 완료`)
+
+    console.log('[Firebase] 전체 데이터 삭제 완료')
+    return { 
+      success: true, 
+      deleted: {
+        evaluations: evalCount,
+        agents: agentCount
+      }
+    }
+  } catch (error) {
+    console.error('[Firebase] Delete all data error:', error)
+    return { success: false, error: String(error) }
+  }
+}

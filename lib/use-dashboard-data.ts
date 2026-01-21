@@ -27,7 +27,7 @@ export interface CenterStats {
   businessErrorRate: number
   services: Array<{
     name: string
-    evaluations: number
+    agentCount: number
     errorRate: number
   }>
 }
@@ -76,9 +76,13 @@ export function useDashboardData(selectedDate?: string) {
       if (statsData.success && statsData.data) {
         console.log('[Dashboard] Stats data:', statsData.data)
         setStats(statsData.data)
+        setError(null) // 성공 시 에러 초기화
       } else {
         console.warn('[Dashboard] Stats fetch failed:', statsData)
-        setError(statsData.error || '데이터를 불러올 수 없습니다')
+        // 에러는 표시하지만 다른 데이터는 계속 로드
+        if (statsData.error) {
+          console.error('[Dashboard] Stats error:', statsData.error)
+        }
       }
 
       if (centersData.success && centersData.data) {

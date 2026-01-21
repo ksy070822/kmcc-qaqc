@@ -43,3 +43,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Google Cloud Service Account Keys
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!components.json

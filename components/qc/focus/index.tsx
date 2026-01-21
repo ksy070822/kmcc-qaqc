@@ -9,8 +9,9 @@ import { WatchlistTable, type WatchlistAgent } from "./watchlist-table"
 import { ActionPlanModal, type ActionPlanData } from "./action-plan-modal"
 import { ActionPlanHistory } from "./action-plan-history"
 import { ImprovementStats } from "./improvement-stats"
-import { AlertTriangle, FileText, Download } from "lucide-react"
+import { AlertTriangle, FileText, Download, Loader2 } from "lucide-react"
 import { groups, tenures } from "@/lib/mock-data"
+import { useWatchList } from "@/hooks/use-watchlist"
 
 export function FocusManagement() {
   const [selectedCenter, setSelectedCenter] = useState("all")
@@ -20,47 +21,31 @@ export function FocusManagement() {
   const [planModalOpen, setPlanModalOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<WatchlistAgent | null>(null)
 
+  // BigQuery에서 집중관리 대상 가져오기
+  const { data: watchlistData, loading, error } = useWatchList({
+    center: selectedCenter,
+    channel: selectedChannel,
+    tenure: selectedTenure,
+  })
+
+  // WatchlistAgent 형식으로 변환
   const watchlistAgents: WatchlistAgent[] = useMemo(() => {
-    const agents: WatchlistAgent[] = []
-    const issues = [
-      "전산 세팅오류",
-      "본인확인 누락",
-      "불친절 반복",
-      "가이드 미준수",
-      "필수멘트 누락",
-      "상담유형 오선정",
-    ]
-    const statuses: WatchlistAgent["actionPlanStatus"][] = ["none", "pending", "in-progress", "completed"]
-
-    Object.entries(groups).forEach(([center, groupList]) => {
-      groupList.forEach((group, gi) => {
-        const count = Math.floor(Math.random() * 2) + 1
-        for (let i = 0; i < count; i++) {
-          const channel = group.includes("유선") ? "유선" : group.includes("채팅") ? "채팅" : "유선"
-          const tenure = tenures[Math.floor(Math.random() * tenures.length)]
-          const attitudeRate = Number((Math.random() * 3 + 1).toFixed(2))
-          const counselingRate = Number((Math.random() * 4 + 2).toFixed(2))
-          agents.push({
-            id: `watch-${center}-${gi}-${i}`,
-            name: `${center === "용산" ? "김" : "이"}상담${gi * 2 + i + 1}`,
-            center,
-            group,
-            channel,
-            tenure,
-            attitudeRate,
-            counselingRate,
-            errorRate: Number((attitudeRate + counselingRate).toFixed(2)),
-            trend: Number((Math.random() * 2 - 0.5).toFixed(2)),
-            daysOnList: Math.floor(Math.random() * 14) + 1,
-            mainIssue: issues[Math.floor(Math.random() * issues.length)],
-            actionPlanStatus: statuses[Math.floor(Math.random() * statuses.length)],
-          })
-        }
-      })
-    })
-
-    return agents.sort((a, b) => b.errorRate - a.errorRate)
-  }, [])
+    return (watchlistData || []).map((agent) => ({
+      id: `${agent.agentId}_${agent.service}_${agent.channel}`, // 고유 키 생성
+      name: agent.agentName,
+      center: agent.center,
+      group: `${agent.service}/${agent.channel}`,
+      channel: agent.channel,
+      tenure: "분석 중", // TODO: tenure 정보 추가 필요
+      attitudeRate: agent.attitudeRate,
+      counselingRate: agent.opsRate,
+      errorRate: agent.totalRate,
+      trend: 0, // TODO: 전주 대비 계산
+      daysOnList: 1, // TODO: 등록일 기반 계산
+      mainIssue: agent.topErrors[0] || agent.reason,
+      actionPlanStatus: "none" as const, // TODO: action plan 상태 연동
+    }))
+  }, [watchlistData])
 
   const filteredAgents = useMemo(() => {
     return watchlistAgents.filter((a) => {
@@ -124,6 +109,19 @@ export function FocusManagement() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+          <strong>데이터 로드 오류:</strong> {error}
+        </div>
+      )}
+      
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span>데이터 로딩 중...</span>
+        </div>
+      )}
+      
       <ImprovementStats
         totalPlans={45}
         completedPlans={28}

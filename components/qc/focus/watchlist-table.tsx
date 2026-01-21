@@ -98,8 +98,8 @@ export function WatchlistTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {agents.map((agent) => (
-            <TableRow key={agent.id} className="hover:bg-slate-50">
+          {agents.map((agent, idx) => (
+            <TableRow key={`${agent.id}_${idx}`} className="hover:bg-slate-50">
               <TableCell>
                 <Checkbox checked={selectedAgents.includes(agent.id)} onCheckedChange={() => onSelectAgent(agent.id)} />
               </TableCell>

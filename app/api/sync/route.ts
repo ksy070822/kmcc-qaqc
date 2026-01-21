@@ -1,5 +1,5 @@
 import { type NextRequest, NextResponse } from "next/server"
-import { saveBatchToFirestore, saveEvaluationsToFirestore } from "@/lib/firebase-admin"
+import { saveEvaluationsToBigQuery } from "@/lib/bigquery"
 
 // CORS 헤더 설정
 const corsHeaders = {
@@ -213,37 +213,35 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Firebase에 데이터 저장
+    // BigQuery에 데이터 저장
     const batchInfo = (parsedData as any).batchInfo
 
     if (batchInfo) {
-      // 배치 처리 - Firebase에 저장
-      console.log(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 시작: ${parsedData.evaluations.length}건`)
+      // 배치 처리 - BigQuery에 저장
+      console.log(`[API] 배치 ${batchInfo.batchNumber} BigQuery 저장 시작: ${parsedData.evaluations.length}건`)
 
-      const saveResult = await saveBatchToFirestore(
-        parsedData.evaluations,
-        parsedData.agents,
-        batchInfo.batchNumber
+      const saveResult = await saveEvaluationsToBigQuery(
+        parsedData.evaluations
       )
 
       if (!saveResult.success) {
-        console.error(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 실패:`, saveResult.error)
+        console.error(`[API] 배치 ${batchInfo.batchNumber} BigQuery 저장 실패:`, saveResult.error)
         return NextResponse.json(
           {
             success: false,
-            error: `Firebase 저장 실패: ${saveResult.error}`,
+            error: `BigQuery 저장 실패: ${saveResult.error}`,
             batch: batchInfo,
           },
           { status: 500, headers: corsHeaders }
         )
       }
 
-      console.log(`[API] 배치 ${batchInfo.batchNumber} Firebase 저장 완료: ${saveResult.savedCount}건`)
+      console.log(`[API] 배치 ${batchInfo.batchNumber} BigQuery 저장 완료: ${saveResult.saved}건`)
 
       return NextResponse.json(
         {
           success: true,
-          message: `배치 ${batchInfo.batchNumber} 처리 완료: ${parsedData.evaluations.length}건 (Firebase 저장됨)`,
+          message: `배치 ${batchInfo.batchNumber} 처리 완료: ${parsedData.evaluations.length}건 (BigQuery 저장됨)`,
           timestamp: new Date().toISOString(),
           batch: {
             batchNumber: batchInfo.batchNumber,
@@ -255,47 +253,44 @@ export async function POST(request: NextRequest) {
               agents: parsedData.agents.length,
             },
           },
-          firebase: {
-            saved: saveResult.savedCount,
-            agents: saveResult.agents,
+          bigquery: {
+            saved: saveResult.saved,
           },
         },
         { headers: corsHeaders }
       )
     } else {
-      // 일반 처리 - Firebase에 저장
-      console.log(`[API] Firebase 저장 시작: ${parsedData.evaluations.length} evaluations, ${parsedData.agents.length} agents`)
+      // 일반 처리 - BigQuery에 저장
+      console.log(`[API] BigQuery 저장 시작: ${parsedData.evaluations.length} evaluations`)
 
-      const saveResult = await saveEvaluationsToFirestore(
-        parsedData.evaluations,
-        parsedData.agents
+      const saveResult = await saveEvaluationsToBigQuery(
+        parsedData.evaluations
       )
 
       if (!saveResult.success) {
-        console.error(`[API] Firebase 저장 실패:`, saveResult.error)
+        console.error(`[API] BigQuery 저장 실패:`, saveResult.error)
         return NextResponse.json(
           {
             success: false,
-            error: `Firebase 저장 실패: ${saveResult.error}`,
+            error: `BigQuery 저장 실패: ${saveResult.error}`,
           },
           { status: 500, headers: corsHeaders }
         )
       }
 
-      console.log(`[API] Firebase 저장 완료: ${saveResult.evaluations}건`)
+      console.log(`[API] BigQuery 저장 완료: ${saveResult.saved}건`)
 
       return NextResponse.json(
         {
           success: true,
-          message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다. (Firebase 저장됨)`,
+          message: `${parsedData.evaluations.length}건의 평가 데이터가 동기화되었습니다. (BigQuery 저장됨)`,
           timestamp: new Date().toISOString(),
           summary: {
             agents: parsedData.agents.length,
             evaluations: parsedData.evaluations.length,
           },
-          firebase: {
-            saved: saveResult.evaluations,
-            agents: saveResult.agents,
+          bigquery: {
+            saved: saveResult.saved,
           },
         },
         { headers: corsHeaders }

@@ -5,7 +5,7 @@ import {
   getDailyTrend,
   getAgents,
   getEvaluations,
-} from "@/lib/firebase-admin"
+} from "@/lib/bigquery"
 
 // CORS 헤더
 const corsHeaders = {

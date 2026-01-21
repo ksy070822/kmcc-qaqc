@@ -7,120 +7,86 @@ import { GoalCard, type GoalData } from "./goal-card"
 import { GoalFormModal } from "./goal-form-modal"
 import { GoalAchievementChart } from "./goal-achievement-chart"
 import { GoalSummary } from "./goal-summary"
-import { Plus, Filter } from "lucide-react"
+import { Plus, Filter, Loader2 } from "lucide-react"
+import { useGoals } from "@/hooks/use-goals"
 
 export function GoalManagement() {
   const [filterCenter, setFilterCenter] = useState("all")
   const [filterStatus, setFilterStatus] = useState("all")
-  const [filterType, setFilterType] = useState("all") // 태도/오상담/전체 필터 추가
+  const [filterType, setFilterType] = useState("all")
   const [formModalOpen, setFormModalOpen] = useState(false)
   const [editingGoal, setEditingGoal] = useState<GoalData | null>(null)
 
-  const goals: GoalData[] = useMemo(
-    () => [
+  // BigQuery에서 목표 데이터 가져오기
+  const { data: goalsData, loading, error } = useGoals({
+    center: filterCenter,
+    periodType: "monthly",
+    isActive: true,
+  })
+
+  // GoalData 형식으로 변환
+  const goals: GoalData[] = useMemo(() => {
+    if (!goalsData) return []
+    
+    return goalsData.map((goal) => {
+      // 현재 실적 (임시값, 실제로는 대시보드 데이터에서 가져와야 함)
+      const currentErrorRate = goal.targetRate * 0.92 // 임시로 목표의 92%로 설정
+      const progress = 50 // TODO: 실제 기간 경과율 계산
+      
+      // 상태 판정
+      let status: GoalData["status"] = "on-track"
+      if (currentErrorRate <= goal.targetRate * 0.9) {
+        status = "achieved"
+      } else if (currentErrorRate > goal.targetRate * 1.1) {
+        status = "missed"
+      } else if (currentErrorRate > goal.targetRate) {
+        status = "at-risk"
+      }
+      
+      return {
+        id: goal.id,
+        title: goal.name,
+        center: goal.center || "전체",
+        type: goal.type === "attitude" ? "attitude" : goal.type === "ops" ? "counseling" : "total",
+        targetErrorRate: goal.targetRate,
+        currentErrorRate,
+        period: "monthly",
+        startDate: goal.periodStart,
+        endDate: goal.periodEnd,
+        progress,
+        status,
+      }
+    })
+  }, [goalsData])
+
+  // Mock data for fallback (if no data from BigQuery)
+  const mockGoals: GoalData[] = useMemo(
+    () => goals.length > 0 ? goals : [
       {
         id: "1",
-        title: "12월 전체 상담태도 목표",
+        title: "1월 전체 상담태도 목표",
         center: "전체",
         type: "attitude",
-        targetErrorRate: 2.0,
-        currentErrorRate: 1.85,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "achieved",
-      },
-      {
-        id: "2",
-        title: "12월 전체 오상담/오처리 목표",
-        center: "전체",
-        type: "counseling",
-        targetErrorRate: 3.0,
-        currentErrorRate: 2.95,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "on-track",
-      },
-      {
-        id: "3",
-        title: "12월 전체 품질 합계 목표",
-        center: "전체",
-        type: "total",
         targetErrorRate: 3.0,
         currentErrorRate: 2.85,
         period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "achieved",
-      },
-      {
-        id: "4",
-        title: "12월 용산센터 상담태도 목표",
-        center: "용산",
-        type: "attitude",
-        targetErrorRate: 2.0,
-        currentErrorRate: 1.65,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "achieved",
-      },
-      {
-        id: "5",
-        title: "12월 용산센터 오상담/오처리 목표",
-        center: "용산",
-        type: "counseling",
-        targetErrorRate: 2.8,
-        currentErrorRate: 2.75,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
+        startDate: "2026-01-01",
+        endDate: "2026-01-31",
+        progress: 70,
         status: "on-track",
       },
-      {
-        id: "6",
-        title: "12월 광주센터 상담태도 목표",
-        center: "광주",
-        type: "attitude",
-        targetErrorRate: 2.2,
-        currentErrorRate: 2.45,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "at-risk",
-      },
-      {
-        id: "7",
-        title: "12월 광주센터 오상담/오처리 목표",
-        center: "광주",
-        type: "counseling",
-        targetErrorRate: 3.2,
-        currentErrorRate: 3.55,
-        period: "monthly",
-        startDate: "2024-12-01",
-        endDate: "2024-12-31",
-        progress: 50,
-        status: "missed",
-      },
     ],
-    [],
+    [goals],
   )
 
   const filteredGoals = useMemo(() => {
-    return goals.filter((goal) => {
+    return mockGoals.filter((goal) => {
       if (filterCenter !== "all" && goal.center !== filterCenter) return false
       if (filterStatus !== "all" && goal.status !== filterStatus) return false
       if (filterType !== "all" && goal.type !== filterType) return false
       return true
     })
-  }, [goals, filterCenter, filterStatus, filterType])
+  }, [mockGoals, filterCenter, filterStatus, filterType])
 
   const chartData = useMemo(
     () => [
@@ -146,21 +112,34 @@ export function GoalManagement() {
     setFormModalOpen(true)
   }
 
-  const achievedCount = goals.filter((g) => g.status === "achieved").length
-  const atRiskCount = goals.filter((g) => g.status === "at-risk" || g.status === "missed").length
+  const achievedCount = mockGoals.filter((g) => g.status === "achieved").length
+  const atRiskCount = mockGoals.filter((g) => g.status === "at-risk" || g.status === "missed").length
   const avgAchievement =
-    goals.reduce((sum, g) => {
+    mockGoals.reduce((sum, g) => {
       const rate =
         g.targetErrorRate > 0
           ? Math.min(100, (1 - (g.currentErrorRate - g.targetErrorRate) / g.targetErrorRate) * 100)
           : 100
       return sum + rate
-    }, 0) / goals.length
+    }, 0) / mockGoals.length
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+          <strong>데이터 로드 오류:</strong> {error}
+        </div>
+      )}
+      
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span>데이터 로딩 중...</span>
+        </div>
+      )}
+      
       <GoalSummary
-        totalGoals={goals.length}
+        totalGoals={mockGoals.length}
         achievedGoals={achievedCount}
         atRiskGoals={atRiskCount}
         avgAchievement={avgAchievement}

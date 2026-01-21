@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { AgentFilters } from "./agent-filters"
 import { AgentTable } from "./agent-table"
 import { AgentDetailModal } from "./agent-detail-modal"
-import { generateAgents } from "@/lib/mock-data"
+import { useAgents } from "@/hooks/use-agents"
+import { Loader2 } from "lucide-react"
 
 export function AgentAnalysis() {
   const [search, setSearch] = useState("")
@@ -16,24 +17,28 @@ export function AgentAnalysis() {
   const [selectedAgent, setSelectedAgent] = useState<any>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
 
-  const agents = useMemo(() => generateAgents(), [])
+  // BigQuery에서 데이터 가져오기
+  const { data: agents, loading, error } = useAgents({
+    center: selectedCenter,
+    service: selectedServiceGroup,
+    channel: selectedChannel,
+    tenure: selectedTenure,
+  })
 
   const agentRows = useMemo(() => {
-    return agents.map((agent) => {
-      const errorRate = Number((Math.random() * 4 + 1).toFixed(2))
+    return (agents || []).map((agent) => {
+      const errorRate = agent.overallErrorRate
       return {
         id: agent.id,
         name: agent.name,
         center: agent.center,
-        group: agent.group,
-        tenure: agent.tenure,
+        group: `${agent.service}/${agent.channel}`,
+        tenure: agent.tenureGroup,
         errorRate,
-        trend: Number((Math.random() * 2 - 1).toFixed(2)),
-        totalCalls: Math.floor(Math.random() * 30) + 20,
-        totalErrors: Math.floor(errorRate * 0.5),
-        topIssue: ["전산 세팅오류", "본인확인 누락", "가이드 미준수", "불친절", "필수멘트 누락"][
-          Math.floor(Math.random() * 5)
-        ],
+        trend: 0, // TODO: 전주 대비 계산
+        totalCalls: agent.totalEvaluations,
+        totalErrors: Math.floor((agent.attitudeErrorRate + agent.opsErrorRate) / 2),
+        topIssue: "분석 중", // TODO: 항목별 오류 집계
         status: (errorRate > 4 ? "위험" : "양호") as "양호" | "위험",
       }
     })
@@ -45,10 +50,11 @@ export function AgentAnalysis() {
       if (selectedCenter !== "all" && agent.center !== selectedCenter) return false
       if (selectedChannel !== "all" && !agent.group.includes(selectedChannel === "유선" ? "유선" : "채팅")) return false
       if (selectedServiceGroup !== "all" && !agent.group.includes(selectedServiceGroup)) return false
-      if (selectedTenure !== "all" && agent.tenure !== selectedTenure) return false
+      // tenure 필터는 데이터가 없으므로 주석 처리
+      // if (selectedTenure !== "all" && agent.tenure !== selectedTenure) return false
       return true
     })
-  }, [agentRows, search, selectedCenter, selectedChannel, selectedServiceGroup, selectedTenure])
+  }, [agentRows, search, selectedCenter, selectedChannel, selectedServiceGroup])
 
   const handleSelectAgent = (agent: any) => {
     setSelectedAgent(agent)
@@ -65,6 +71,19 @@ export function AgentAnalysis() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+          <strong>데이터 로드 오류:</strong> {error}
+        </div>
+      )}
+      
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" />
+          <span>데이터 로딩 중...</span>
+        </div>
+      )}
+      
       <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardContent className="p-4">
