@@ -20,7 +20,14 @@ export function useAIChat(options: UseAIChatOptions = {}) {
 
   const sendMessage = useCallback(
     async (message: string) => {
+      // 중복 요청 방지
       if (!message.trim() || loading) return;
+      
+      // 메시지 길이 검증 (프론트엔드에서도 체크)
+      if (message.length > 5000) {
+        setError('메시지가 너무 깁니다 (최대 5,000자). 메시지를 단축해주세요.');
+        return;
+      }
 
       // 사용자 메시지 추가
       const userMessage: AIChatMessage = {
@@ -54,6 +61,10 @@ export function useAIChat(options: UseAIChatOptions = {}) {
         const data: AIChatResponse = await response.json();
 
         if (!data.success) {
+          // Rate limit 오류인 경우 특별 처리
+          if (response.status === 429) {
+            throw new Error(data.error || '요청 빈도가 너무 높습니다. 잠시 후 다시 시도해주세요.');
+          }
           throw new Error(data.error || 'AI 응답 생성에 실패했습니다.');
         }
 

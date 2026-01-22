@@ -1,4 +1,5 @@
 import { BigQuery } from '@google-cloud/bigquery';
+import { AgentAnalysisContext, GroupAnalysisContext } from './types';
 
 /**
  * BigQuery 클라이언트 초기화
@@ -32,7 +33,7 @@ function initializeBigQuery(): BigQuery {
 // BigQuery 클라이언트 싱글톤
 let bigqueryClient: BigQuery | null = null;
 
-function getBigQueryClient(): BigQuery {
+export function getBigQueryClient(): BigQuery {
   if (!bigqueryClient) {
     bigqueryClient = initializeBigQuery();
   }
@@ -573,11 +574,6 @@ export async function getWatchList(filters?: {
     //   whereClause += ' AND tenure_group = @tenure';
     //   params.tenure = filters.tenure;
     // }
-    
-    // 전월 데이터도 가져와서 trend 계산
-    const prevMonth = new Date(month + '-01')
-    prevMonth.setMonth(prevMonth.getMonth() - 1)
-    const prevMonthStr = prevMonth.toISOString().slice(0, 7)
     
     const query = `
       WITH current_month_errors AS (
@@ -1756,6 +1752,386 @@ export async function getItemErrorStats(filters?: {
   }
 }
 
+// ============================================
+// 상담사 존재 여부 확인
+// ============================================
+
+export async function checkAgentExists(
+  agentName?: string,
+  agentId?: string
+): Promise<{ success: boolean; found?: boolean; agents?: any[]; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    if (!agentName && !agentId) {
+      return { success: false, error: 'agentName or agentId is required' };
+    }
+    
+    let whereClause = 'WHERE 1=1';
+    const params: any = {};
+    
+    if (agentName) {
+      whereClause += ' AND agent_name = @agentName';
+      params.agentName = agentName;
+    }
+    if (agentId) {
+      whereClause += ' AND agent_id = @agentId';
+      params.agentId = agentId;
+    }
+    
+    const query = `
+      SELECT DISTINCT
+        agent_id,
+        agent_name,
+        center,
+        service,
+        channel
+      FROM \`${DATASET_ID}.evaluations\`
+      ${whereClause}
+      LIMIT 10
+    `;
+    
+    const options = {
+      query,
+      params,
+      location: 'asia-northeast3',
+    };
+    
+    const [rows] = await bigquery.query(options);
+    
+    return {
+      success: true,
+      found: rows.length > 0,
+      agents: rows,
+    };
+  } catch (error) {
+    console.error('[BigQuery] checkAgentExists error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// ============================================
+// AI 어시스턴트용 데이터 조회
+// ============================================
+
+export async function getAgentAnalysisData(
+  agentId: string,
+  month: string
+): Promise<{ success: boolean; data?: AgentAnalysisContext; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    const query = `
+      SELECT
+        agent_id,
+        agent_name,
+        center,
+        service,
+        channel,
+        COUNT(*) as total_evaluations,
+        ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_error_rate,
+        ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as ops_error_rate,
+        SUM(CAST(empathy_error AS INT64)) as empathy_errors,
+        SUM(CAST(consult_type_error AS INT64)) as consult_type_errors,
+        SUM(CAST(guide_error AS INT64)) as guide_errors
+      FROM \`${DATASET_ID}.evaluations\`
+      WHERE agent_id = @agentId
+        AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
+      GROUP BY agent_id, agent_name, center, service, channel
+      LIMIT 1
+    `;
+    
+    const [rows] = await bigquery.query({
+      query,
+      params: { agentId, month },
+      location: 'asia-northeast3',
+    });
+    
+    if (rows.length === 0) {
+      return { success: false, error: 'Agent not found' };
+    }
+    
+    const row = rows[0];
+    const attitudeRate = Number(row.attitude_error_rate) || 0;
+    const opsRate = Number(row.ops_error_rate) || 0;
+    
+    const context: AgentAnalysisContext = {
+      agentId: row.agent_id,
+      agentName: row.agent_name,
+      center: row.center,
+      service: row.service,
+      channel: row.channel,
+      tenureMonths: 0, // TODO: 실제 tenure 데이터 조회
+      tenureGroup: '',
+      totalEvaluations: Number(row.total_evaluations) || 0,
+      attitudeErrorRate: attitudeRate,
+      opsErrorRate: opsRate,
+      overallErrorRate: Number((attitudeRate + opsRate).toFixed(2)),
+      errorBreakdown: [
+        { itemName: '공감표현누락', errorCount: Number(row.empathy_errors) || 0, errorRate: 0 },
+        { itemName: '상담유형오설정', errorCount: Number(row.consult_type_errors) || 0, errorRate: 0 },
+        { itemName: '가이드미준수', errorCount: Number(row.guide_errors) || 0, errorRate: 0 },
+      ],
+      trendData: [], // TODO: 실제 trend 데이터 조회
+    };
+    
+    return { success: true, data: context };
+  } catch (error) {
+    console.error('[BigQuery] getAgentAnalysisData error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function getGroupAnalysisData(
+  center: string,
+  service: string,
+  channel: string,
+  month: string
+): Promise<{ success: boolean; data?: GroupAnalysisContext; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    const query = `
+      SELECT
+        center,
+        service,
+        channel,
+        COUNT(DISTINCT agent_id) as total_agents,
+        COUNT(*) as total_evaluations,
+        ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_error_rate,
+        ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as ops_error_rate
+      FROM \`${DATASET_ID}.evaluations\`
+      WHERE center = @center
+        AND service = @service
+        AND channel = @channel
+        AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
+      GROUP BY center, service, channel
+      LIMIT 1
+    `;
+    
+    const [rows] = await bigquery.query({
+      query,
+      params: { center, service, channel, month },
+      location: 'asia-northeast3',
+    });
+    
+    if (rows.length === 0) {
+      return { success: false, error: 'Group not found' };
+    }
+    
+    const row = rows[0];
+    const attitudeRate = Number(row.attitude_error_rate) || 0;
+    const opsRate = Number(row.ops_error_rate) || 0;
+    
+    const context: GroupAnalysisContext = {
+      center: row.center,
+      service: row.service,
+      channel: row.channel,
+      totalAgents: Number(row.total_agents) || 0,
+      totalEvaluations: Number(row.total_evaluations) || 0,
+      attitudeErrorRate: attitudeRate,
+      opsErrorRate: opsRate,
+      overallErrorRate: Number((attitudeRate + opsRate).toFixed(2)),
+      topErrors: [],
+      agentRankings: [],
+      trendData: [], // TODO: 실제 trend 데이터 조회
+    };
+    
+    return { success: true, data: context };
+  } catch (error) {
+    console.error('[BigQuery] getGroupAnalysisData error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// ============================================
+// 목표 관련 함수
+// ============================================
+
+export async function getGoalCurrentRate(
+  goalId: string,
+  goalType: 'attitude' | 'ops' | 'total',
+  center: string | null,
+  startDate: string,
+  endDate: string
+): Promise<{ success: boolean; data?: { currentRate: number }; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    let whereClause = 'WHERE evaluation_date >= @startDate AND evaluation_date <= @endDate';
+    const params: any = { startDate, endDate };
+    
+    if (center) {
+      whereClause += ' AND center = @center';
+      params.center = center;
+    }
+    
+    let rateColumn = '';
+    if (goalType === 'attitude') {
+      rateColumn = 'ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2)';
+    } else if (goalType === 'ops') {
+      rateColumn = 'ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2)';
+    } else {
+      rateColumn = 'ROUND(SAFE_DIVIDE(SUM(attitude_error_count + business_error_count), COUNT(*) * 16) * 100, 2)';
+    }
+    
+    const query = `
+      SELECT
+        ${rateColumn} as current_rate
+      FROM \`${DATASET_ID}.evaluations\`
+      ${whereClause}
+    `;
+    
+    const [rows] = await bigquery.query({
+      query,
+      params,
+      location: 'asia-northeast3',
+    });
+    
+    const currentRate = Number(rows[0]?.current_rate) || 0;
+    
+    return { success: true, data: { currentRate } };
+  } catch (error) {
+    console.error('[BigQuery] getGoalCurrentRate error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function saveGoalToBigQuery(goal: {
+  id?: string;
+  name: string;
+  center: string | null;
+  type: string;
+  targetRate: number;
+  periodType: string;
+  periodStart: string;
+  periodEnd: string;
+  isActive: boolean;
+}): Promise<{ success: boolean; saved?: number; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    const isUpdate = !!goal.id;
+    
+    if (isUpdate) {
+      const query = `
+        UPDATE \`${DATASET_ID}.targets\`
+        SET
+          target_name = @name,
+          center = @center,
+          target_type = @type,
+          target_rate = @targetRate,
+          period_type = @periodType,
+          period_start = @periodStart,
+          period_end = @periodEnd,
+          is_active = @isActive
+        WHERE target_id = @id
+      `;
+      
+      const [result] = await bigquery.query({
+        query,
+        params: {
+          id: goal.id,
+          name: goal.name,
+          center: goal.center,
+          type: goal.type,
+          targetRate: goal.targetRate,
+          periodType: goal.periodType,
+          periodStart: goal.periodStart,
+          periodEnd: goal.periodEnd,
+          isActive: goal.isActive,
+        },
+        location: 'asia-northeast3',
+      });
+      
+      return { success: true, saved: 1 };
+    } else {
+      const query = `
+        INSERT INTO \`${DATASET_ID}.targets\`
+        (target_name, center, target_type, target_rate, period_type, period_start, period_end, is_active)
+        VALUES
+        (@name, @center, @type, @targetRate, @periodType, @periodStart, @periodEnd, @isActive)
+      `;
+      
+      const [result] = await bigquery.query({
+        query,
+        params: {
+          name: goal.name,
+          center: goal.center,
+          type: goal.type,
+          targetRate: goal.targetRate,
+          periodType: goal.periodType,
+          periodStart: goal.periodStart,
+          periodEnd: goal.periodEnd,
+          isActive: goal.isActive,
+        },
+        location: 'asia-northeast3',
+      });
+      
+      return { success: true, saved: 1 };
+    }
+  } catch (error) {
+    console.error('[BigQuery] saveGoalToBigQuery error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// ============================================
+// 리포트 데이터 조회
+// ============================================
+
+export async function getReportData(
+  type: string,
+  period: string,
+  center?: string,
+  service?: string,
+  channel?: string,
+  startDate?: string,
+  endDate?: string
+): Promise<{ success: boolean; data?: any; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    
+    // 리포트 타입에 따라 다른 쿼리 실행
+    // 기본적으로 대시보드 통계를 반환
+    if (type === 'dashboard') {
+      const stats = await getDashboardStats(startDate);
+      return stats;
+    } else if (type === 'agents') {
+      const agents = await getAgents({ center, service, channel });
+      return agents;
+    } else if (type === 'errors') {
+      const errors = await getDailyErrors({ startDate, endDate, center, service, channel });
+      return errors;
+    } else {
+      // 기본 리포트 데이터
+      const stats = await getDashboardStats(startDate);
+      return stats;
+    }
+  } catch (error) {
+    console.error('[BigQuery] getReportData error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export default {
   getDashboardStats,
   getCenterStats,
@@ -1768,4 +2144,11 @@ export default {
   getWeeklyErrors,
   getItemErrorStats,
   saveEvaluationsToBigQuery,
+  checkAgentExists,
+  getAgentAnalysisData,
+  getGroupAnalysisData,
+  getGoalCurrentRate,
+  saveGoalToBigQuery,
+  getReportData,
+  getBigQueryClient,
 };

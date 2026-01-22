@@ -8,10 +8,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
  * GOOGLE_AI_API_KEY 환경 변수에 API 키 설정
  */
 function initializeGoogleAI(): GoogleGenerativeAI {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || 'AIzaSyCarWphjfIDxwY9Pp969_xpvsstzz7cEMQ';
+  const apiKey = process.env.GOOGLE_AI_API_KEY;
   
-  if (!apiKey) {
-    throw new Error('GOOGLE_AI_API_KEY 환경 변수가 설정되지 않았습니다.');
+  if (!apiKey || apiKey === 'AIzaSyCarWphjfIDxwY9Pp969_xpvsstzz7cEMQ') {
+    throw new Error('GOOGLE_AI_API_KEY 환경 변수가 설정되지 않았거나 기본값입니다. 프로덕션에서는 반드시 환경 변수로 설정해야 합니다.');
   }
   
   return new GoogleGenerativeAI(apiKey);

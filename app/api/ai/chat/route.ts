@@ -9,6 +9,7 @@ import {
   createAutoAnalysisPrompt,
 } from '@/lib/ai-prompts';
 import { AIChatRequest } from '@/lib/types';
+import { checkCostProtection, logAIRequest } from '@/lib/ai-cost-protection';
 
 // CORS 헤더
 const corsHeaders = {
@@ -23,6 +24,9 @@ export async function OPTIONS() {
 
 // POST /api/ai/chat
 export async function POST(request: NextRequest) {
+  const startTime = Date.now();
+  let prompt: string | null = null;
+  
   try {
     const body: AIChatRequest = await request.json();
     const { message, agentId, group, context } = body;
@@ -34,7 +38,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let prompt: string;
+    // IP 주소 추출 (Rate limiting용)
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0] || 
+               request.headers.get('x-real-ip') || 
+               'unknown';
+
     let systemInstruction: string | undefined;
 
     // 상담사 분석 요청
@@ -132,8 +140,41 @@ export async function POST(request: NextRequest) {
 QC 평가 체계, 상담 품질 관리, 코칭 방법 등에 대해 전문적인 답변을 제공해주세요.`;
     }
 
-    // Vertex AI 호출
+    // 비용 보호 체크 (프롬프트 생성 후)
+    const costCheck = checkCostProtection(message, prompt, undefined, ip);
+    if (!costCheck.allowed) {
+      console.warn('[AI Chat] Request blocked by cost protection:', {
+        reason: costCheck.reason,
+        costEstimate: costCheck.costEstimate,
+        promptLength: prompt.length,
+        ip,
+      });
+      
+      return NextResponse.json(
+        {
+          success: false,
+          error: costCheck.reason || '요청이 차단되었습니다.',
+        },
+        { status: 429, headers: corsHeaders }
+      );
+    }
+
+    // 비용 경고 로깅
+    if (costCheck.costEstimate && costCheck.costEstimate.estimatedCostKRW > 100) {
+      console.warn('[AI Chat] High cost request:', {
+        estimatedCostKRW: costCheck.costEstimate.estimatedCostKRW,
+        estimatedTokens: costCheck.costEstimate.estimatedTokens,
+        promptLength: prompt.length,
+        ip,
+      });
+    }
+
+    // Google AI API 호출 (Vertex AI 아님)
     const aiResponse = await callGemini(prompt, systemInstruction);
+    
+    // 요청 로깅 (비용 모니터링)
+    const duration = Date.now() - startTime;
+    logAIRequest(prompt, aiResponse.length, duration, undefined, ip);
 
     return NextResponse.json(
       {
@@ -145,6 +186,16 @@ QC 평가 체계, 상담 품질 관리, 코칭 방법 등에 대해 전문적인
 
   } catch (error) {
     console.error('[AI Chat] Error:', error);
+    
+    // 비용 보호 관련 오류는 로깅
+    if (error instanceof Error && error.message.includes('비용') || error.message.includes('제한')) {
+      console.warn('[AI Chat] Cost protection triggered:', {
+        error: error.message,
+        promptLength: prompt?.length || 0,
+        ip: request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown',
+      });
+    }
+    
     return NextResponse.json(
       {
         success: false,

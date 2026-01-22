@@ -231,4 +231,8 @@ export interface GroupAnalysisContext {
     agentName: string
     errorRate: number
   }>
+  trendData: Array<{
+    date: string
+    errorRate: number
+  }>
 }
