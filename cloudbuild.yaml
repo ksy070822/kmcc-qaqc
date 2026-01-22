@@ -1,36 +1,34 @@
-# Cloud Build 설정 파일
+# Cloud Build 설정 파일 (서울 리전)
 # GitHub 연동 또는 수동 빌드에 사용
 #
 # 수동 배포 명령어:
-#   gcloud builds submit --config cloudbuild.yaml .
+#   gcloud builds submit --config cloudbuild.yaml --region=asia-northeast3 .
 #
 # 필요한 substitution 변수:
 #   _SERVICE_NAME: Cloud Run 서비스 이름 (기본: qc-dashboard)
 #   _REGION: 배포 리전 (기본: asia-northeast3)
-#
-# GitHub 트리거 설정 시 대체 변수로 설정하세요.
 
 steps:
-  # 1단계: Docker 이미지 빌드
+  # 1단계: Docker 이미지 빌드 (Artifact Registry 사용)
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:$COMMIT_SHA'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
       - '.'
 
-  # 2단계: Container Registry에 이미지 푸시
+  # 2단계: Artifact Registry에 이미지 푸시
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:$COMMIT_SHA'
 
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:latest'
 
   # 3단계: Cloud Run에 배포
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -40,7 +38,7 @@ steps:
       - 'deploy'
       - '${_SERVICE_NAME}'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA'
+      - 'asia-northeast3-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/${_SERVICE_NAME}:$COMMIT_SHA'
       - '--region'
       - '${_REGION}'
       - '--platform'
@@ -60,10 +58,9 @@ substitutions:
   _SERVICE_NAME: qc-dashboard
   _REGION: asia-northeast3
 
-# 빌드 이미지 저장
-images:
-  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:$COMMIT_SHA'
-  - 'gcr.io/$PROJECT_ID/${_SERVICE_NAME}:latest'
-
 # 빌드 타임아웃 (10분)
 timeout: '600s'
+
+# 빌드 옵션
+options:
+  logging: CLOUD_LOGGING_ONLY
