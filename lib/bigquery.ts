@@ -63,7 +63,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
   try {
     const bigquery = getBigQueryClient();
     
-    // 날짜가 없으면 최근 30일 데이터 사용 (전체 통계)
+    // 날짜가 없으면 전일(어제) 날짜 사용 (전일 평가건수 표시용)
     let queryDate = targetDate;
     let dateFilter = '';
     let params: any = {};
@@ -73,13 +73,25 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       dateFilter = 'WHERE evaluation_date = @queryDate';
       params.queryDate = queryDate;
     } else {
-      // 날짜 미지정 시 최근 30일 데이터 조회
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      const startDate = thirtyDaysAgo.toISOString().split('T')[0];
-      dateFilter = 'WHERE evaluation_date >= @startDate';
-      params.startDate = startDate;
-      queryDate = 'latest'; // 표시용
+      // 날짜 미지정 시 전일(어제) 날짜 계산 (한국 시간 기준)
+      const now = new Date();
+      // UTC 시간을 한국 시간으로 변환 (UTC+9)
+      const kstOffset = 9 * 60 * 60 * 1000; // 9시간을 밀리초로
+      const kstTime = new Date(now.getTime() + kstOffset);
+      
+      // 어제 날짜 계산
+      const yesterday = new Date(kstTime);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      
+      // YYYY-MM-DD 형식으로 변환
+      const year = yesterday.getUTCFullYear();
+      const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(yesterday.getUTCDate()).padStart(2, '0');
+      queryDate = `${year}-${month}-${day}`;
+      
+      dateFilter = 'WHERE evaluation_date = @queryDate';
+      params.queryDate = queryDate;
+      console.log(`[BigQuery] 전일 날짜 계산: ${queryDate} (KST 기준)`);
     }
     
     console.log(`[BigQuery] getDashboardStats: ${queryDate || 'latest 30 days'}`);
@@ -90,8 +102,8 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
           center,
           COUNT(*) as evaluation_count,
           COUNT(DISTINCT agent_id) as agent_count,
-          SUM(attitude_error_count) as total_attitude_errors,
-          SUM(business_error_count) as total_ops_errors
+          SUM(COALESCE(attitude_error_count, 0)) as total_attitude_errors,
+          SUM(COALESCE(ops_error_count, 0)) as total_ops_errors
         FROM \`${DATASET_ID}.evaluations\`
         ${dateFilter}
         GROUP BY center
@@ -102,10 +114,10 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
           COUNT(DISTINCT agent_id) as watchlist_count
         FROM \`${DATASET_ID}.evaluations\`
         ${dateFilter}
-          AND (
-            (attitude_error_count / 5.0 * 100) > 5
-            OR (business_error_count / 11.0 * 100) > 6
-          )
+        AND (
+          (attitude_error_count / 5.0 * 100) > 5
+          OR (ops_error_count / 11.0 * 100) > 6
+        )
         GROUP BY center
       )
       SELECT
@@ -120,6 +132,9 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       LEFT JOIN watchlist_counts wc ON ds.center = wc.center
     `;
     
+    console.log(`[BigQuery] Query:`, query);
+    console.log(`[BigQuery] Params:`, params);
+    
     const options = {
       query,
       params,
@@ -128,7 +143,13 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     
     const [rows] = await bigquery.query(options);
     
+    console.log(`[BigQuery] Query result rows:`, rows.length);
+    if (rows.length > 0) {
+      console.log(`[BigQuery] First row:`, JSON.stringify(rows[0], null, 2));
+    }
+    
     if (rows.length === 0) {
+      console.warn(`[BigQuery] No rows returned from query`);
       return {
         success: true,
         data: {
@@ -146,10 +167,20 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     }
     
     const row = rows[0];
+    console.log(`[BigQuery] Raw row values:`, {
+      totalAgentsYongsan: row.totalAgentsYongsan,
+      totalAgentsGwangju: row.totalAgentsGwangju,
+      totalEvaluations: row.totalEvaluations,
+      watchlistYongsan: row.watchlistYongsan,
+      watchlistGwangju: row.watchlistGwangju,
+      attitudeErrorRate: row.attitudeErrorRate,
+      businessErrorRate: row.businessErrorRate,
+    });
+    
     const attitudeErrorRate = Number(row.attitudeErrorRate) || 0;
     const businessErrorRate = Number(row.businessErrorRate) || 0;
     
-    return {
+    const result = {
       success: true,
       data: {
         totalAgentsYongsan: Number(row.totalAgentsYongsan) || 0,
@@ -163,6 +194,10 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
         date: queryDate,
       },
     };
+    
+    console.log(`[BigQuery] Final result:`, JSON.stringify(result.data, null, 2));
+    
+    return result;
   } catch (error) {
     console.error('[BigQuery] getDashboardStats error:', error);
     return {
@@ -2272,9 +2307,21 @@ export async function saveGoalToBigQuery(goal: {
     const targetId = goal.id || `${goal.periodType}_${goal.center || 'all'}_${goal.type}_${Date.now()}`;
     
     // type에 따라 적절한 컬럼에 값 설정
-    const targetAttitudeErrorRate = (goal.type === 'attitude' || goal.type === 'total') ? goal.targetRate : null;
-    const targetBusinessErrorRate = (goal.type === 'ops' || goal.type === 'total') ? goal.targetRate : null;
-    const targetOverallErrorRate = goal.type === 'total' ? goal.targetRate : null;
+    // 'total' 타입의 경우: target_overall_error_rate에 저장하거나, 
+    // target_attitude_error_rate와 target_business_error_rate 둘 다에 저장할 수 있음
+    // 현재는 target_overall_error_rate에 저장하도록 설정
+    let targetAttitudeErrorRate: number | null = null;
+    let targetBusinessErrorRate: number | null = null;
+    let targetOverallErrorRate: number | null = null;
+    
+    if (goal.type === 'attitude') {
+      targetAttitudeErrorRate = goal.targetRate;
+    } else if (goal.type === 'ops') {
+      targetBusinessErrorRate = goal.targetRate;
+    } else if (goal.type === 'total') {
+      // 'total' 타입은 target_overall_error_rate에 저장
+      targetOverallErrorRate = goal.targetRate;
+    }
     
     // name에서 service 추출 (선택적)
     // name 형식: "센터 서비스 period_type" 또는 "센터 period_type"
@@ -2296,7 +2343,7 @@ export async function saveGoalToBigQuery(goal: {
     };
     
     if (isUpdate) {
-      // UPDATE 쿼리
+      // UPDATE 쿼리 - NULL 값 처리 개선
       const updateQuery = `
         UPDATE \`${DATASET_ID}.targets\`
         SET
@@ -2313,31 +2360,42 @@ export async function saveGoalToBigQuery(goal: {
         WHERE target_id = @targetId
       `;
       
-      const [result] = await bigquery.query({
-        query: updateQuery,
-        params: {
-          targetId,
-          center: goal.center || null,
-          service: service || null,
-          periodType: goal.periodType,
-          targetAttitudeErrorRate,
-          targetBusinessErrorRate,
-          targetOverallErrorRate,
-          startDate: goal.periodStart,
-          endDate: goal.periodEnd,
-          isActive: goal.isActive,
-        },
-        location: 'asia-northeast3',
-      });
-      
-      return { success: true, saved: 1 };
+      try {
+        const [result] = await bigquery.query({
+          query: updateQuery,
+          params: {
+            targetId,
+            center: goal.center || null,
+            service: service || null,
+            periodType: goal.periodType,
+            targetAttitudeErrorRate: targetAttitudeErrorRate !== null ? targetAttitudeErrorRate : null,
+            targetBusinessErrorRate: targetBusinessErrorRate !== null ? targetBusinessErrorRate : null,
+            targetOverallErrorRate: targetOverallErrorRate !== null ? targetOverallErrorRate : null,
+            startDate: goal.periodStart,
+            endDate: goal.periodEnd,
+            isActive: goal.isActive,
+          },
+          location: 'asia-northeast3',
+        });
+        
+        console.log('[BigQuery] Goal updated successfully:', targetId);
+        return { success: true, saved: 1 };
+      } catch (updateError) {
+        console.error('[BigQuery] Update error details:', updateError);
+        throw updateError;
+      }
     } else {
       // INSERT
       row.created_at = new Date().toISOString();
       
-      await table.insert([row]);
-      
-      return { success: true, saved: 1 };
+      try {
+        await table.insert([row]);
+        console.log('[BigQuery] Goal inserted successfully:', targetId);
+        return { success: true, saved: 1 };
+      } catch (insertError) {
+        console.error('[BigQuery] Insert error details:', insertError);
+        throw insertError;
+      }
     }
   } catch (error) {
     console.error('[BigQuery] saveGoalToBigQuery error:', error);
