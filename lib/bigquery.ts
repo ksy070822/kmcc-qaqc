@@ -2053,6 +2053,17 @@ export async function saveGoalToBigQuery(goal: {
           periodEnd: goal.periodEnd,
           isActive: goal.isActive,
         },
+        types: {
+          id: 'STRING',
+          name: 'STRING',
+          center: 'STRING',
+          type: 'STRING',
+          targetRate: 'FLOAT64',
+          periodType: 'STRING',
+          periodStart: 'DATE',
+          periodEnd: 'DATE',
+          isActive: 'BOOL',
+        },
         location: 'asia-northeast3',
       });
       
@@ -2076,6 +2087,16 @@ export async function saveGoalToBigQuery(goal: {
           periodStart: goal.periodStart,
           periodEnd: goal.periodEnd,
           isActive: goal.isActive,
+        },
+        types: {
+          name: 'STRING',
+          center: 'STRING',
+          type: 'STRING',
+          targetRate: 'FLOAT64',
+          periodType: 'STRING',
+          periodStart: 'DATE',
+          periodEnd: 'DATE',
+          isActive: 'BOOL',
         },
         location: 'asia-northeast3',
       });
