@@ -91,6 +91,8 @@ export async function GET(request: Request) {
         break
 
       case "item-stats":
+      case "tenure-stats":
+        // tenure-stats도 item-stats와 동일하게 처리 (근속기간별 통계는 향후 별도 구현)
         result = await getItemErrorStats({
           center: searchParams.get("center") || undefined,
           service: searchParams.get("service") || undefined,

@@ -66,14 +66,14 @@ export function OverviewSection({
     <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
       <StatsCard
         title="총 상담사"
-        value={totalAgentsYongsan + totalAgentsGwangju}
-        subtitle={`용산 ${totalAgentsYongsan}명 / 광주 ${totalAgentsGwangju}명`}
+        value={totalAgentsYongsan + totalAgentsGwangju || 0}
+        subtitle={`용산 ${totalAgentsYongsan || 0}명 / 광주 ${totalAgentsGwangju || 0}명`}
       />
-      <StatsCard title="전일 평가건수" value={totalEvaluations.toLocaleString()} subtitle="전일 기준" />
+      <StatsCard title="전일 평가건수" value={(totalEvaluations || 0).toLocaleString()} subtitle="전일 기준" />
       <StatsCard
         title="유의상담사"
-        value={totalWatchlist}
-        subtitle={`용산 ${watchlistYongsan}명 / 광주 ${watchlistGwangju}명`}
+        value={totalWatchlist || 0}
+        subtitle={`용산 ${watchlistYongsan || 0}명 / 광주 ${watchlistGwangju || 0}명`}
         variant={totalWatchlist > 10 ? "destructive" : totalWatchlist > 5 ? "warning" : "default"}
         onClick={onWatchlistClick}
         clickable

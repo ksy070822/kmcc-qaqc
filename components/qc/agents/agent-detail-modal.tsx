@@ -152,7 +152,7 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                   <Calendar className="h-3.5 w-3.5" />
                   <span>근속기간</span>
                 </div>
-                <p className="text-sm font-semibold text-slate-800 whitespace-nowrap">{agent.tenure}</p>
+                <p className="text-sm font-semibold text-slate-800 break-words">{agent.tenure || '분석 중'}</p>
               </CardContent>
             </Card>
             <Card className="border-slate-200 bg-white">

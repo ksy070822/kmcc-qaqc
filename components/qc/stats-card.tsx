@@ -59,7 +59,7 @@ export function StatsCard({ title, value, subtitle, trend, variant = "default", 
               </div>
             )}
           </div>
-          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+          {subtitle && <p className="text-xs text-muted-foreground break-words leading-tight">{subtitle}</p>}
         </div>
       </CardContent>
     </Card>
