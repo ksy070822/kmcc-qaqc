@@ -60,7 +60,7 @@ echo -e "${YELLOW}4. Cloud Build로 빌드 및 배포 시작 (서울 리전)...$
 gcloud builds submit --config cloudbuild.yaml --region=asia-northeast3 .
 
 # 배포 완료 확인
-echo -e "${YELLOW}5. 배포 상태 확인...${NC}"
+echo -e "${YELLOW}6. 배포 상태 확인...${NC}"
 SERVICE_URL=$(gcloud run services describe qc-dashboard \
   --region=asia-northeast3 \
   --format="value(status.url)" 2>/dev/null || echo "")

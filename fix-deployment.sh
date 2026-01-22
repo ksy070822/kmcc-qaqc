@@ -62,13 +62,20 @@ IMAGE_URL="asia-northeast3-docker.pkg.dev/$PROJECT_ID/$REPOSITORY_NAME/$SERVICE_
 echo "이미지 경로: $IMAGE_URL"
 echo ""
 
-# Cloud Build로 빌드 및 배포
-echo -e "${YELLOW}[5/6] Cloud Build로 빌드 및 배포 시작 (서울 리전)...${NC}"
+# Cloud Build 기본 리전 설정 (조직 정책 제약 해결)
+echo -e "${YELLOW}[5/6] Cloud Build 리전 설정 및 빌드 시작 (서울 리전)...${NC}"
+echo -e "${BLUE}조직 정책 제약을 피하기 위해 리전을 명시적으로 설정합니다...${NC}"
+
+# gcloud 기본 리전 설정
+gcloud config set builds/region $REGION
+
+# Cloud Build로 빌드 및 배포 (리전 명시)
 echo -e "${BLUE}이 작업은 몇 분이 걸릴 수 있습니다...${NC}"
 gcloud builds submit \
   --config cloudbuild.yaml \
   --region=$REGION \
   --substitutions=_SERVICE_NAME=$SERVICE_NAME,_REGION=$REGION \
+  --project=$PROJECT_ID \
   .
 echo -e "${GREEN}✓ 빌드 및 배포 완료${NC}"
 echo ""
