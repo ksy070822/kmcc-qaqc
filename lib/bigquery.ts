@@ -426,7 +426,24 @@ export async function getAgents(filters?: {
         '' as tenureGroup,
         COUNT(*) as totalEvaluations,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
-        ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate
+        ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
+        -- 항목별 오류 개수 계산
+        SUM(CAST(greeting_error AS INT64)) as greeting_errors,
+        SUM(CAST(empathy_error AS INT64)) as empathy_errors,
+        SUM(CAST(apology_error AS INT64)) as apology_errors,
+        SUM(CAST(additional_inquiry_error AS INT64)) as additional_inquiry_errors,
+        SUM(CAST(unkind_error AS INT64)) as unkind_errors,
+        SUM(CAST(consult_type_error AS INT64)) as consult_type_errors,
+        SUM(CAST(guide_error AS INT64)) as guide_errors,
+        SUM(CAST(identity_check_error AS INT64)) as identity_check_errors,
+        SUM(CAST(required_search_error AS INT64)) as required_search_errors,
+        SUM(CAST(wrong_guide_error AS INT64)) as wrong_guide_errors,
+        SUM(CAST(process_missing_error AS INT64)) as process_missing_errors,
+        SUM(CAST(process_incomplete_error AS INT64)) as process_incomplete_errors,
+        SUM(CAST(system_error AS INT64)) as system_errors,
+        SUM(CAST(id_mapping_error AS INT64)) as id_mapping_errors,
+        SUM(CAST(flag_keyword_error AS INT64)) as flag_keyword_errors,
+        SUM(CAST(history_error AS INT64)) as history_errors
       FROM \`${DATASET_ID}.evaluations\`
       ${evalWhereClause}
       GROUP BY agent_id, agent_name, center, service, channel
@@ -441,9 +458,51 @@ export async function getAgents(filters?: {
     
     const [rows] = await bigquery.query(options);
     
+    // 항목별 이름 매핑
+    const errorItemMap: Record<string, string> = {
+      greeting_errors: '첫인사/끝인사 누락',
+      empathy_errors: '공감표현 누락',
+      apology_errors: '사과표현 누락',
+      additional_inquiry_errors: '추가문의 누락',
+      unkind_errors: '불친절',
+      consult_type_errors: '상담유형 오설정',
+      guide_errors: '가이드 미준수',
+      identity_check_errors: '본인확인 누락',
+      required_search_errors: '필수탐색 누락',
+      wrong_guide_errors: '오안내',
+      process_missing_errors: '전산 처리 누락',
+      process_incomplete_errors: '전산 처리 미흡/정정',
+      system_errors: '전산 조작 미흡/오류',
+      id_mapping_errors: '콜/픽/트립ID 매핑누락&오기재',
+      flag_keyword_errors: '플래그/키워드 누락&오기재',
+      history_errors: '상담이력 기재 미흡',
+    };
+    
     const result: Agent[] = rows.map((row: any) => {
       const attRate = Number(row.attitudeErrorRate) || 0;
       const opsRate = Number(row.opsErrorRate) || 0;
+      const totalEvals = Number(row.totalEvaluations) || 0;
+      
+      // 항목별 오류 개수 수집
+      const errorCounts: Array<{ name: string; count: number; rate: number }> = [];
+      
+      Object.entries(errorItemMap).forEach(([key, name]) => {
+        const count = Number(row[key]) || 0;
+        if (count > 0) {
+          const rate = totalEvals > 0 ? Number((count / totalEvals * 100).toFixed(2)) : 0;
+          errorCounts.push({ name, count, rate });
+        }
+      });
+      
+      // 오류 개수 기준으로 정렬하여 상위 3개 선택
+      const topErrors = errorCounts
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 3)
+        .map(e => ({
+          name: e.name,
+          count: e.count,
+          rate: e.rate,
+        }));
       
       return {
         id: row.id,
@@ -454,10 +513,11 @@ export async function getAgents(filters?: {
         tenureMonths: Number(row.tenureMonths) || 0,
         tenureGroup: row.tenureGroup || '',
         isActive: true, // agents 테이블에 is_active 컬럼이 없으므로 기본값
-        totalEvaluations: Number(row.totalEvaluations) || 0,
+        totalEvaluations: totalEvals,
         attitudeErrorRate: attRate,
         opsErrorRate: opsRate,
         overallErrorRate: Number((attRate + opsRate).toFixed(2)),
+        topErrors: topErrors.length > 0 ? topErrors : undefined,
       };
     });
     
