@@ -264,64 +264,88 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
 
 export interface TrendData {
   date: string;
-  yongsan: number;
-  gwangju: number;
-  overall: number;
+  용산_태도: number;
+  용산_오상담: number;
+  용산_합계: number;
+  광주_태도: number;
+  광주_오상담: number;
+  광주_합계: number;
+  목표: number;
 }
 
 export async function getDailyTrend(days = 14): Promise<{ success: boolean; data?: TrendData[]; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-    
+
     const endDate = new Date();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
-    
+
     const startDateStr = startDate.toISOString().split('T')[0];
     const endDateStr = endDate.toISOString().split('T')[0];
-    
+
     const query = `
       SELECT
         evaluation_date as date,
-        SUM(CASE WHEN center = '용산' THEN attitude_error_count + business_error_count ELSE 0 END) as yongsan_errors,
+        -- 용산 데이터
+        SUM(CASE WHEN center = '용산' THEN attitude_error_count ELSE 0 END) as yongsan_attitude_errors,
+        SUM(CASE WHEN center = '용산' THEN business_error_count ELSE 0 END) as yongsan_business_errors,
         SUM(CASE WHEN center = '용산' THEN 1 ELSE 0 END) as yongsan_count,
-        SUM(CASE WHEN center = '광주' THEN attitude_error_count + business_error_count ELSE 0 END) as gwangju_errors,
-        SUM(CASE WHEN center = '광주' THEN 1 ELSE 0 END) as gwangju_count,
-        SUM(attitude_error_count + business_error_count) as total_errors,
-        COUNT(*) as total_count
+        -- 광주 데이터
+        SUM(CASE WHEN center = '광주' THEN attitude_error_count ELSE 0 END) as gwangju_attitude_errors,
+        SUM(CASE WHEN center = '광주' THEN business_error_count ELSE 0 END) as gwangju_business_errors,
+        SUM(CASE WHEN center = '광주' THEN 1 ELSE 0 END) as gwangju_count
       FROM \`${DATASET_ID}.evaluations\`
       WHERE evaluation_date BETWEEN @startDate AND @endDate
       GROUP BY evaluation_date
       ORDER BY evaluation_date ASC
     `;
-    
+
     const options = {
       query,
       params: { startDate: startDateStr, endDate: endDateStr },
       location: 'asia-northeast3',
     };
-    
+
     const [rows] = await bigquery.query(options);
-    
+
     const result: TrendData[] = rows.map((row: any) => {
-      const yongsanRate = row.yongsan_count > 0
-        ? Number((Number(row.yongsan_errors) / (Number(row.yongsan_count) * 16) * 100).toFixed(2))
+      const yongsanCount = Number(row.yongsan_count) || 0;
+      const gwangjuCount = Number(row.gwangju_count) || 0;
+
+      // 태도 오류율 = (태도오류건수 / (평가건수 * 5)) * 100
+      const yongsanAttitude = yongsanCount > 0
+        ? Number((Number(row.yongsan_attitude_errors) / (yongsanCount * 5) * 100).toFixed(2))
         : 0;
-      const gwangjuRate = row.gwangju_count > 0
-        ? Number((Number(row.gwangju_errors) / (Number(row.gwangju_count) * 16) * 100).toFixed(2))
+      const gwangjuAttitude = gwangjuCount > 0
+        ? Number((Number(row.gwangju_attitude_errors) / (gwangjuCount * 5) * 100).toFixed(2))
         : 0;
-      const overallRate = row.total_count > 0
-        ? Number((Number(row.total_errors) / (Number(row.total_count) * 16) * 100).toFixed(2))
+
+      // 오상담/오처리 오류율 = (업무오류건수 / (평가건수 * 11)) * 100
+      const yongsanBusiness = yongsanCount > 0
+        ? Number((Number(row.yongsan_business_errors) / (yongsanCount * 11) * 100).toFixed(2))
         : 0;
-      
+      const gwangjuBusiness = gwangjuCount > 0
+        ? Number((Number(row.gwangju_business_errors) / (gwangjuCount * 11) * 100).toFixed(2))
+        : 0;
+
+      // 날짜 포맷팅 (MM/DD)
+      const dateValue = row.date.value || row.date;
+      const dateObj = new Date(dateValue);
+      const formattedDate = `${dateObj.getMonth() + 1}/${dateObj.getDate()}`;
+
       return {
-        date: row.date.value || row.date,
-        yongsan: yongsanRate,
-        gwangju: gwangjuRate,
-        overall: overallRate,
+        date: formattedDate,
+        용산_태도: yongsanAttitude,
+        용산_오상담: yongsanBusiness,
+        용산_합계: Number((yongsanAttitude + yongsanBusiness).toFixed(2)),
+        광주_태도: gwangjuAttitude,
+        광주_오상담: gwangjuBusiness,
+        광주_합계: Number((gwangjuAttitude + gwangjuBusiness).toFixed(2)),
+        목표: 3.0,
       };
     });
-    
+
     return { success: true, data: result };
   } catch (error) {
     console.error('[BigQuery] getDailyTrend error:', error);

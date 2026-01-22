@@ -11,7 +11,7 @@ import { DailyErrorTable } from "./daily-error-table"
 import { WeeklyErrorTable } from "./weekly-error-table"
 import { TenureErrorTable } from "./tenure-error-table"
 import { ServiceWeeklyTable } from "./service-weekly-table"
-import { useDashboardData, defaultStats } from "@/lib/use-dashboard-data"
+import { useDashboardData, defaultStats, TrendData } from "@/lib/use-dashboard-data"
 import { generateTrendData } from "@/lib/mock-data"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2 } from "lucide-react"
@@ -39,8 +39,8 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   // 로딩 중이거나 데이터가 없으면 기본값 사용
   const dashboardStats = stats || defaultStats
 
-  // 트렌드 차트 데이터 (현재는 mock 데이터 사용 - 추후 Firebase 연동)
-  const chartTrendData = generateTrendData(14)
+  // 트렌드 차트 데이터 (실제 데이터 사용, 데이터 없으면 mock 사용)
+  const chartTrendData = trendData.length > 0 ? trendData : generateTrendData(14) as unknown as TrendData[]
 
   // 센터 데이터 변환 (CenterComparison 컴포넌트용)
   const centerData = centerStats.length > 0
@@ -122,10 +122,11 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
       {/* 디버깅 정보 (개발 모드) */}
       {isMounted && process.env.NODE_ENV === 'development' && (
         <div className="bg-blue-50 border border-blue-200 px-4 py-2 rounded-md text-xs mb-4">
-          <strong>디버그:</strong> 로딩={loading ? 'true' : 'false'}, 
-          에러={error || '없음'}, 
-          통계={stats ? '있음' : '없음'}, 
-          센터={centerStats.length}개
+          <strong>디버그:</strong> 로딩={loading ? 'true' : 'false'},
+          에러={error || '없음'},
+          통계={stats ? '있음' : '없음'},
+          센터={centerStats.length}개,
+          트렌드={trendData.length}개
         </div>
       )}
 

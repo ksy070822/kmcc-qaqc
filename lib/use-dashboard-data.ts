@@ -32,12 +32,16 @@ export interface CenterStats {
   }>
 }
 
-// 트렌드 데이터 타입
+// 트렌드 데이터 타입 (차트 형식과 일치)
 export interface TrendData {
   date: string
-  yongsan: number
-  gwangju: number
-  overall: number
+  용산_태도: number
+  용산_오상담: number
+  용산_합계: number
+  광주_태도: number
+  광주_오상담: number
+  광주_합계: number
+  목표: number
 }
 
 // 대시보드 데이터 훅
