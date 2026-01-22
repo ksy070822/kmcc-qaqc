@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Sync Sheets] 용산 시트: ${sheetsResult.yonsan.length}행, 광주 시트: ${sheetsResult.gwangju.length}행`);
+    console.log('[Sync Sheets] 용산 시트: ' + sheetsResult.yonsan.length + '행, 광주 시트: ' + sheetsResult.gwangju.length + '행');
 
     // 헤더와 데이터 분리
     const yonsanHeaders = sheetsResult.yonsan[0] || [];
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     const yonsanEvaluations = parseSheetRowsToEvaluations(yonsanHeaders, yonsanRows, '용산');
     const gwangjuEvaluations = parseSheetRowsToEvaluations(gwangjuHeaders, gwangjuRows, '광주');
 
-    console.log(`[Sync Sheets] 파싱 완료: 용산 ${yonsanEvaluations.length}건, 광주 ${gwangjuEvaluations.length}건`);
+    console.log('[Sync Sheets] 파싱 완료: 용산 ' + yonsanEvaluations.length + '건, 광주 ' + gwangjuEvaluations.length + '건');
 
     // BigQuery에서 기존 evaluation_id 조회 (중복 방지)
     const bigquery = getBigQueryClient();
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
         });
 
         existingIds = new Set(rows.map((row: any) => row.evaluation_id));
-        console.log(`[Sync Sheets] 기존 데이터: ${existingIds.size}건`);
+        console.log('[Sync Sheets] 기존 데이터: ' + existingIds.size + '건');
       } catch (error) {
         console.warn('[Sync Sheets] 기존 데이터 조회 실패, 전체 저장 시도:', error);
       }
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       (e) => !existingIds.has(e.evaluationId)
     );
 
-    console.log(`[Sync Sheets] 새 데이터: ${newEvaluations.length}건 (전체: ${allEvaluations.length}건)`);
+    console.log('[Sync Sheets] 새 데이터: ' + newEvaluations.length + '건 (전체: ' + allEvaluations.length + '건)');
 
     if (newEvaluations.length === 0) {
       return NextResponse.json(
@@ -181,10 +181,10 @@ export async function POST(request: NextRequest) {
       const batch = bigqueryRows.slice(i, i + BATCH_SIZE);
       await table.insert(batch);
       savedCount += batch.length;
-      console.log(`[Sync Sheets] 저장 진행: ${savedCount}/${bigqueryRows.length}건`);
+      console.log('[Sync Sheets] 저장 진행: ' + savedCount + '/' + bigqueryRows.length + '건');
     }
 
-    console.log(`[Sync Sheets] ===== 동기화 완료: ${savedCount}건 저장 =====");
+    console.log('[Sync Sheets] ===== 동기화 완료: ' + savedCount + '건 저장 =====');
 
     return NextResponse.json(
       {

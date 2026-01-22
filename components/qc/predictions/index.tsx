@@ -873,7 +873,7 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                             p.mainErrors.slice(0, 2).map((err: any, j: number) => (
                               <Badge key={j} variant="outline" className="text-xs">
                                 {typeof err === 'string' ? err : err.name || '오류'}
-                                {typeof err === 'object' && err.rate !== undefined && ` (${err.rate.toFixed(1)}%)`}
+                                {typeof err === 'object' && err.rate !== undefined && ' (' + err.rate.toFixed(1) + '%)'}
                               </Badge>
                             ))
                           ) : (
@@ -885,6 +885,7 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                   ))}
                   </TableBody>
                   </Table>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
