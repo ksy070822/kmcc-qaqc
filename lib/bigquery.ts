@@ -2272,9 +2272,21 @@ export async function saveGoalToBigQuery(goal: {
     const targetId = goal.id || `${goal.periodType}_${goal.center || 'all'}_${goal.type}_${Date.now()}`;
     
     // type에 따라 적절한 컬럼에 값 설정
-    const targetAttitudeErrorRate = (goal.type === 'attitude' || goal.type === 'total') ? goal.targetRate : null;
-    const targetBusinessErrorRate = (goal.type === 'ops' || goal.type === 'total') ? goal.targetRate : null;
-    const targetOverallErrorRate = goal.type === 'total' ? goal.targetRate : null;
+    // 'total' 타입의 경우: target_overall_error_rate에 저장하거나, 
+    // target_attitude_error_rate와 target_business_error_rate 둘 다에 저장할 수 있음
+    // 현재는 target_overall_error_rate에 저장하도록 설정
+    let targetAttitudeErrorRate: number | null = null;
+    let targetBusinessErrorRate: number | null = null;
+    let targetOverallErrorRate: number | null = null;
+    
+    if (goal.type === 'attitude') {
+      targetAttitudeErrorRate = goal.targetRate;
+    } else if (goal.type === 'ops') {
+      targetBusinessErrorRate = goal.targetRate;
+    } else if (goal.type === 'total') {
+      // 'total' 타입은 target_overall_error_rate에 저장
+      targetOverallErrorRate = goal.targetRate;
+    }
     
     // name에서 service 추출 (선택적)
     // name 형식: "센터 서비스 period_type" 또는 "센터 period_type"
@@ -2296,7 +2308,7 @@ export async function saveGoalToBigQuery(goal: {
     };
     
     if (isUpdate) {
-      // UPDATE 쿼리
+      // UPDATE 쿼리 - NULL 값 처리 개선
       const updateQuery = `
         UPDATE \`${DATASET_ID}.targets\`
         SET
@@ -2313,31 +2325,42 @@ export async function saveGoalToBigQuery(goal: {
         WHERE target_id = @targetId
       `;
       
-      const [result] = await bigquery.query({
-        query: updateQuery,
-        params: {
-          targetId,
-          center: goal.center || null,
-          service: service || null,
-          periodType: goal.periodType,
-          targetAttitudeErrorRate,
-          targetBusinessErrorRate,
-          targetOverallErrorRate,
-          startDate: goal.periodStart,
-          endDate: goal.periodEnd,
-          isActive: goal.isActive,
-        },
-        location: 'asia-northeast3',
-      });
-      
-      return { success: true, saved: 1 };
+      try {
+        const [result] = await bigquery.query({
+          query: updateQuery,
+          params: {
+            targetId,
+            center: goal.center || null,
+            service: service || null,
+            periodType: goal.periodType,
+            targetAttitudeErrorRate: targetAttitudeErrorRate !== null ? targetAttitudeErrorRate : null,
+            targetBusinessErrorRate: targetBusinessErrorRate !== null ? targetBusinessErrorRate : null,
+            targetOverallErrorRate: targetOverallErrorRate !== null ? targetOverallErrorRate : null,
+            startDate: goal.periodStart,
+            endDate: goal.periodEnd,
+            isActive: goal.isActive,
+          },
+          location: 'asia-northeast3',
+        });
+        
+        console.log('[BigQuery] Goal updated successfully:', targetId);
+        return { success: true, saved: 1 };
+      } catch (updateError) {
+        console.error('[BigQuery] Update error details:', updateError);
+        throw updateError;
+      }
     } else {
       // INSERT
       row.created_at = new Date().toISOString();
       
-      await table.insert([row]);
-      
-      return { success: true, saved: 1 };
+      try {
+        await table.insert([row]);
+        console.log('[BigQuery] Goal inserted successfully:', targetId);
+        return { success: true, saved: 1 };
+      } catch (insertError) {
+        console.error('[BigQuery] Insert error details:', insertError);
+        throw insertError;
+      }
     }
   } catch (error) {
     console.error('[BigQuery] saveGoalToBigQuery error:', error);

@@ -49,7 +49,17 @@ export function OverviewSection({
   consultErrorByCenter,
   overallErrorByCenter,
 }: OverviewSectionProps) {
-  const totalWatchlist = watchlistYongsan + watchlistGwangju
+  // 모든 값을 0으로 기본값 설정하여 안전하게 처리
+  const agentsYongsan = totalAgentsYongsan || 0
+  const agentsGwangju = totalAgentsGwangju || 0
+  const evaluations = totalEvaluations || 0
+  const watchlistY = watchlistYongsan || 0
+  const watchlistG = watchlistGwangju || 0
+  const attitudeRate = attitudeErrorRate || 0
+  const consultRate = consultErrorRate || 0
+  const overallRate = overallErrorRate || 0
+  
+  const totalWatchlist = watchlistY + watchlistG
   
   // 센터별 오류율 추출
   const yongsanCenter = centerStats?.find(c => c.name === '용산')
@@ -66,49 +76,49 @@ export function OverviewSection({
     <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-6">
       <StatsCard
         title="총 상담사"
-        value={totalAgentsYongsan + totalAgentsGwangju || 0}
-        subtitle={`용산 ${totalAgentsYongsan || 0}명 / 광주 ${totalAgentsGwangju || 0}명`}
+        value={(agentsYongsan + agentsGwangju) || 0}
+        subtitle={`용산 ${agentsYongsan}명 / 광주 ${agentsGwangju}명`}
       />
-      <StatsCard title="전일 평가건수" value={(totalEvaluations || 0).toLocaleString()} subtitle="전일 기준" />
+      <StatsCard title="전일 평가건수" value={evaluations.toLocaleString()} subtitle="전일 기준" />
       <StatsCard
         title="유의상담사"
         value={totalWatchlist || 0}
-        subtitle={`용산 ${watchlistYongsan || 0}명 / 광주 ${watchlistGwangju || 0}명`}
+        subtitle={`용산 ${watchlistY}명 / 광주 ${watchlistG}명`}
         variant={totalWatchlist > 10 ? "destructive" : totalWatchlist > 5 ? "warning" : "default"}
         onClick={onWatchlistClick}
         clickable
       />
       <StatsCard
         title="상담태도 오류율"
-        value={`${attitudeErrorRate.toFixed(2)}%`}
+        value={`${attitudeRate.toFixed(2)}%`}
         subtitle={`용산 ${yongsanAttitudeRate.toFixed(2)}% / 광주 ${gwangjuAttitudeRate.toFixed(2)}%`}
-        trend={attitudeErrorTrend}
-        variant={attitudeErrorRate > 3 ? "warning" : "success"}
+        trend={attitudeErrorTrend || 0}
+        variant={attitudeRate > 3 ? "warning" : "success"}
         centerBreakdown={attitudeErrorByCenter ? {
-          yongsan: `${attitudeErrorByCenter.yongsan.toFixed(2)}%`,
-          gwangju: `${attitudeErrorByCenter.gwangju.toFixed(2)}%`
+          yongsan: `${(attitudeErrorByCenter.yongsan || 0).toFixed(2)}%`,
+          gwangju: `${(attitudeErrorByCenter.gwangju || 0).toFixed(2)}%`
         } : undefined}
       />
       <StatsCard
         title="오상담/오처리 오류율"
-        value={`${consultErrorRate.toFixed(2)}%`}
+        value={`${consultRate.toFixed(2)}%`}
         subtitle={`용산 ${yongsanBusinessRate.toFixed(2)}% / 광주 ${gwangjuBusinessRate.toFixed(2)}%`}
-        trend={consultErrorTrend}
-        variant={consultErrorRate > 3 ? "warning" : "success"}
+        trend={consultErrorTrend || 0}
+        variant={consultRate > 3 ? "warning" : "success"}
         centerBreakdown={consultErrorByCenter ? {
-          yongsan: `${consultErrorByCenter.yongsan.toFixed(2)}%`,
-          gwangju: `${consultErrorByCenter.gwangju.toFixed(2)}%`
+          yongsan: `${(consultErrorByCenter.yongsan || 0).toFixed(2)}%`,
+          gwangju: `${(consultErrorByCenter.gwangju || 0).toFixed(2)}%`
         } : undefined}
       />
       <StatsCard
         title="전체 오류율"
-        value={`${overallErrorRate.toFixed(2)}%`}
+        value={`${overallRate.toFixed(2)}%`}
         subtitle={`용산 ${yongsanOverallRate.toFixed(2)}% / 광주 ${gwangjuOverallRate.toFixed(2)}%`}
-        trend={overallErrorTrend}
-        variant={overallErrorRate > 5 ? "destructive" : overallErrorRate > 3 ? "warning" : "success"}
+        trend={overallErrorTrend || 0}
+        variant={overallRate > 5 ? "destructive" : overallRate > 3 ? "warning" : "success"}
         centerBreakdown={overallErrorByCenter ? {
-          yongsan: `${overallErrorByCenter.yongsan.toFixed(2)}%`,
-          gwangju: `${overallErrorByCenter.gwangju.toFixed(2)}%`
+          yongsan: `${(overallErrorByCenter.yongsan || 0).toFixed(2)}%`,
+          gwangju: `${(overallErrorByCenter.gwangju || 0).toFixed(2)}%`
         } : undefined}
       />
     </div>
