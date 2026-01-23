@@ -12,7 +12,6 @@ import { WeeklyErrorTable } from "./weekly-error-table"
 import { TenureErrorTable } from "./tenure-error-table"
 import { ServiceWeeklyTable } from "./service-weekly-table"
 import { useDashboardData, defaultStats, TrendData } from "@/lib/use-dashboard-data"
-import { generateTrendData } from "@/lib/mock-data"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2 } from "lucide-react"
 
@@ -95,8 +94,8 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   // 로딩 중이거나 데이터가 없으면 기본값 사용
   const dashboardStats = stats || defaultStats
 
-  // 트렌드 차트 데이터 (실제 데이터 사용, 데이터 없으면 mock 사용)
-  const chartTrendData = trendData.length > 0 ? trendData : generateTrendData(14) as unknown as TrendData[]
+  // 트렌드 차트 데이터 (실제 BigQuery 데이터만 사용)
+  const chartTrendData = trendData
 
   // 센터별 전일대비 trend 계산
   const [centerTrends, setCenterTrends] = useState<Record<string, number>>({})

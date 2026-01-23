@@ -165,11 +165,11 @@ export function AgentAnalysis() {
       if (selectedCenter !== "all" && agent.center !== selectedCenter) return false
       if (selectedChannel !== "all" && !agent.group.includes(selectedChannel === "유선" ? "유선" : "채팅")) return false
       if (selectedServiceGroup !== "all" && !agent.group.includes(selectedServiceGroup)) return false
-      // tenure 필터는 데이터가 없으므로 주석 처리
-      // if (selectedTenure !== "all" && agent.tenure !== selectedTenure) return false
+      // tenure 필터 활성화 (BigQuery에서 tenure 데이터 연동됨)
+      if (selectedTenure !== "all" && agent.tenure !== selectedTenure) return false
       return true
     })
-  }, [agentRows, search, selectedCenter, selectedChannel, selectedServiceGroup])
+  }, [agentRows, search, selectedCenter, selectedChannel, selectedServiceGroup, selectedTenure])
 
   const handleSelectAgent = (agent: any) => {
     setSelectedAgent(agent)

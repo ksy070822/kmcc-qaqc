@@ -8,6 +8,7 @@ import {
   getDailyErrors,
   getWeeklyErrors,
   getItemErrorStats,
+  getTenureStats,
   getAgentDetail,
 } from "@/lib/bigquery"
 
@@ -91,9 +92,18 @@ export async function GET(request: Request) {
         break
 
       case "item-stats":
-      case "tenure-stats":
-        // tenure-stats도 item-stats와 동일하게 처리 (근속기간별 통계는 향후 별도 구현)
         result = await getItemErrorStats({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          startDate,
+          endDate,
+        })
+        break
+
+      case "tenure-stats":
+        // 근속기간별 통계 조회
+        result = await getTenureStats({
           center: searchParams.get("center") || undefined,
           service: searchParams.get("service") || undefined,
           channel: searchParams.get("channel") || undefined,

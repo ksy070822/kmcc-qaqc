@@ -102,11 +102,8 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       queryDate = endDateStr; // 표시용으로 마지막 날짜 사용
       params.queryDate = endDateStr; // 전일 평가건수 조회용
       console.log(`[BigQuery] 최근 30일 범위: ${startDateStr} ~ ${endDateStr} (KST 기준)`);
-    } else {
-      // queryDate가 지정된 경우에도 params.queryDate 설정
-      params.queryDate = queryDate;
     }
-    
+
     console.log(`[BigQuery] getDashboardStats: ${queryDate || 'latest 30 days'}`);
     
     const query = `
@@ -496,7 +493,20 @@ export async function getAgents(filters?: {
       evalWhereClause += ' AND channel = @channel';
       params.channel = filters.channel;
     }
-    
+    if (filters?.tenure && filters.tenure !== 'all') {
+      // tenure 필터: tenure_group 또는 tenure_months 기반 필터링
+      evalWhereClause += ` AND (
+        tenure_group = @tenure
+        OR (tenure_group IS NULL AND (
+          (@tenure = '3개월 미만' AND (tenure_months IS NULL OR tenure_months < 3))
+          OR (@tenure = '3개월 이상' AND tenure_months >= 3 AND tenure_months < 6)
+          OR (@tenure = '6개월 이상' AND tenure_months >= 6 AND tenure_months < 12)
+          OR (@tenure = '12개월 이상' AND tenure_months >= 12)
+        ))
+      )`;
+      params.tenure = filters.tenure;
+    }
+
     const query = `
       SELECT
         agent_id as id,
@@ -504,9 +514,16 @@ export async function getAgents(filters?: {
         center,
         service,
         channel,
-        -- 근속기간: evaluations 테이블에 tenure 컬럼이 없으므로 0으로 설정
-        0 as tenureMonths,
-        '' as tenureGroup,
+        -- 근속기간: tenure_months와 tenure_group 필드 사용
+        MAX(COALESCE(tenure_months, 0)) as tenureMonths,
+        MAX(COALESCE(tenure_group,
+          CASE
+            WHEN tenure_months IS NULL OR tenure_months < 3 THEN '3개월 미만'
+            WHEN tenure_months < 6 THEN '3개월 이상'
+            WHEN tenure_months < 12 THEN '6개월 이상'
+            ELSE '12개월 이상'
+          END
+        )) as tenureGroup,
         COUNT(*) as totalEvaluations,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
         ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
@@ -2527,6 +2544,182 @@ export async function getReportData(
   }
 }
 
+// ============================================
+// 근속기간별 통계 조회
+// ============================================
+
+export interface TenureStats {
+  center: string;
+  service: string;
+  channel: string;
+  tenureGroup: string;
+  items: Record<string, number>;
+  totalEvaluations: number;
+  attitudeErrors: number;
+  businessErrors: number;
+}
+
+export async function getTenureStats(filters?: {
+  center?: string;
+  service?: string;
+  channel?: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ success: boolean; data?: TenureStats[]; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+
+    // 기본값: 최근 30일
+    let startDate = filters?.startDate;
+    let endDate = filters?.endDate;
+    if (!startDate || !endDate) {
+      const now = new Date();
+      endDate = now.toISOString().split('T')[0];
+      const start = new Date(now);
+      start.setDate(start.getDate() - 30);
+      startDate = start.toISOString().split('T')[0];
+    }
+
+    let whereClause = 'WHERE evaluation_date BETWEEN @startDate AND @endDate';
+    const params: any = { startDate, endDate };
+
+    if (filters?.center && filters.center !== 'all') {
+      whereClause += ' AND center = @center';
+      params.center = filters.center;
+    }
+    if (filters?.service && filters.service !== 'all') {
+      whereClause += ' AND service = @service';
+      params.service = filters.service;
+    }
+    if (filters?.channel && filters.channel !== 'all') {
+      whereClause += ' AND channel = @channel';
+      params.channel = filters.channel;
+    }
+
+    const query = `
+      WITH tenure_data AS (
+        SELECT
+          center,
+          service,
+          channel,
+          -- tenure_group이 NULL인 경우 tenure_months로 계산
+          CASE
+            WHEN tenure_group IS NOT NULL THEN tenure_group
+            WHEN tenure_months IS NULL THEN '3개월 미만'
+            WHEN tenure_months < 3 THEN '3개월 미만'
+            WHEN tenure_months < 6 THEN '3개월 이상'
+            WHEN tenure_months < 12 THEN '6개월 이상'
+            ELSE '12개월 이상'
+          END as tenure_group,
+          -- 항목별 오류 카운트
+          SUM(CAST(COALESCE(greeting_error, false) AS INT64)) as att1,
+          SUM(CAST(COALESCE(empathy_error, false) AS INT64)) as att2,
+          SUM(CAST(COALESCE(apology_error, false) AS INT64)) as att3,
+          SUM(CAST(COALESCE(additional_inquiry_error, false) AS INT64)) as att4,
+          SUM(CAST(COALESCE(unkind_error, false) AS INT64)) as att5,
+          SUM(CAST(COALESCE(consult_type_error, false) AS INT64)) as err1,
+          SUM(CAST(COALESCE(guide_error, false) AS INT64)) as err2,
+          SUM(CAST(COALESCE(identity_check_error, false) AS INT64)) as err3,
+          SUM(CAST(COALESCE(required_search_error, false) AS INT64)) as err4,
+          SUM(CAST(COALESCE(wrong_guide_error, false) AS INT64)) as err5,
+          SUM(CAST(COALESCE(process_missing_error, false) AS INT64)) as err6,
+          SUM(CAST(COALESCE(process_incomplete_error, false) AS INT64)) as err7,
+          SUM(CAST(COALESCE(system_error, false) AS INT64)) as err8,
+          SUM(CAST(COALESCE(id_mapping_error, false) AS INT64)) as err9,
+          SUM(CAST(COALESCE(flag_keyword_error, false) AS INT64)) as err10,
+          SUM(CAST(COALESCE(history_error, false) AS INT64)) as err11,
+          SUM(COALESCE(attitude_error_count, 0)) as total_attitude_errors,
+          SUM(COALESCE(business_error_count, 0)) as total_business_errors,
+          COUNT(*) as total_evaluations
+        FROM \`${DATASET_ID}.evaluations\`
+        ${whereClause}
+        GROUP BY center, service, channel, tenure_group, tenure_months
+      )
+      SELECT
+        center,
+        service,
+        channel,
+        tenure_group,
+        SUM(att1) as att1,
+        SUM(att2) as att2,
+        SUM(att3) as att3,
+        SUM(att4) as att4,
+        SUM(att5) as att5,
+        SUM(err1) as err1,
+        SUM(err2) as err2,
+        SUM(err3) as err3,
+        SUM(err4) as err4,
+        SUM(err5) as err5,
+        SUM(err6) as err6,
+        SUM(err7) as err7,
+        SUM(err8) as err8,
+        SUM(err9) as err9,
+        SUM(err10) as err10,
+        SUM(err11) as err11,
+        SUM(total_attitude_errors) as attitude_errors,
+        SUM(total_business_errors) as business_errors,
+        SUM(total_evaluations) as total_evaluations
+      FROM tenure_data
+      GROUP BY center, service, channel, tenure_group
+      ORDER BY center, service, channel,
+        CASE tenure_group
+          WHEN '3개월 미만' THEN 1
+          WHEN '3개월 이상' THEN 2
+          WHEN '6개월 이상' THEN 3
+          WHEN '12개월 이상' THEN 4
+          ELSE 5
+        END
+    `;
+
+    console.log('[BigQuery] getTenureStats query:', query);
+    console.log('[BigQuery] getTenureStats params:', params);
+
+    const [rows] = await bigquery.query({
+      query,
+      params,
+      location: 'asia-northeast3',
+    });
+
+    console.log('[BigQuery] getTenureStats rows:', rows.length);
+
+    const data: TenureStats[] = rows.map((row: any) => ({
+      center: row.center || '',
+      service: row.service || '',
+      channel: row.channel || '',
+      tenureGroup: row.tenure_group || '3개월 미만',
+      items: {
+        att1: Number(row.att1) || 0,
+        att2: Number(row.att2) || 0,
+        att3: Number(row.att3) || 0,
+        att4: Number(row.att4) || 0,
+        att5: Number(row.att5) || 0,
+        err1: Number(row.err1) || 0,
+        err2: Number(row.err2) || 0,
+        err3: Number(row.err3) || 0,
+        err4: Number(row.err4) || 0,
+        err5: Number(row.err5) || 0,
+        err6: Number(row.err6) || 0,
+        err7: Number(row.err7) || 0,
+        err8: Number(row.err8) || 0,
+        err9: Number(row.err9) || 0,
+        err10: Number(row.err10) || 0,
+        err11: Number(row.err11) || 0,
+      },
+      totalEvaluations: Number(row.total_evaluations) || 0,
+      attitudeErrors: Number(row.attitude_errors) || 0,
+      businessErrors: Number(row.business_errors) || 0,
+    }));
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('[BigQuery] getTenureStats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export default {
   getDashboardStats,
   getCenterStats,
@@ -2538,6 +2731,7 @@ export default {
   getDailyErrors,
   getWeeklyErrors,
   getItemErrorStats,
+  getTenureStats,
   saveEvaluationsToBigQuery,
   checkAgentExists,
   getAgentAnalysisData,
