@@ -8,6 +8,8 @@ export interface WatchListAgent {
   center: string
   service: string
   channel: string
+  tenureMonths: number
+  tenureGroup: string
   attitudeRate: number
   opsRate: number
   totalRate: number

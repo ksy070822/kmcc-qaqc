@@ -280,49 +280,6 @@ const generateGroupPredictions = (): GroupPrediction[] => {
   return predictions
 }
 
-// 목업 상담사별 예측 데이터
-const generateAgentPredictions = (): AgentPrediction[] => {
-  const agents = generateAgents()
-  const predictions: AgentPrediction[] = []
-  
-  agents.slice(0, 50).forEach((agent) => {
-    const attRate = Number((Math.random() * 8 + 1).toFixed(2))
-    const procRate = Number((Math.random() * 10 + 1).toFixed(2))
-    const totalRate = Number(((attRate + procRate) / 2).toFixed(2))
-    
-    const weeklyChange = Math.random() * 2 - 1
-    const trend = weeklyChange < -0.3 ? 'improving' : weeklyChange > 0.3 ? 'worsening' : 'stable'
-    
-    const watchReasons = checkAgentWatchConditions(attRate, procRate)
-    const riskLevel = watchReasons.length > 0 ? 
-      (attRate > 10 || procRate > 12 ? 'critical' : 'high') :
-      (totalRate > 5 ? 'medium' : 'low')
-    
-    const mainErrors = ['공감표현 누락', '상담유형 오설정', '가이드 미준수', '본인확인 누락']
-      .sort(() => Math.random() - 0.5)
-      .slice(0, Math.floor(Math.random() * 3) + 1)
-    
-    predictions.push({
-      agentId: agent.id,
-      agentName: agent.name,
-      center: agent.center,
-      group: agent.group,
-      attitudeRate: attRate,
-      processRate: procRate,
-      totalRate,
-      trend: trend as 'improving' | 'stable' | 'worsening',
-      riskLevel: riskLevel as 'low' | 'medium' | 'high' | 'critical',
-      watchListReason: watchReasons.length > 0 ? watchReasons : undefined,
-      mainErrors,
-    })
-  })
-  
-  return predictions.sort((a, b) => {
-    const riskOrder = { critical: 0, high: 1, medium: 2, low: 3 }
-    return riskOrder[a.riskLevel] - riskOrder[b.riskLevel] || b.totalRate - a.totalRate
-  })
-}
-
 // 주차별 추이 차트 데이터
 // API 데이터가 없을 때 빈 배열 반환 (mock 데이터 사용 안 함)
 const generateWeeklyTrendData = () => {
