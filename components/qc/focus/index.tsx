@@ -31,8 +31,8 @@ export function FocusManagement() {
   // WatchlistAgent 형식으로 변환
   const watchlistAgents: WatchlistAgent[] = useMemo(() => {
     return (watchlistData || []).map((agent) => {
-      // 근속기간 정보가 없으면 빈 문자열로 설정 (테이블에서 "-"로 표시되지 않도록)
-      const tenure = "" // TODO: 실제 tenure 정보를 BigQuery에서 가져와야 함
+      // 근속기간 정보 (BigQuery에서 가져옴)
+      const tenure = agent.tenureGroup || ""
       
       // 주요이슈: topErrors 배열에서 첫 번째 항목 사용, 없으면 reason 사용
       const mainIssue = agent.topErrors && agent.topErrors.length > 0 

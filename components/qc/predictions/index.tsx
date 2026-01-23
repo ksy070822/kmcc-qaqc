@@ -324,13 +324,9 @@ const generateAgentPredictions = (): AgentPrediction[] => {
 }
 
 // 주차별 추이 차트 데이터
+// API 데이터가 없을 때 빈 배열 반환 (mock 데이터 사용 안 함)
 const generateWeeklyTrendData = () => {
-  return [
-    { week: 'W1', 용산_태도: 2.8, 용산_오상담: 3.5, 광주_태도: 2.1, 광주_오상담: 1.8, 목표_태도: 3.0, 목표_오상담: 3.0 },
-    { week: 'W2', 용산_태도: 3.2, 용산_오상담: 4.1, 광주_태도: 2.4, 광주_오상담: 1.5, 목표_태도: 3.0, 목표_오상담: 3.0 },
-    { week: 'W3', 용산_태도: 2.9, 용산_오상담: 3.8, 광주_태도: 2.2, 광주_오상담: 1.6, 목표_태도: 3.0, 목표_오상담: 3.0 },
-    { week: 'W4 (예측)', 용산_태도: 2.7, 용산_오상담: 3.5, 광주_태도: 2.0, 광주_오상담: 1.7, 목표_태도: 3.0, 목표_오상담: 3.0, isPredicted: true },
-  ]
+  return []
 }
 
 export function Predictions({ onNavigateToFocus }: PredictionsProps) {

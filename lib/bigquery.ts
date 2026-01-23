@@ -684,6 +684,8 @@ export interface WatchListItem {
   center: string;
   service: string;
   channel: string;
+  tenureMonths: number;
+  tenureGroup: string;
   attitudeRate: number;
   opsRate: number;
   totalRate: number;
@@ -735,6 +737,15 @@ export async function getWatchList(filters?: {
           center,
           service,
           channel,
+          MAX(COALESCE(tenure_months, 0)) as tenure_months,
+          MAX(COALESCE(tenure_group,
+            CASE
+              WHEN tenure_months IS NULL OR tenure_months < 3 THEN '3개월 미만'
+              WHEN tenure_months < 6 THEN '3개월 이상'
+              WHEN tenure_months < 12 THEN '6개월 이상'
+              ELSE '12개월 이상'
+            END
+          )) as tenure_group,
           COUNT(*) as evaluation_count,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors,
@@ -783,6 +794,8 @@ export async function getWatchList(filters?: {
         c.center,
         c.service,
         c.channel,
+        c.tenure_months,
+        c.tenure_group,
         c.evaluation_count,
         c.attitude_errors,
         c.ops_errors,
@@ -874,6 +887,8 @@ export async function getWatchList(filters?: {
         center: row.center,
         service: row.service,
         channel: row.channel,
+        tenureMonths: Number(row.tenure_months) || 0,
+        tenureGroup: row.tenure_group || '3개월 미만',
         attitudeRate: attRate,
         opsRate: opsRate,
         totalRate: totalRate,
