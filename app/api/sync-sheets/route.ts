@@ -143,24 +143,24 @@ export async function POST(request: NextRequest) {
         tenure_group: evalData.tenureMonths
           ? getTenureGroup(evalData.tenureMonths)
           : null,
-        // 상담태도 오류 항목 (개별 필드)
-        greeting_error: false, // TODO: 개별 항목 파싱 필요
-        empathy_error: false,
-        apology_error: false,
-        additional_inquiry_error: false,
-        unkind_error: false,
+        // 상담태도 오류 항목 (개별 필드 - Google Sheets에서 파싱)
+        greeting_error: evalData.greetingError || false,
+        empathy_error: evalData.empathyError || false,
+        apology_error: evalData.apologyError || false,
+        additional_inquiry_error: evalData.additionalInquiryError || false,
+        unkind_error: evalData.unkindError || false,
         // 오상담/오처리 오류 항목
-        consult_type_error: false,
-        guide_error: false,
-        identity_check_error: false,
-        required_search_error: false,
-        wrong_guide_error: false,
-        process_missing_error: false,
-        process_incomplete_error: false,
-        system_error: false,
-        id_mapping_error: false,
-        flag_keyword_error: false,
-        history_error: false,
+        consult_type_error: evalData.consultTypeError || false,
+        guide_error: evalData.guideError || false,
+        identity_check_error: evalData.identityCheckError || false,
+        required_search_error: evalData.requiredSearchError || false,
+        wrong_guide_error: evalData.wrongGuideError || false,
+        process_missing_error: evalData.processMissingError || false,
+        process_incomplete_error: evalData.processIncompleteError || false,
+        system_error: evalData.systemError || false,
+        id_mapping_error: evalData.idMappingError || false,
+        flag_keyword_error: evalData.flagKeywordError || false,
+        history_error: evalData.historyError || false,
         // 집계 필드
         attitude_error_count: evalData.attitudeErrors,
         business_error_count: evalData.businessErrors,
@@ -228,12 +228,11 @@ export async function GET() {
 }
 
 /**
- * 근속기간 그룹 계산
+ * 근속기간 그룹 계산 (다른 코드와 일관성 유지)
  */
 function getTenureGroup(tenureMonths: number): string {
-  if (tenureMonths < 3) return '신입';
-  if (tenureMonths < 6) return '초급';
-  if (tenureMonths < 12) return '중급';
-  if (tenureMonths < 24) return '고급';
-  return '시니어';
+  if (tenureMonths < 3) return '3개월 미만';
+  if (tenureMonths < 6) return '3개월 이상';
+  if (tenureMonths < 12) return '6개월 이상';
+  return '12개월 이상';
 }

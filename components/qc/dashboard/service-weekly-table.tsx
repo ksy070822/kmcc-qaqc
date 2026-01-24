@@ -52,37 +52,64 @@ function generateServiceWeeklyData(): Record<string, Record<string, Record<strin
 export function ServiceWeeklyTable({ selectedCenter, selectedService, selectedChannel }: ServiceWeeklyTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
   const [serviceData, setServiceData] = useState<Record<string, Record<string, Record<string, { count: number; rate: number }>>>>(generateServiceWeeklyData())
-  const [loading, setLoading] = useState(false)
-  
-  // TODO: BigQuery에서 실제 데이터 조회 (향후 구현)
-  // useEffect(() => {
-  //   const fetchData = async () => {
-  //     setLoading(true)
-  //     try {
-  //       const month = new Date().toISOString().slice(0, 7) // YYYY-MM
-  //       const params = new URLSearchParams()
-  //       params.append("type", "service-weekly")
-  //       params.append("month", month)
-  //       if (selectedCenter !== "all") params.append("center", selectedCenter)
-  //       if (selectedService !== "all") params.append("service", selectedService)
-  //       if (selectedChannel !== "all") params.append("channel", selectedChannel)
-  //       
-  //       const response = await fetch(`/api/data?${params.toString()}`)
-  //       const result = await response.json()
-  //       
-  //       if (result.success && result.data) {
-  //         // 데이터 변환 로직
-  //         setServiceData(result.data)
-  //       }
-  //     } catch (err) {
-  //       console.error('Failed to fetch service weekly data:', err)
-  //     } finally {
-  //       setLoading(false)
-  //     }
-  //   }
-  //   
-  //   fetchData()
-  // }, [selectedCenter, selectedService, selectedChannel])
+  const [loading, setLoading] = useState(true)
+
+  // BigQuery에서 실제 데이터 조회
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        const params = new URLSearchParams()
+        params.append("type", "weekly-errors")
+        if (selectedCenter !== "all") params.append("center", selectedCenter)
+        if (selectedService !== "all") params.append("service", selectedService)
+        if (selectedChannel !== "all") params.append("channel", selectedChannel)
+
+        const response = await fetch(`/api/data?${params.toString()}`)
+        const result = await response.json()
+
+        if (result.success && result.data && Array.isArray(result.data)) {
+          // 데이터 변환: API 응답을 컴포넌트 형식으로 변환
+          const newServiceData = generateServiceWeeklyData()
+          const weekMap: Record<string, string> = {}
+
+          // 주차별로 데이터 그룹화
+          result.data.forEach((item: any) => {
+            const weekKey = item.week || ''
+            if (!weekMap[weekKey]) {
+              const weekIdx = Object.keys(weekMap).length
+              if (weekIdx < 4) {
+                weekMap[weekKey] = `w${weekIdx + 1}`
+              }
+            }
+          })
+
+          // 데이터 채우기
+          result.data.forEach((item: any) => {
+            const weekId = weekMap[item.week]
+            if (!weekId) return
+
+            Object.keys(newServiceData).forEach(key => {
+              if (newServiceData[key][item.itemId] && newServiceData[key][item.itemId][weekId]) {
+                newServiceData[key][item.itemId][weekId] = {
+                  count: item.errorCount || 0,
+                  rate: item.errorRate || 0
+                }
+              }
+            })
+          })
+
+          setServiceData(newServiceData)
+        }
+      } catch (err) {
+        console.error('Failed to fetch service weekly data:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchData()
+  }, [selectedCenter, selectedService, selectedChannel])
 
   // 선택된 서비스-채널 조합
   const selectedKey =
