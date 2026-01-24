@@ -62,14 +62,42 @@ export interface DashboardStats {
 export async function getDashboardStats(targetDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-    
+
     // 날짜가 없으면 전일(어제) 날짜 사용 (전일 평가건수 표시용)
     let queryDate = targetDate;
     let dateFilter = '';
     let params: any = {};
-    
+
+    // 먼저 데이터가 있는 가장 최근 날짜를 확인
+    const latestDateQuery = `
+      SELECT MAX(evaluation_date) as latest_date
+      FROM \`${DATASET_ID}.evaluations\`
+    `;
+    const [latestRows] = await bigquery.query({ query: latestDateQuery, location: 'asia-northeast3' });
+    const latestDate = latestRows[0]?.latest_date;
+    console.log(`[BigQuery] Latest evaluation date in DB: ${latestDate}`);
+
     if (queryDate) {
-      // 특정 날짜 지정 시 해당 날짜만 조회
+      // 특정 날짜 지정 시, 해당 날짜에 데이터가 있는지 확인
+      const checkQuery = `
+        SELECT COUNT(*) as cnt
+        FROM \`${DATASET_ID}.evaluations\`
+        WHERE evaluation_date = @queryDate
+      `;
+      const [checkRows] = await bigquery.query({
+        query: checkQuery,
+        params: { queryDate },
+        location: 'asia-northeast3'
+      });
+      const dataCount = Number(checkRows[0]?.cnt) || 0;
+      console.log(`[BigQuery] Data count for ${queryDate}: ${dataCount}`);
+
+      if (dataCount === 0 && latestDate) {
+        // 선택한 날짜에 데이터가 없으면 가장 최근 날짜로 폴백
+        console.log(`[BigQuery] No data for ${queryDate}, falling back to ${latestDate}`);
+        queryDate = latestDate.value || latestDate;
+      }
+
       dateFilter = 'WHERE evaluation_date = @queryDate';
       params.queryDate = queryDate;
     } else {
