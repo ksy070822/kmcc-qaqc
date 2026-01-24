@@ -16,8 +16,12 @@ import { cn } from "@/lib/utils"
 export default function QCManagementApp() {
   const [currentTab, setCurrentTab] = useState("dashboard")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0])
-  const [searchDate, setSearchDate] = useState(new Date().toISOString().split("T")[0])
+  // 기본값을 전일(어제)로 설정 - 오늘은 평가 진행 중이므로 어제 결과를 보여줌
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().split("T")[0]
+  const [selectedDate, setSelectedDate] = useState(yesterdayStr)
+  const [searchDate, setSearchDate] = useState(yesterdayStr)
   const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString("ko-KR"))
 
   const handleRefresh = useCallback(() => {

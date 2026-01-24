@@ -62,14 +62,42 @@ export interface DashboardStats {
 export async function getDashboardStats(targetDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-    
+
     // 날짜가 없으면 전일(어제) 날짜 사용 (전일 평가건수 표시용)
     let queryDate = targetDate;
     let dateFilter = '';
     let params: any = {};
-    
+
+    // 먼저 데이터가 있는 가장 최근 날짜를 확인
+    const latestDateQuery = `
+      SELECT MAX(evaluation_date) as latest_date
+      FROM \`${DATASET_ID}.evaluations\`
+    `;
+    const [latestRows] = await bigquery.query({ query: latestDateQuery, location: 'asia-northeast3' });
+    const latestDate = latestRows[0]?.latest_date;
+    console.log(`[BigQuery] Latest evaluation date in DB: ${latestDate}`);
+
     if (queryDate) {
-      // 특정 날짜 지정 시 해당 날짜만 조회
+      // 특정 날짜 지정 시, 해당 날짜에 데이터가 있는지 확인
+      const checkQuery = `
+        SELECT COUNT(*) as cnt
+        FROM \`${DATASET_ID}.evaluations\`
+        WHERE evaluation_date = @queryDate
+      `;
+      const [checkRows] = await bigquery.query({
+        query: checkQuery,
+        params: { queryDate },
+        location: 'asia-northeast3'
+      });
+      const dataCount = Number(checkRows[0]?.cnt) || 0;
+      console.log(`[BigQuery] Data count for ${queryDate}: ${dataCount}`);
+
+      if (dataCount === 0 && latestDate) {
+        // 선택한 날짜에 데이터가 없으면 가장 최근 날짜로 폴백
+        console.log(`[BigQuery] No data for ${queryDate}, falling back to ${latestDate}`);
+        queryDate = latestDate.value || latestDate;
+      }
+
       dateFilter = 'WHERE evaluation_date = @queryDate';
       params.queryDate = queryDate;
     } else {
@@ -493,11 +521,11 @@ export async function getAgents(filters?: {
       evalWhereClause += ' AND channel = @channel';
       params.channel = filters.channel;
     }
-    if (filters?.tenure && filters.tenure !== 'all') {
-      // tenure 필터: tenure_group 기반 필터링
-      evalWhereClause += ` AND (tenure_group = @tenure OR (tenure_group IS NULL AND @tenure = '3개월 미만'))`;
-      params.tenure = filters.tenure;
-    }
+    // tenure 필터는 현재 BigQuery 테이블에 tenure_group 컬럼이 없으므로 비활성화
+    // if (filters?.tenure && filters.tenure !== 'all') {
+    //   evalWhereClause += ` AND tenure_group = @tenure`;
+    //   params.tenure = filters.tenure;
+    // }
 
     const query = `
       SELECT
@@ -506,9 +534,9 @@ export async function getAgents(filters?: {
         center,
         service,
         channel,
-        -- 근속기간: tenure_group 필드 사용
+        -- 근속기간: BigQuery 테이블에 컬럼 없음, 기본값 사용
         0 as tenureMonths,
-        MAX(COALESCE(tenure_group, '3개월 미만')) as tenureGroup,
+        '3개월 미만' as tenureGroup,
         COUNT(*) as totalEvaluations,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
         ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
@@ -723,7 +751,7 @@ export async function getWatchList(filters?: {
           service,
           channel,
           0 as tenure_months,
-          MAX(COALESCE(tenure_group, '3개월 미만')) as tenure_group,
+          '3개월 미만' as tenure_group,
           COUNT(*) as evaluation_count,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors,
@@ -2421,6 +2449,18 @@ export async function saveGoalToBigQuery(goal: {
             endDate: goal.periodEnd,
             isActive: goal.isActive,
           },
+          types: {
+            targetId: 'STRING',
+            center: 'STRING',
+            service: 'STRING',
+            periodType: 'STRING',
+            targetAttitudeErrorRate: 'FLOAT64',
+            targetBusinessErrorRate: 'FLOAT64',
+            targetOverallErrorRate: 'FLOAT64',
+            startDate: 'STRING',
+            endDate: 'STRING',
+            isActive: 'BOOL',
+          },
           location: 'asia-northeast3',
         });
         
@@ -2590,71 +2630,34 @@ export async function getTenureStats(filters?: {
     }
 
     const query = `
-      WITH tenure_data AS (
-        SELECT
-          center,
-          service,
-          channel,
-          -- tenure_group 사용 (NULL인 경우 기본값)
-          COALESCE(tenure_group, '3개월 미만') as tenure_group,
-          -- 항목별 오류 카운트
-          SUM(CAST(COALESCE(greeting_error, false) AS INT64)) as att1,
-          SUM(CAST(COALESCE(empathy_error, false) AS INT64)) as att2,
-          SUM(CAST(COALESCE(apology_error, false) AS INT64)) as att3,
-          SUM(CAST(COALESCE(additional_inquiry_error, false) AS INT64)) as att4,
-          SUM(CAST(COALESCE(unkind_error, false) AS INT64)) as att5,
-          SUM(CAST(COALESCE(consult_type_error, false) AS INT64)) as err1,
-          SUM(CAST(COALESCE(guide_error, false) AS INT64)) as err2,
-          SUM(CAST(COALESCE(identity_check_error, false) AS INT64)) as err3,
-          SUM(CAST(COALESCE(required_search_error, false) AS INT64)) as err4,
-          SUM(CAST(COALESCE(wrong_guide_error, false) AS INT64)) as err5,
-          SUM(CAST(COALESCE(process_missing_error, false) AS INT64)) as err6,
-          SUM(CAST(COALESCE(process_incomplete_error, false) AS INT64)) as err7,
-          SUM(CAST(COALESCE(system_error, false) AS INT64)) as err8,
-          SUM(CAST(COALESCE(id_mapping_error, false) AS INT64)) as err9,
-          SUM(CAST(COALESCE(flag_keyword_error, false) AS INT64)) as err10,
-          SUM(CAST(COALESCE(history_error, false) AS INT64)) as err11,
-          SUM(COALESCE(attitude_error_count, 0)) as total_attitude_errors,
-          SUM(COALESCE(business_error_count, 0)) as total_business_errors,
-          COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
-        ${whereClause}
-        GROUP BY center, service, channel, tenure_group
-      )
       SELECT
         center,
         service,
         channel,
-        tenure_group,
-        SUM(att1) as att1,
-        SUM(att2) as att2,
-        SUM(att3) as att3,
-        SUM(att4) as att4,
-        SUM(att5) as att5,
-        SUM(err1) as err1,
-        SUM(err2) as err2,
-        SUM(err3) as err3,
-        SUM(err4) as err4,
-        SUM(err5) as err5,
-        SUM(err6) as err6,
-        SUM(err7) as err7,
-        SUM(err8) as err8,
-        SUM(err9) as err9,
-        SUM(err10) as err10,
-        SUM(err11) as err11,
-        SUM(total_attitude_errors) as attitude_errors,
-        SUM(total_business_errors) as business_errors,
-        SUM(total_evaluations) as total_evaluations
-      FROM tenure_data
-      GROUP BY center, service, channel, tenure_group
-      ORDER BY center, service, channel,
-        CASE tenure_group
-          WHEN '3개월 미만' THEN 1
-          WHEN '3개월 이상' THEN 2
-          WHEN '6개월 이상' THEN 3
-          WHEN '12개월 이상' THEN 4
-          ELSE 5
-        END
+        '3개월 미만' as tenure_group,
+        SUM(CAST(COALESCE(greeting_error, false) AS INT64)) as att1,
+        SUM(CAST(COALESCE(empathy_error, false) AS INT64)) as att2,
+        SUM(CAST(COALESCE(apology_error, false) AS INT64)) as att3,
+        SUM(CAST(COALESCE(additional_inquiry_error, false) AS INT64)) as att4,
+        SUM(CAST(COALESCE(unkind_error, false) AS INT64)) as att5,
+        SUM(CAST(COALESCE(consult_type_error, false) AS INT64)) as err1,
+        SUM(CAST(COALESCE(guide_error, false) AS INT64)) as err2,
+        SUM(CAST(COALESCE(identity_check_error, false) AS INT64)) as err3,
+        SUM(CAST(COALESCE(required_search_error, false) AS INT64)) as err4,
+        SUM(CAST(COALESCE(wrong_guide_error, false) AS INT64)) as err5,
+        SUM(CAST(COALESCE(process_missing_error, false) AS INT64)) as err6,
+        SUM(CAST(COALESCE(process_incomplete_error, false) AS INT64)) as err7,
+        SUM(CAST(COALESCE(system_error, false) AS INT64)) as err8,
+        SUM(CAST(COALESCE(id_mapping_error, false) AS INT64)) as err9,
+        SUM(CAST(COALESCE(flag_keyword_error, false) AS INT64)) as err10,
+        SUM(CAST(COALESCE(history_error, false) AS INT64)) as err11,
+        SUM(COALESCE(attitude_error_count, 0)) as attitude_errors,
+        SUM(COALESCE(business_error_count, 0)) as business_errors,
+        COUNT(*) as total_evaluations
+      FROM \`${DATASET_ID}.evaluations\`
+      ${whereClause}
+      GROUP BY center, service, channel
+      ORDER BY center, service, channel
     `;
 
     console.log('[BigQuery] getTenureStats query:', query);

@@ -15,11 +15,21 @@ interface HeaderProps {
 
 export function Header({ selectedDate, onDateChange, onRefresh, onSearch, lastUpdated }: HeaderProps) {
   const today = new Date().toISOString().split("T")[0]
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = yesterday.toISOString().split("T")[0]
+
   const dates = Array.from({ length: 7 }, (_, i) => {
     const date = new Date()
     date.setDate(date.getDate() - i)
     return date.toISOString().split("T")[0]
   })
+
+  const getDateLabel = (date: string) => {
+    if (date === today) return `오늘 (${date})`
+    if (date === yesterdayStr) return `전일 (${date})`
+    return date
+  }
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-border bg-card px-6 shadow-sm">
@@ -32,7 +42,7 @@ export function Header({ selectedDate, onDateChange, onRefresh, onSearch, lastUp
           <SelectContent>
             {dates.map((date) => (
               <SelectItem key={date} value={date}>
-                {date === today ? `오늘 (${date})` : date}
+                {getDateLabel(date)}
               </SelectItem>
             ))}
           </SelectContent>

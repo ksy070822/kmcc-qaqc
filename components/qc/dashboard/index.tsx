@@ -45,33 +45,41 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   useEffect(() => {
     const calculateTrends = async () => {
       if (!stats) return
-      
+
       try {
-        // 전일 날짜 계산
+        // 직전 영업일 찾기 (데이터가 있는 날, 최대 7일 전까지 검색)
         const currentDate = new Date(selectedDate || new Date().toISOString().split('T')[0])
-        const previousDate = new Date(currentDate)
-        previousDate.setDate(previousDate.getDate() - 1)
-        const previousDateStr = previousDate.toISOString().split('T')[0]
-        
-        // 전일 데이터 조회
-        const response = await fetch(`/api/data?type=dashboard&date=${previousDateStr}`)
-        const result = await response.json()
-        
-        if (result.success && result.data) {
-          const previousStats = result.data
-          
-          // 전일 대비 변화율 계산 (percentage point)
+        let previousStats = null
+
+        for (let i = 1; i <= 7; i++) {
+          const checkDate = new Date(currentDate)
+          checkDate.setDate(checkDate.getDate() - i)
+          const checkDateStr = checkDate.toISOString().split('T')[0]
+
+          const response = await fetch(`/api/data?type=dashboard&date=${checkDateStr}`)
+          const result = await response.json()
+
+          // 데이터가 있는 날을 찾으면 (평가건수 > 0)
+          if (result.success && result.data && result.data.totalEvaluations > 0) {
+            previousStats = result.data
+            console.log(`[Dashboard] 직전 영업일 발견: ${checkDateStr}, 평가건수: ${result.data.totalEvaluations}`)
+            break
+          }
+        }
+
+        if (previousStats) {
+          // 직전 영업일 대비 변화율 계산 (percentage point)
           const attitudeTrend = Number((stats.attitudeErrorRate - previousStats.attitudeErrorRate).toFixed(2))
           const consultTrend = Number((stats.businessErrorRate - previousStats.businessErrorRate).toFixed(2))
           const overallTrend = Number((stats.overallErrorRate - previousStats.overallErrorRate).toFixed(2))
-          
+
           setTrends({
             attitudeTrend,
             consultTrend,
             overallTrend,
           })
         } else {
-          // 전일 데이터가 없으면 0으로 설정
+          // 직전 영업일 데이터가 없으면 0으로 설정
           setTrends({
             attitudeTrend: 0,
             consultTrend: 0,
@@ -87,7 +95,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
         })
       }
     }
-    
+
     calculateTrends()
   }, [stats, selectedDate])
 
