@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
 
     // Google Sheets에서 데이터 읽기
     const sheetsResult = await readYonsanGwangjuSheets(SPREADSHEET_ID);
-    
+
     if (!sheetsResult.success) {
       finishSync('sync', false, { error: sheetsResult.error });
       return NextResponse.json(
@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     // 헤더와 데이터 분리
     const yonsanHeaders = sheetsResult.yonsan[0] || [];
     const yonsanRows = sheetsResult.yonsan.slice(1);
-    
+
     const gwangjuHeaders = sheetsResult.gwangju[0] || [];
     const gwangjuRows = sheetsResult.gwangju.slice(1);
 
@@ -134,28 +134,32 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Group construction (service + channel) needed for required 'group' field
+      const groupValue = `${evalData.service || ''} ${evalData.channel || ''}`.trim();
+
       return {
         evaluation_id: evalData.evaluationId,
         evaluation_date: evalData.date,
-        consult_date: consultDate,
-        consult_id: evalData.consultId || null,
-        evaluation_round: null,
         center: evalData.center,
-        service: evalData.service || '',
-        channel: evalData.channel || 'unknown',
         agent_id: evalData.agentId,
         agent_name: evalData.agentName,
-        hire_date: evalData.hireDate || null,
-        tenure_months: evalData.tenureMonths || null,
-        tenure_group: evalData.tenureMonths
-          ? getTenureGroup(evalData.tenureMonths)
-          : null,
-        // 상담태도 오류 항목 (개별 필드 - Google Sheets에서 파싱)
+        service: evalData.service || '',
+        channel: evalData.channel || 'unknown',
+        group: groupValue || 'unknown', // REQUIRED field
+
+        consultation_id: evalData.consultId || null,
+        consultation_datetime: consultDate ? new Date(consultDate).toISOString() : null,
+        evaluation_round: null,
+
+        // No hire_date, tenure_months, tenure_group in schema
+
+        // 상담태도 오류 항목
         greeting_error: evalData.greetingError || false,
         empathy_error: evalData.empathyError || false,
         apology_error: evalData.apologyError || false,
         additional_inquiry_error: evalData.additionalInquiryError || false,
         unkind_error: evalData.unkindError || false,
+
         // 오상담/오처리 오류 항목
         consult_type_error: evalData.consultTypeError || false,
         guide_error: evalData.guideError || false,
@@ -168,10 +172,12 @@ export async function POST(request: NextRequest) {
         id_mapping_error: evalData.idMappingError || false,
         flag_keyword_error: evalData.flagKeywordError || false,
         history_error: evalData.historyError || false,
+
         // 집계 필드
         attitude_error_count: evalData.attitudeErrors,
         business_error_count: evalData.businessErrors,
         total_error_count: evalData.totalErrors,
+
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       };
