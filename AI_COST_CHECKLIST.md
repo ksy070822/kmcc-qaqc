@@ -33,7 +33,7 @@ gcloud run services update qc-dashboard \
 
 ### 2. GCP Budget Alert 설정 (권장)
 1. **Cloud Console 접속**
-   - https://console.cloud.google.com/billing/budgets?project=splyquizkm
+   - https://console.cloud.google.com/billing/budgets?project=csopp-25f2
 
 2. **예산 생성**
    - 월별 예산: 100,000원 (또는 적절한 금액)
@@ -70,13 +70,13 @@ gcloud run services update qc-dashboard \
 
 ### 현재 비용 확인
 1. **Billing Dashboard**
-   - https://console.cloud.google.com/billing?project=splyquizkm
+   - https://console.cloud.google.com/billing?project=csopp-25f2
 
 2. **API 사용량**
-   - https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas?project=splyquizkm
+   - https://console.cloud.google.com/apis/api/generativelanguage.googleapis.com/quotas?project=csopp-25f2
 
 3. **Cloud Monitoring**
-   - https://console.cloud.google.com/monitoring?project=splyquizkm
+   - https://console.cloud.google.com/monitoring?project=csopp-25f2
 
 ### 비용 추이 확인
 - 일일/월별 사용량 추이 확인

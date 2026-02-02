@@ -12,7 +12,7 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 REGION="asia-northeast3"
 TRIGGER_NAME="qc-dashboard-auto-deploy"
 REPO_OWNER="may070822"

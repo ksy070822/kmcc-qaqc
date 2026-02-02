@@ -4,7 +4,7 @@
 
 set -e
 
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 REGION="asia-northeast3"
 TRIGGER_ID="1e181f74-8136-46b8-a028-d5e6f3271c0e"
 

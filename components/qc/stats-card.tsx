@@ -12,16 +12,22 @@ interface StatsCardProps {
   variant?: "default" | "success" | "warning" | "destructive"
   onClick?: () => void
   clickable?: boolean
+  centerBreakdown?: {
+    yongsan: string
+    gwangju: string
+  }
 }
 
-export function StatsCard({ title, value, subtitle, trend, variant = "default", onClick, clickable }: StatsCardProps) {
+export function StatsCard({ title, value, subtitle, trend, variant = "default", onClick, clickable, centerBreakdown }: StatsCardProps) {
   const getTrendIcon = () => {
-    if (trend === undefined || trend === 0) return <Minus className="h-4 w-4" />
+    if (trend === undefined) return <Minus className="h-4 w-4" />
+    if (trend === 0) return <Minus className="h-4 w-4" />
     return trend > 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />
   }
 
   const getTrendColor = () => {
-    if (trend === undefined || trend === 0) return "text-muted-foreground"
+    if (trend === undefined) return "text-muted-foreground"
+    if (trend === 0) return "text-muted-foreground"
     return trend < 0 ? "text-emerald-600" : "text-red-600"
   }
 
@@ -55,11 +61,16 @@ export function StatsCard({ title, value, subtitle, trend, variant = "default", 
             {trend !== undefined && (
               <div className={cn("flex items-center gap-1 text-sm font-medium", getTrendColor())}>
                 {getTrendIcon()}
-                {trend !== 0 && <span>{trend > 0 ? '+' : ''}{trend.toFixed(2)}%</span>}
+                <span>{trend > 0 ? '+' : ''}{trend.toFixed(2)}%p</span>
               </div>
             )}
           </div>
           {subtitle && <p className="text-xs text-muted-foreground break-words leading-tight">{subtitle}</p>}
+          {centerBreakdown && (
+            <p className="text-xs text-muted-foreground break-words leading-tight mt-1">
+              용산 {centerBreakdown.yongsan} / 광주 {centerBreakdown.gwangju}
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -44,7 +44,7 @@ gcloud billing budgets create \
   --threshold-rule=percent=50 \
   --threshold-rule=percent=90 \
   --threshold-rule=percent=100 \
-  --projects=splyquizkm
+  --projects=csopp-25f2
 ```
 
 ## 추가 보호 조치 권장사항

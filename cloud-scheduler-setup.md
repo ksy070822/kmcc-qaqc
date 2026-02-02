@@ -19,7 +19,7 @@ gcloud services enable cloudscheduler.googleapis.com
 
 ```bash
 # 프로젝트 설정
-export PROJECT_ID="splyquizkm"
+export PROJECT_ID="csopp-25f2"
 export REGION="asia-northeast3"
 export SERVICE_NAME="qc-dashboard"
 export SERVICE_URL="https://qc-dashboard-wlof52lhea-du.a.run.app"
@@ -58,7 +58,7 @@ Cloud Run 서비스에 다음 환경 변수가 설정되어 있어야 합니다:
 
 ```bash
 GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
 BIGQUERY_CREDENTIALS={서비스 계정 JSON}
 ```

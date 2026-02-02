@@ -20,7 +20,7 @@ Google Sheets의 용산/광주 시트 데이터를 BigQuery에 자동으로 동�
 GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o
 
 # BigQuery
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
 BIGQUERY_CREDENTIALS={"type":"service_account",...}
 
@@ -35,7 +35,7 @@ Cloud Run 서비스에 다음 환경 변수를 설정:
 
 ```bash
 gcloud run services update qc-dashboard \
-  --set-env-vars="GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o,BIGQUERY_PROJECT_ID=splyquizkm,BIGQUERY_DATASET_ID=KMCC_QC" \
+  --set-env-vars="GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o,BIGQUERY_PROJECT_ID=csopp-25f2,BIGQUERY_DATASET_ID=KMCC_QC" \
   --set-env-vars="BIGQUERY_CREDENTIALS=$(cat service-account-key.json | jq -c)" \
   --region=asia-northeast3
 ```
@@ -106,7 +106,7 @@ gcloud scheduler jobs create http sync-sheets-daily \
   --time-zone="Asia/Seoul" \
   --description="매일 저녁 8시 Google Sheets 데이터를 BigQuery에 동기화" \
   --headers="Content-Type=application/json" \
-  --oidc-service-account-email="splyquizkm@appspot.gserviceaccount.com"
+  --oidc-service-account-email="csopp-25f2@appspot.gserviceaccount.com"
 ```
 
 자세한 내용은 `cloud-scheduler-setup.md` 참조

@@ -53,7 +53,7 @@
 **로컬 개발** (`.env.local`):
 ```bash
 GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
 BIGQUERY_CREDENTIALS={"type":"service_account",...}
 GOOGLE_APPLICATION_CREDENTIALS=./path/to/service-account-key.json

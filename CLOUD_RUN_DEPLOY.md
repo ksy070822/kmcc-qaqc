@@ -181,7 +181,7 @@ Cloud Run 서비스에 환경 변수를 설정할 수 있습니다.
 ```bash
 gcloud run services update qc-dashboard \
   --region=asia-northeast3 \
-  --set-env-vars="BIGQUERY_PROJECT_ID=splyquizkm,BIGQUERY_DATASET_ID=KMCC_QC"
+  --set-env-vars="BIGQUERY_PROJECT_ID=csopp-25f2,BIGQUERY_DATASET_ID=KMCC_QC"
 ```
 
 ### 방법 2: Cloud Console
@@ -190,7 +190,7 @@ gcloud run services update qc-dashboard \
 2. "수정 및 새 버전 배포" 클릭
 3. "변수 및 시크릿" 탭
 4. 환경 변수 추가:
-   - `BIGQUERY_PROJECT_ID`: `splyquizkm`
+   - `BIGQUERY_PROJECT_ID`: `csopp-25f2`
    - `BIGQUERY_DATASET_ID`: `KMCC_QC`
 
 ### 방법 3: cloudbuild.yaml (이미 설정됨)

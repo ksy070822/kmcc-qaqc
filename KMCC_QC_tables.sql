@@ -1,6 +1,6 @@
 -- ============================================================
 -- QC 대시보드 BigQuery 테이블 스키마
--- 프로젝트: splyquizkm
+-- 프로젝트: csopp-25f2
 -- 데이터셋: KMCC_QC
 -- 리전: asia-northeast3 (서울)
 -- 
@@ -8,7 +8,7 @@
 -- ============================================================
 
 -- 테이블 1: evaluations (QC 평가 원천 데이터)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.evaluations` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.evaluations` (
   evaluation_id STRING NOT NULL,
   evaluation_date DATE NOT NULL,
   consult_date TIMESTAMP,
@@ -48,7 +48,7 @@ PARTITION BY evaluation_date
 CLUSTER BY center, service, channel;
 
 -- 테이블 2: agents (상담사 마스터)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.agents` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.agents` (
   agent_id STRING NOT NULL,
   agent_name STRING NOT NULL,
   center STRING NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.agents` (
 );
 
 -- 테이블 3: metrics_daily (일별 집계)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.metrics_daily` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.metrics_daily` (
   metric_date DATE NOT NULL,
   dimension_type STRING NOT NULL,
   dimension_value STRING NOT NULL,
@@ -103,7 +103,7 @@ PARTITION BY metric_date
 CLUSTER BY dimension_type, center;
 
 -- 테이블 4: predictions (월말 예측)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.predictions` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.predictions` (
   prediction_id STRING NOT NULL,
   prediction_date DATE NOT NULL,
   target_month STRING NOT NULL,
@@ -145,7 +145,7 @@ CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.predictions` (
 PARTITION BY prediction_date;
 
 -- 테이블 5: watch_list (집중관리 대상)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.watch_list` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.watch_list` (
   watch_id STRING NOT NULL,
   created_date DATE NOT NULL,
   dimension_type STRING NOT NULL,
@@ -172,7 +172,7 @@ CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.watch_list` (
 );
 
 -- 테이블 6: targets (목표 설정)
-CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.targets` (
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.targets` (
   target_id STRING NOT NULL,
   target_name STRING NOT NULL,
   center STRING,
@@ -187,7 +187,7 @@ CREATE TABLE IF NOT EXISTS `splyquizkm.KMCC_QC.targets` (
 );
 
 -- 초기 목표 데이터 (2026년 1월)
-INSERT INTO `splyquizkm.KMCC_QC.targets` 
+INSERT INTO `csopp-25f2.KMCC_QC.targets` 
 (target_id, target_name, center, target_type, target_rate, period_type, period_start, period_end)
 VALUES
 ('202601_all_attitude', '1월 전체 상담태도', NULL, 'attitude', 3.0, 'monthly', '2026-01-01', '2026-01-31'),

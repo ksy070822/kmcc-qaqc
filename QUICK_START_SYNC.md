@@ -1,6 +1,6 @@
 # 빠른 시작: Google Sheets 동기화 테스트
 
-서비스 계정(`data-460@splyquizkm.iam.gserviceaccount.com`)이 Google Sheets에 공유되었으므로 이제 동기화를 테스트할 수 있습니다.
+서비스 계정(`data-460@csopp-25f2.iam.gserviceaccount.com`)이 Google Sheets에 공유되었으므로 이제 동기화를 테스트할 수 있습니다.
 
 ## 🚀 빠른 테스트
 
@@ -41,7 +41,7 @@ curl -X POST http://localhost:3000/api/sync-sheets \
 
 ```bash
 GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
 BIGQUERY_CREDENTIALS={"type":"service_account",...}
 GOOGLE_APPLICATION_CREDENTIALS=./path/to/service-account-key.json
@@ -59,11 +59,11 @@ GOOGLE_APPLICATION_CREDENTIALS=./path/to/service-account-key.json
 
 ### "insufficient authentication scopes" 오류
 → 서비스 계정이 Google Sheets에 공유되었는지 확인
-→ 서비스 계정 이메일: `data-460@splyquizkm.iam.gserviceaccount.com`
+→ 서비스 계정 이메일: `data-460@csopp-25f2.iam.gserviceaccount.com`
 
 ### "API not enabled" 오류
 ```bash
-gcloud services enable sheets.googleapis.com --project=splyquizkm
+gcloud services enable sheets.googleapis.com --project=csopp-25f2
 ```
 
 ### 데이터가 0건으로 표시됨

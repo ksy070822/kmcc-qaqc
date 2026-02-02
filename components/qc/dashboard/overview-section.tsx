@@ -95,34 +95,43 @@ export function OverviewSection({
       <StatsCard
         title="상담태도 오류율"
         value={`${attitudeRate.toFixed(2)}%`}
-        subtitle={`용산 ${yongsanAttitudeRate.toFixed(2)}% / 광주 ${gwangjuAttitudeRate.toFixed(2)}%`}
-        trend={attitudeErrorTrend || 0}
+        subtitle={attitudeErrorByCenter ? undefined : `용산 ${yongsanAttitudeRate.toFixed(2)}% / 광주 ${gwangjuAttitudeRate.toFixed(2)}%`}
+        trend={attitudeErrorTrend}
         variant={attitudeRate > 3 ? "warning" : "success"}
         centerBreakdown={attitudeErrorByCenter ? {
           yongsan: `${(attitudeErrorByCenter.yongsan || 0).toFixed(2)}%`,
           gwangju: `${(attitudeErrorByCenter.gwangju || 0).toFixed(2)}%`
+        } : (yongsanAttitudeRate !== 0 || gwangjuAttitudeRate !== 0) ? {
+          yongsan: `${yongsanAttitudeRate.toFixed(2)}%`,
+          gwangju: `${gwangjuAttitudeRate.toFixed(2)}%`
         } : undefined}
       />
       <StatsCard
         title="오상담/오처리 오류율"
         value={`${consultRate.toFixed(2)}%`}
-        subtitle={`용산 ${yongsanBusinessRate.toFixed(2)}% / 광주 ${gwangjuBusinessRate.toFixed(2)}%`}
-        trend={consultErrorTrend || 0}
+        subtitle={consultErrorByCenter ? undefined : `용산 ${yongsanBusinessRate.toFixed(2)}% / 광주 ${gwangjuBusinessRate.toFixed(2)}%`}
+        trend={consultErrorTrend}
         variant={consultRate > 3 ? "warning" : "success"}
         centerBreakdown={consultErrorByCenter ? {
           yongsan: `${(consultErrorByCenter.yongsan || 0).toFixed(2)}%`,
           gwangju: `${(consultErrorByCenter.gwangju || 0).toFixed(2)}%`
+        } : (yongsanBusinessRate !== 0 || gwangjuBusinessRate !== 0) ? {
+          yongsan: `${yongsanBusinessRate.toFixed(2)}%`,
+          gwangju: `${gwangjuBusinessRate.toFixed(2)}%`
         } : undefined}
       />
       <StatsCard
         title="전체 오류율"
         value={`${overallRate.toFixed(2)}%`}
-        subtitle={`용산 ${yongsanOverallRate.toFixed(2)}% / 광주 ${gwangjuOverallRate.toFixed(2)}%`}
-        trend={overallErrorTrend || 0}
+        subtitle={overallErrorByCenter ? undefined : `용산 ${yongsanOverallRate.toFixed(2)}% / 광주 ${gwangjuOverallRate.toFixed(2)}%`}
+        trend={overallErrorTrend}
         variant={overallRate > 5 ? "destructive" : overallRate > 3 ? "warning" : "success"}
         centerBreakdown={overallErrorByCenter ? {
           yongsan: `${(overallErrorByCenter.yongsan || 0).toFixed(2)}%`,
           gwangju: `${(overallErrorByCenter.gwangju || 0).toFixed(2)}%`
+        } : (yongsanOverallRate !== 0 || gwangjuOverallRate !== 0) ? {
+          yongsan: `${yongsanOverallRate.toFixed(2)}%`,
+          gwangju: `${gwangjuOverallRate.toFixed(2)}%`
         } : undefined}
       />
     </div>

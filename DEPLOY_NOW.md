@@ -23,7 +23,7 @@ GitHub에 푸시하면 Cloud Build 트리거가 자동으로 배포를 시작합
 
 ```bash
 # 프로젝트 설정
-gcloud config set project splyquizkm
+gcloud config set project csopp-25f2
 
 # Cloud Build 제출 (서울 리전)
 gcloud builds submit --config cloudbuild.yaml --region=asia-northeast3 .

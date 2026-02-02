@@ -31,7 +31,7 @@
 
 #### 1. BigQuery 연결 구축
 - `lib/bigquery.ts` - 완전한 BigQuery 라이브러리
-- 프로젝트: `splyquizkm`
+- 프로젝트: `csopp-25f2`
 - 데이터셋: `KMCC_QC`
 - 위치: `asia-northeast3` (서울)
 
@@ -105,19 +105,19 @@ BigQuery 자체의 일시적 문제로 보임.
 
 ### .env.local
 ```bash
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
-GOOGLE_APPLICATION_CREDENTIALS=./splyquizkm-c7fc16583892.json
+GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-c7fc16583892.json
 ```
 
 ### 서비스 계정
-- ✅ 파일 위치: `./splyquizkm-c7fc16583892.json`
+- ✅ 파일 위치: `./csopp-25f2-c7fc16583892.json`
 - ✅ 권한: BigQuery 조회 가능
 
 ## 📝 문서
 - `BIGQUERY_SETUP.md` - 설정 가이드
 - `QC_PROJECT_CONTEXT.md` - 프로젝트 컨텍스트
-- `KMCC_QC_tables.sql` - 테이블 스키마 (splyquizkm 프로젝트용)
+- `KMCC_QC_tables.sql` - 테이블 스키마 (csopp-25f2 프로젝트용)
 
 ## 🎯 다음 단계 (선택사항)
 

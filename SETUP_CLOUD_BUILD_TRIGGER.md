@@ -12,9 +12,9 @@ GitHub에 푸시하면 자동으로 서울 리전에서 빌드되도록 트리�
 ### 1단계: Cloud Console 접속
 
 1. https://console.cloud.google.com 접속
-2. 프로젝트 `splyquizkm` 선택
+2. 프로젝트 `csopp-25f2` 선택
 3. **Cloud Build** → **트리거** 메뉴로 이동
-   - 또는 직접 URL: https://console.cloud.google.com/cloud-build/triggers?project=splyquizkm
+   - 또는 직접 URL: https://console.cloud.google.com/cloud-build/triggers?project=csopp-25f2
 
 ### 2단계: 트리거 만들기
 
@@ -104,7 +104,7 @@ gcloud builds triggers describe [TRIGGER_ID] --region=asia-northeast3
 ## 권한 설정 (필요시)
 
 ```bash
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 PROJECT_NUMBER=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
 
 # Artifact Registry 권한

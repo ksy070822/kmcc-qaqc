@@ -10,7 +10,7 @@ import { AgentAnalysisContext, GroupAnalysisContext } from './types';
  * 3. 기본 애플리케이션 인증 (GCP 환경)
  */
 function initializeBigQuery(): BigQuery {
-  const projectId = process.env.BIGQUERY_PROJECT_ID || 'splyquizkm';
+  const projectId = process.env.BIGQUERY_PROJECT_ID || 'csopp-25f2';
   
   // 환경 변수에서 credentials JSON 파싱
   if (process.env.BIGQUERY_CREDENTIALS) {
@@ -26,7 +26,22 @@ function initializeBigQuery(): BigQuery {
     }
   }
   
-  // GOOGLE_APPLICATION_CREDENTIALS 환경 변수 또는 기본 인증 사용
+  // GOOGLE_APPLICATION_CREDENTIALS 환경 변수가 있으면 사용
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const path = require('path');
+    const credentialsPath = path.isAbsolute(process.env.GOOGLE_APPLICATION_CREDENTIALS)
+      ? process.env.GOOGLE_APPLICATION_CREDENTIALS
+      : path.resolve(process.cwd(), process.env.GOOGLE_APPLICATION_CREDENTIALS);
+    
+    console.log('[BigQuery] Using credentials file:', credentialsPath);
+    return new BigQuery({
+      projectId,
+      keyFilename: credentialsPath,
+    });
+  }
+  
+  // 기본 인증 사용 (Application Default Credentials)
+  console.log('[BigQuery] Using Application Default Credentials');
   return new BigQuery({ projectId });
 }
 
@@ -62,77 +77,80 @@ export interface DashboardStats {
 export async function getDashboardStats(targetDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-
-    // 날짜가 없으면 전일(어제) 날짜 사용 (전일 평가건수 표시용)
+    
+    // 날짜가 없으면 전일(어제) 날짜를 기본값으로 사용
     let queryDate = targetDate;
     let dateFilter = '';
     let params: any = {};
-
-    // 먼저 데이터가 있는 가장 최근 날짜를 확인
-    const latestDateQuery = `
-      SELECT MAX(evaluation_date) as latest_date
-      FROM \`${DATASET_ID}.evaluations\`
-    `;
-    const [latestRows] = await bigquery.query({ query: latestDateQuery, location: 'asia-northeast3' });
-    const latestDate = latestRows[0]?.latest_date;
-    console.log(`[BigQuery] Latest evaluation date in DB: ${latestDate}`);
-
-    if (queryDate) {
-      // 특정 날짜 지정 시, 해당 날짜에 데이터가 있는지 확인
-      const checkQuery = `
-        SELECT COUNT(*) as cnt
-        FROM \`${DATASET_ID}.evaluations\`
-        WHERE evaluation_date = @queryDate
-      `;
-      const [checkRows] = await bigquery.query({
-        query: checkQuery,
-        params: { queryDate },
-        location: 'asia-northeast3'
-      });
-      const dataCount = Number(checkRows[0]?.cnt) || 0;
-      console.log(`[BigQuery] Data count for ${queryDate}: ${dataCount}`);
-
-      if (dataCount === 0 && latestDate) {
-        // 선택한 날짜에 데이터가 없으면 가장 최근 날짜로 폴백
-        console.log(`[BigQuery] No data for ${queryDate}, falling back to ${latestDate}`);
-        queryDate = latestDate.value || latestDate;
-      }
-
-      dateFilter = 'WHERE evaluation_date = @queryDate';
-      params.queryDate = queryDate;
-    } else {
-      // 날짜 미지정 시 최근 30일 데이터 조회 (누적 통계)
-      // 전일 평가건수는 별도로 계산하되, 전체 통계는 최근 30일 기준
+    
+    if (!queryDate) {
+      // 날짜 미지정 시 전일 날짜 계산 (KST 기준)
       const now = new Date();
       // UTC 시간을 한국 시간으로 변환 (UTC+9)
       const kstOffset = 9 * 60 * 60 * 1000; // 9시간을 밀리초로
       const kstTime = new Date(now.getTime() + kstOffset);
       
-      // 최근 30일 범위 계산
-      const endDate = new Date(kstTime);
-      endDate.setUTCDate(endDate.getUTCDate() - 1); // 어제까지
-      const startDate = new Date(endDate);
-      startDate.setUTCDate(startDate.getUTCDate() - 29); // 30일 전
+      // 전일 날짜 계산
+      const yesterday = new Date(kstTime);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1); // 어제
       
-      const startYear = startDate.getUTCFullYear();
-      const startMonth = String(startDate.getUTCMonth() + 1).padStart(2, '0');
-      const startDay = String(startDate.getUTCDate()).padStart(2, '0');
-      const startDateStr = `${startYear}-${startMonth}-${startDay}`;
+      const year = yesterday.getUTCFullYear();
+      const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
+      const day = String(yesterday.getUTCDate()).padStart(2, '0');
+      queryDate = `${year}-${month}-${day}`;
       
-      const endYear = endDate.getUTCFullYear();
-      const endMonth = String(endDate.getUTCMonth() + 1).padStart(2, '0');
-      const endDay = String(endDate.getUTCDate()).padStart(2, '0');
-      const endDateStr = `${endYear}-${endMonth}-${endDay}`;
-      
-      dateFilter = 'WHERE evaluation_date BETWEEN @startDate AND @endDate';
-      params.startDate = startDateStr;
-      params.endDate = endDateStr;
-      queryDate = endDateStr; // 표시용으로 마지막 날짜 사용
-      params.queryDate = endDateStr; // 전일 평가건수 조회용
-      console.log(`[BigQuery] 최근 30일 범위: ${startDateStr} ~ ${endDateStr} (KST 기준)`);
+      console.log(`[BigQuery] 날짜 미지정, 전일 날짜 사용: ${queryDate} (KST 기준)`);
     }
-
-    console.log(`[BigQuery] getDashboardStats: ${queryDate || 'latest 30 days'}`);
+    
+    // 먼저 해당 날짜에 데이터가 있는지 확인
+    const checkQuery = `
+      SELECT COUNT(*) as cnt
+      FROM \`${DATASET_ID}.evaluations\`
+      WHERE evaluation_date = @checkDate
+    `;
+    
+    try {
+      const [checkRows] = await bigquery.query({
+        query: checkQuery,
+        params: { checkDate: queryDate },
+        location: 'asia-northeast3',
+      });
+      
+      const hasData = checkRows.length > 0 && checkRows[0].cnt > 0;
+      
+      // 데이터가 없으면 최근 데이터가 있는 날짜 찾기
+      if (!hasData) {
+        console.log(`[BigQuery] ${queryDate}에 데이터 없음, 최근 데이터 날짜 찾기`);
+        const [recentRows] = await bigquery.query({
+          query: `
+            SELECT FORMAT_DATE('%Y-%m-%d', evaluation_date) as date_str
+            FROM \`${DATASET_ID}.evaluations\`
+            WHERE evaluation_date <= @checkDate
+            ORDER BY evaluation_date DESC
+            LIMIT 1
+          `,
+          params: { checkDate: queryDate },
+          location: 'asia-northeast3',
+        });
+        
+        if (recentRows.length > 0 && recentRows[0].date_str) {
+          queryDate = recentRows[0].date_str;
+          console.log(`[BigQuery] 최근 데이터 날짜 사용: ${queryDate}`);
+        } else {
+          console.warn(`[BigQuery] 데이터가 전혀 없습니다. 원래 날짜(${queryDate}) 사용`);
+        }
+      } else {
+        console.log(`[BigQuery] ${queryDate}에 데이터 있음 (${checkRows[0].cnt}건)`);
+      }
+    } catch (checkError) {
+      console.warn(`[BigQuery] 날짜 확인 중 오류 (계속 진행):`, checkError);
+    }
+    
+    // 모든 통계를 전일 기준으로 조회
+    dateFilter = 'WHERE evaluation_date = @queryDate';
+    params.queryDate = queryDate;
+    
+    console.log(`[BigQuery] getDashboardStats: ${queryDate} (전일 기준)`);
     
     const query = `
       WITH daily_stats AS (
@@ -158,23 +176,36 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
         )
         GROUP BY center
       ),
-      yesterday_evaluations AS (
+      aggregated_stats AS (
         SELECT
-          COUNT(*) as yesterday_count
-        FROM \`${DATASET_ID}.evaluations\`
-        WHERE evaluation_date = @queryDate
+          COALESCE(SUM(CASE WHEN ds.center = '용산' THEN ds.agent_count ELSE 0 END), 0) as totalAgentsYongsan,
+          COALESCE(SUM(CASE WHEN ds.center = '광주' THEN ds.agent_count ELSE 0 END), 0) as totalAgentsGwangju,
+          COALESCE(SUM(ds.evaluation_count), 0) as totalEvaluations,
+          COALESCE(SUM(CASE WHEN wc.center = '용산' THEN wc.watchlist_count ELSE 0 END), 0) as watchlistYongsan,
+          COALESCE(SUM(CASE WHEN wc.center = '광주' THEN wc.watchlist_count ELSE 0 END), 0) as watchlistGwangju,
+          COALESCE(SUM(ds.total_attitude_errors), 0) as total_attitude_errors,
+          COALESCE(SUM(ds.total_ops_errors), 0) as total_ops_errors,
+          COALESCE(SUM(ds.evaluation_count), 0) as total_evaluation_count
+        FROM daily_stats ds
+        LEFT JOIN watchlist_counts wc ON ds.center = wc.center
       )
       SELECT
-        COALESCE(SUM(CASE WHEN ds.center = '용산' THEN ds.agent_count ELSE 0 END), 0) as totalAgentsYongsan,
-        COALESCE(SUM(CASE WHEN ds.center = '광주' THEN ds.agent_count ELSE 0 END), 0) as totalAgentsGwangju,
-        MAX(COALESCE(ye.yesterday_count, 0)) as totalEvaluations,
-        COALESCE(SUM(CASE WHEN wc.center = '용산' THEN wc.watchlist_count ELSE 0 END), 0) as watchlistYongsan,
-        COALESCE(SUM(CASE WHEN wc.center = '광주' THEN wc.watchlist_count ELSE 0 END), 0) as watchlistGwangju,
-        ROUND(SAFE_DIVIDE(SUM(ds.total_attitude_errors), SUM(ds.evaluation_count) * 5) * 100, 2) as attitudeErrorRate,
-        ROUND(SAFE_DIVIDE(SUM(ds.total_ops_errors), SUM(ds.evaluation_count) * 11) * 100, 2) as businessErrorRate
-      FROM daily_stats ds
-      LEFT JOIN watchlist_counts wc ON ds.center = wc.center
-      CROSS JOIN yesterday_evaluations ye
+        totalAgentsYongsan,
+        totalAgentsGwangju,
+        totalEvaluations,
+        watchlistYongsan,
+        watchlistGwangju,
+        CASE 
+          WHEN total_evaluation_count > 0 
+          THEN ROUND(SAFE_DIVIDE(total_attitude_errors, total_evaluation_count * 5) * 100, 2)
+          ELSE 0
+        END as attitudeErrorRate,
+        CASE 
+          WHEN total_evaluation_count > 0 
+          THEN ROUND(SAFE_DIVIDE(total_ops_errors, total_evaluation_count * 11) * 100, 2)
+          ELSE 0
+        END as businessErrorRate
+      FROM aggregated_stats
     `;
     
     console.log(`[BigQuery] Query:`, query);
@@ -189,11 +220,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     const [rows] = await bigquery.query(options);
     
     console.log(`[BigQuery] Query result rows:`, rows.length);
-    if (rows.length > 0) {
-      console.log(`[BigQuery] First row:`, JSON.stringify(rows[0], null, 2));
-    } else {
-      console.warn(`[BigQuery] No rows returned from query for date: ${queryDate}`);
-    }
+    console.log(`[BigQuery] Query date:`, queryDate);
     
     // 기본 데이터 구조 생성 함수
     const createDefaultStats = (date: string) => ({
@@ -208,8 +235,9 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       date: date || queryDate,
     });
     
-    if (rows.length === 0) {
-      console.warn(`[BigQuery] No rows returned from query - returning default stats`);
+    // rows가 비어있거나 null인 경우 처리
+    if (!rows || rows.length === 0) {
+      console.warn(`[BigQuery] No rows returned from query for date: ${queryDate} - returning default stats`);
       const defaultData = createDefaultStats(queryDate);
       return {
         success: true,
@@ -218,28 +246,48 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     }
     
     const row = rows[0];
-    console.log(`[BigQuery] Raw row values:`, {
-      totalAgentsYongsan: row.totalAgentsYongsan,
-      totalAgentsGwangju: row.totalAgentsGwangju,
-      totalEvaluations: row.totalEvaluations,
-      watchlistYongsan: row.watchlistYongsan,
-      watchlistGwangju: row.watchlistGwangju,
-      attitudeErrorRate: row.attitudeErrorRate,
-      businessErrorRate: row.businessErrorRate,
-    });
     
-    // NULL 값 처리 및 타입 변환
+    // row가 null이거나 undefined인 경우 처리
+    if (!row) {
+      console.warn(`[BigQuery] First row is null or undefined - returning default stats`);
+      const defaultData = createDefaultStats(queryDate);
+      return {
+        success: true,
+        data: defaultData,
+      };
+    }
+    
+    console.log(`[BigQuery] Raw row values:`, JSON.stringify(row, null, 2));
+    console.log(`[BigQuery] Row keys:`, Object.keys(row));
+    
+    // 값 추출 및 검증
+    const totalAgentsYongsan = row.totalAgentsYongsan != null ? Number(row.totalAgentsYongsan) : 0;
+    const totalAgentsGwangju = row.totalAgentsGwangju != null ? Number(row.totalAgentsGwangju) : 0;
+    const totalEvaluations = row.totalEvaluations != null ? Number(row.totalEvaluations) : 0;
+    const watchlistYongsan = row.watchlistYongsan != null ? Number(row.watchlistYongsan) : 0;
+    const watchlistGwangju = row.watchlistGwangju != null ? Number(row.watchlistGwangju) : 0;
     const attitudeErrorRate = row.attitudeErrorRate != null ? Number(row.attitudeErrorRate) : 0;
     const businessErrorRate = row.businessErrorRate != null ? Number(row.businessErrorRate) : 0;
     
+    console.log(`[BigQuery] Parsed values:`, {
+      totalAgentsYongsan,
+      totalAgentsGwangju,
+      totalEvaluations,
+      watchlistYongsan,
+      watchlistGwangju,
+      attitudeErrorRate,
+      businessErrorRate,
+    });
+    
+    // 결과 데이터 구성
     const result = {
       success: true,
       data: {
-        totalAgentsYongsan: row.totalAgentsYongsan != null ? Number(row.totalAgentsYongsan) : 0,
-        totalAgentsGwangju: row.totalAgentsGwangju != null ? Number(row.totalAgentsGwangju) : 0,
-        totalEvaluations: row.totalEvaluations != null ? Number(row.totalEvaluations) : 0,
-        watchlistYongsan: row.watchlistYongsan != null ? Number(row.watchlistYongsan) : 0,
-        watchlistGwangju: row.watchlistGwangju != null ? Number(row.watchlistGwangju) : 0,
+        totalAgentsYongsan: isNaN(totalAgentsYongsan) ? 0 : totalAgentsYongsan,
+        totalAgentsGwangju: isNaN(totalAgentsGwangju) ? 0 : totalAgentsGwangju,
+        totalEvaluations: isNaN(totalEvaluations) ? 0 : totalEvaluations,
+        watchlistYongsan: isNaN(watchlistYongsan) ? 0 : watchlistYongsan,
+        watchlistGwangju: isNaN(watchlistGwangju) ? 0 : watchlistGwangju,
         attitudeErrorRate: isNaN(attitudeErrorRate) ? 0 : attitudeErrorRate,
         businessErrorRate: isNaN(businessErrorRate) ? 0 : businessErrorRate,
         overallErrorRate: Number((attitudeErrorRate + businessErrorRate).toFixed(2)),
@@ -521,12 +569,7 @@ export async function getAgents(filters?: {
       evalWhereClause += ' AND channel = @channel';
       params.channel = filters.channel;
     }
-    // tenure 필터는 현재 BigQuery 테이블에 tenure_group 컬럼이 없으므로 비활성화
-    // if (filters?.tenure && filters.tenure !== 'all') {
-    //   evalWhereClause += ` AND tenure_group = @tenure`;
-    //   params.tenure = filters.tenure;
-    // }
-
+    
     const query = `
       SELECT
         agent_id as id,
@@ -534,9 +577,9 @@ export async function getAgents(filters?: {
         center,
         service,
         channel,
-        -- 근속기간: BigQuery 테이블에 컬럼 없음, 기본값 사용
+        -- 근속기간: evaluations 테이블에 tenure 컬럼이 없으므로 0으로 설정
         0 as tenureMonths,
-        '3개월 미만' as tenureGroup,
+        '' as tenureGroup,
         COUNT(*) as totalEvaluations,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
         ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
@@ -697,8 +740,6 @@ export interface WatchListItem {
   center: string;
   service: string;
   channel: string;
-  tenureMonths: number;
-  tenureGroup: string;
   attitudeRate: number;
   opsRate: number;
   totalRate: number;
@@ -750,8 +791,6 @@ export async function getWatchList(filters?: {
           center,
           service,
           channel,
-          0 as tenure_months,
-          '3개월 미만' as tenure_group,
           COUNT(*) as evaluation_count,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors,
@@ -800,8 +839,6 @@ export async function getWatchList(filters?: {
         c.center,
         c.service,
         c.channel,
-        c.tenure_months,
-        c.tenure_group,
         c.evaluation_count,
         c.attitude_errors,
         c.ops_errors,
@@ -893,8 +930,6 @@ export async function getWatchList(filters?: {
         center: row.center,
         service: row.service,
         channel: row.channel,
-        tenureMonths: Number(row.tenure_months) || 0,
-        tenureGroup: row.tenure_group || '3개월 미만',
         attitudeRate: attRate,
         opsRate: opsRate,
         totalRate: totalRate,
@@ -958,8 +993,9 @@ export async function getGoals(filters?: {
     const query = `
       SELECT
         target_id as id,
-        CONCAT(center, ' ', COALESCE(service, ''), ' ', period_type) as name,
+        CONCAT(COALESCE(center, '전체'), ' ', COALESCE(service, ''), ' ', period_type) as name,
         center,
+        service,
         CASE 
           WHEN target_attitude_error_rate IS NOT NULL AND target_business_error_rate IS NOT NULL THEN 'total'
           WHEN target_attitude_error_rate IS NOT NULL THEN 'attitude'
@@ -2381,9 +2417,6 @@ export async function saveGoalToBigQuery(goal: {
     const targetId = goal.id || `${goal.periodType}_${goal.center || 'all'}_${goal.type}_${Date.now()}`;
     
     // type에 따라 적절한 컬럼에 값 설정
-    // 'total' 타입의 경우: target_overall_error_rate에 저장하거나, 
-    // target_attitude_error_rate와 target_business_error_rate 둘 다에 저장할 수 있음
-    // 현재는 target_overall_error_rate에 저장하도록 설정
     let targetAttitudeErrorRate: number | null = null;
     let targetBusinessErrorRate: number | null = null;
     let targetOverallErrorRate: number | null = null;
@@ -2393,94 +2426,188 @@ export async function saveGoalToBigQuery(goal: {
     } else if (goal.type === 'ops') {
       targetBusinessErrorRate = goal.targetRate;
     } else if (goal.type === 'total') {
-      // 'total' 타입은 target_overall_error_rate에 저장
       targetOverallErrorRate = goal.targetRate;
     }
     
     // name에서 service 추출 (선택적)
-    // name 형식: "센터 서비스 period_type" 또는 "센터 period_type"
     const nameParts = goal.name.split(' ');
     const service = nameParts.length > 2 ? nameParts[1] : null;
     
-    const row = {
-      target_id: targetId,
-      center: goal.center || null,
-      service: service || null,
-      period_type: goal.periodType,
-      target_attitude_error_rate: targetAttitudeErrorRate,
-      target_business_error_rate: targetBusinessErrorRate,
-      target_overall_error_rate: targetOverallErrorRate,
-      start_date: goal.periodStart,
-      end_date: goal.periodEnd,
-      is_active: goal.isActive,
-      updated_at: new Date().toISOString(),
-    };
-    
     if (isUpdate) {
-      // UPDATE 쿼리 - NULL 값 처리 개선
-      const updateQuery = `
-        UPDATE \`${DATASET_ID}.targets\`
-        SET
-          center = @center,
-          service = @service,
-          period_type = @periodType,
-          target_attitude_error_rate = @targetAttitudeErrorRate,
-          target_business_error_rate = @targetBusinessErrorRate,
-          target_overall_error_rate = @targetOverallErrorRate,
-          start_date = @startDate,
-          end_date = @endDate,
-          is_active = @isActive,
-          updated_at = CURRENT_TIMESTAMP()
-        WHERE target_id = @targetId
-      `;
-      
+      // UPDATE: MERGE 문 사용 (더 안전하고 null 값 처리 용이)
       try {
-        const [result] = await bigquery.query({
-          query: updateQuery,
-          params: {
-            targetId,
-            center: goal.center || null,
-            service: service || null,
-            periodType: goal.periodType,
-            targetAttitudeErrorRate: targetAttitudeErrorRate !== null ? targetAttitudeErrorRate : null,
-            targetBusinessErrorRate: targetBusinessErrorRate !== null ? targetBusinessErrorRate : null,
-            targetOverallErrorRate: targetOverallErrorRate !== null ? targetOverallErrorRate : null,
-            startDate: goal.periodStart,
-            endDate: goal.periodEnd,
-            isActive: goal.isActive,
-          },
-          types: {
-            targetId: 'STRING',
-            center: 'STRING',
-            service: 'STRING',
-            periodType: 'STRING',
-            targetAttitudeErrorRate: 'FLOAT64',
-            targetBusinessErrorRate: 'FLOAT64',
-            targetOverallErrorRate: 'FLOAT64',
-            startDate: 'STRING',
-            endDate: 'STRING',
-            isActive: 'BOOL',
-          },
+        // 기존 레코드 조회 (기존 값 유지용)
+        const [existingRows] = await bigquery.query({
+          query: `SELECT * FROM \`${DATASET_ID}.targets\` WHERE target_id = @targetId LIMIT 1`,
+          params: { targetId },
           location: 'asia-northeast3',
         });
         
-        console.log('[BigQuery] Goal updated successfully:', targetId);
+        if (existingRows.length === 0) {
+          throw new Error(`Goal with id ${targetId} not found`);
+        }
+        
+        const existing = existingRows[0];
+        
+        // type에 따라 업데이트할 필드 결정 (기존 값 유지)
+        const finalAttitudeRate = goal.type === 'attitude' 
+          ? targetAttitudeErrorRate 
+          : (existing.target_attitude_error_rate ?? null);
+        const finalBusinessRate = goal.type === 'ops'
+          ? targetBusinessErrorRate
+          : (existing.target_business_error_rate ?? null);
+        const finalOverallRate = goal.type === 'total'
+          ? targetOverallErrorRate
+          : (existing.target_overall_error_rate ?? null);
+        
+        // MERGE 문 사용 (INSERT OR UPDATE) - null 값은 리터럴로 처리
+        const centerValue = (goal.center !== null && goal.center !== undefined && goal.center !== '') 
+          ? `'${goal.center.replace(/'/g, "''")}'` 
+          : 'NULL';
+        const serviceValue = (service !== null && service !== undefined && service !== '') 
+          ? `'${service.replace(/'/g, "''")}'` 
+          : 'NULL';
+        
+        const attitudeRateValue = goal.type === 'attitude' ? String(finalAttitudeRate) : 'NULL';
+        const businessRateValue = goal.type === 'ops' ? String(finalBusinessRate) : 'NULL';
+        const overallRateValue = goal.type === 'total' ? String(finalOverallRate) : 'NULL';
+        
+        const mergeQuery = `
+          MERGE \`${DATASET_ID}.targets\` T
+          USING (
+            SELECT
+              @targetId as target_id,
+              ${centerValue} as center,
+              ${serviceValue} as service,
+              @periodType as period_type,
+              ${attitudeRateValue} as target_attitude_error_rate,
+              ${businessRateValue} as target_business_error_rate,
+              ${overallRateValue} as target_overall_error_rate,
+              @startDate as start_date,
+              @endDate as end_date,
+              @isActive as is_active
+          ) S
+          ON T.target_id = S.target_id
+          WHEN MATCHED THEN
+            UPDATE SET
+              center = S.center,
+              service = S.service,
+              period_type = S.period_type,
+              target_attitude_error_rate = ${goal.type === 'attitude' ? 'S.target_attitude_error_rate' : 'T.target_attitude_error_rate'},
+              target_business_error_rate = ${goal.type === 'ops' ? 'S.target_business_error_rate' : 'T.target_business_error_rate'},
+              target_overall_error_rate = ${goal.type === 'total' ? 'S.target_overall_error_rate' : 'T.target_overall_error_rate'},
+              start_date = S.start_date,
+              end_date = S.end_date,
+              is_active = S.is_active,
+              updated_at = CURRENT_TIMESTAMP()
+          WHEN NOT MATCHED THEN
+            INSERT (
+              target_id, center, service, period_type,
+              target_attitude_error_rate, target_business_error_rate, target_overall_error_rate,
+              start_date, end_date, is_active, created_at, updated_at
+            )
+            VALUES (
+              S.target_id, S.center, S.service, S.period_type,
+              S.target_attitude_error_rate, S.target_business_error_rate, S.target_overall_error_rate,
+              S.start_date, S.end_date, S.is_active, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP()
+            )
+        `;
+        
+        // 파라미터 준비 (null이 아닌 값만)
+        const mergeParams: any = {
+          targetId,
+          periodType: goal.periodType,
+          startDate: goal.periodStart,
+          endDate: goal.periodEnd,
+          isActive: goal.isActive,
+        };
+        
+        console.log('[BigQuery] Merge query:', mergeQuery);
+        console.log('[BigQuery] Merge params:', JSON.stringify(mergeParams, null, 2));
+        
+        const [result] = await bigquery.query({
+          query: mergeQuery,
+          params: mergeParams,
+          location: 'asia-northeast3',
+        });
+        
+        console.log('[BigQuery] Goal merged successfully:', targetId);
         return { success: true, saved: 1 };
-      } catch (updateError) {
-        console.error('[BigQuery] Update error details:', updateError);
-        throw updateError;
+      } catch (updateError: any) {
+        console.error('[BigQuery] Merge error details:', updateError);
+        console.error('[BigQuery] Error stack:', updateError?.stack);
+        
+        // 에러 메시지 개선
+        let errorMessage = '목표 저장 실패';
+        if (updateError?.errors && Array.isArray(updateError.errors)) {
+          const errorDetails = updateError.errors.map((e: any) => e.message || e.reason || String(e)).join(', ');
+          errorMessage += ': ' + errorDetails;
+        } else if (updateError?.message) {
+          errorMessage += ': ' + updateError.message;
+        } else if (typeof updateError === 'string') {
+          errorMessage += ': ' + updateError;
+        } else {
+          errorMessage += ': 알 수 없는 오류가 발생했습니다';
+        }
+        
+        throw new Error(errorMessage);
       }
     } else {
-      // INSERT
-      row.created_at = new Date().toISOString();
+      // INSERT: table.insert() 사용
+      const row: any = {
+        target_id: targetId,
+        period_type: goal.periodType,
+        start_date: goal.periodStart,
+        end_date: goal.periodEnd,
+        is_active: goal.isActive,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      
+      // center와 service는 null이어도 명시적으로 설정
+      row.center = goal.center !== null && goal.center !== undefined && goal.center !== '' ? goal.center : null;
+      row.service = service !== null && service !== undefined && service !== '' ? service : null;
+      
+      // type에 따라 해당 필드만 설정 (나머지는 null)
+      if (goal.type === 'attitude') {
+        row.target_attitude_error_rate = targetAttitudeErrorRate;
+        row.target_business_error_rate = null;
+        row.target_overall_error_rate = null;
+      } else if (goal.type === 'ops') {
+        row.target_attitude_error_rate = null;
+        row.target_business_error_rate = targetBusinessErrorRate;
+        row.target_overall_error_rate = null;
+      } else if (goal.type === 'total') {
+        row.target_attitude_error_rate = null;
+        row.target_business_error_rate = null;
+        row.target_overall_error_rate = targetOverallErrorRate;
+      }
       
       try {
+        console.log('[BigQuery] Inserting goal:', {
+          target_id: targetId,
+          center: row.center,
+          service: row.service,
+          type: goal.type,
+          targetRate: goal.targetRate,
+        });
+        
         await table.insert([row]);
         console.log('[BigQuery] Goal inserted successfully:', targetId);
         return { success: true, saved: 1 };
-      } catch (insertError) {
+      } catch (insertError: any) {
         console.error('[BigQuery] Insert error details:', insertError);
-        throw insertError;
+        console.error('[BigQuery] Insert row:', JSON.stringify(row, null, 2));
+        
+        // 에러 메시지 개선
+        let errorMessage = '목표 저장 실패';
+        if (insertError?.errors) {
+          errorMessage += ': ' + insertError.errors.map((e: any) => e.message).join(', ');
+        } else if (insertError?.message) {
+          errorMessage += ': ' + insertError.message;
+        }
+        
+        throw new Error(errorMessage);
       }
     }
   } catch (error) {
@@ -2577,138 +2704,6 @@ export async function getReportData(
   }
 }
 
-// ============================================
-// 근속기간별 통계 조회
-// ============================================
-
-export interface TenureStats {
-  center: string;
-  service: string;
-  channel: string;
-  tenureGroup: string;
-  items: Record<string, number>;
-  totalEvaluations: number;
-  attitudeErrors: number;
-  businessErrors: number;
-}
-
-export async function getTenureStats(filters?: {
-  center?: string;
-  service?: string;
-  channel?: string;
-  startDate?: string;
-  endDate?: string;
-}): Promise<{ success: boolean; data?: TenureStats[]; error?: string }> {
-  try {
-    const bigquery = getBigQueryClient();
-
-    // 기본값: 최근 30일
-    let startDate = filters?.startDate;
-    let endDate = filters?.endDate;
-    if (!startDate || !endDate) {
-      const now = new Date();
-      endDate = now.toISOString().split('T')[0];
-      const start = new Date(now);
-      start.setDate(start.getDate() - 30);
-      startDate = start.toISOString().split('T')[0];
-    }
-
-    let whereClause = 'WHERE evaluation_date BETWEEN @startDate AND @endDate';
-    const params: any = { startDate, endDate };
-
-    if (filters?.center && filters.center !== 'all') {
-      whereClause += ' AND center = @center';
-      params.center = filters.center;
-    }
-    if (filters?.service && filters.service !== 'all') {
-      whereClause += ' AND service = @service';
-      params.service = filters.service;
-    }
-    if (filters?.channel && filters.channel !== 'all') {
-      whereClause += ' AND channel = @channel';
-      params.channel = filters.channel;
-    }
-
-    const query = `
-      SELECT
-        center,
-        service,
-        channel,
-        '3개월 미만' as tenure_group,
-        SUM(CAST(COALESCE(greeting_error, false) AS INT64)) as att1,
-        SUM(CAST(COALESCE(empathy_error, false) AS INT64)) as att2,
-        SUM(CAST(COALESCE(apology_error, false) AS INT64)) as att3,
-        SUM(CAST(COALESCE(additional_inquiry_error, false) AS INT64)) as att4,
-        SUM(CAST(COALESCE(unkind_error, false) AS INT64)) as att5,
-        SUM(CAST(COALESCE(consult_type_error, false) AS INT64)) as err1,
-        SUM(CAST(COALESCE(guide_error, false) AS INT64)) as err2,
-        SUM(CAST(COALESCE(identity_check_error, false) AS INT64)) as err3,
-        SUM(CAST(COALESCE(required_search_error, false) AS INT64)) as err4,
-        SUM(CAST(COALESCE(wrong_guide_error, false) AS INT64)) as err5,
-        SUM(CAST(COALESCE(process_missing_error, false) AS INT64)) as err6,
-        SUM(CAST(COALESCE(process_incomplete_error, false) AS INT64)) as err7,
-        SUM(CAST(COALESCE(system_error, false) AS INT64)) as err8,
-        SUM(CAST(COALESCE(id_mapping_error, false) AS INT64)) as err9,
-        SUM(CAST(COALESCE(flag_keyword_error, false) AS INT64)) as err10,
-        SUM(CAST(COALESCE(history_error, false) AS INT64)) as err11,
-        SUM(COALESCE(attitude_error_count, 0)) as attitude_errors,
-        SUM(COALESCE(business_error_count, 0)) as business_errors,
-        COUNT(*) as total_evaluations
-      FROM \`${DATASET_ID}.evaluations\`
-      ${whereClause}
-      GROUP BY center, service, channel
-      ORDER BY center, service, channel
-    `;
-
-    console.log('[BigQuery] getTenureStats query:', query);
-    console.log('[BigQuery] getTenureStats params:', params);
-
-    const [rows] = await bigquery.query({
-      query,
-      params,
-      location: 'asia-northeast3',
-    });
-
-    console.log('[BigQuery] getTenureStats rows:', rows.length);
-
-    const data: TenureStats[] = rows.map((row: any) => ({
-      center: row.center || '',
-      service: row.service || '',
-      channel: row.channel || '',
-      tenureGroup: row.tenure_group || '3개월 미만',
-      items: {
-        att1: Number(row.att1) || 0,
-        att2: Number(row.att2) || 0,
-        att3: Number(row.att3) || 0,
-        att4: Number(row.att4) || 0,
-        att5: Number(row.att5) || 0,
-        err1: Number(row.err1) || 0,
-        err2: Number(row.err2) || 0,
-        err3: Number(row.err3) || 0,
-        err4: Number(row.err4) || 0,
-        err5: Number(row.err5) || 0,
-        err6: Number(row.err6) || 0,
-        err7: Number(row.err7) || 0,
-        err8: Number(row.err8) || 0,
-        err9: Number(row.err9) || 0,
-        err10: Number(row.err10) || 0,
-        err11: Number(row.err11) || 0,
-      },
-      totalEvaluations: Number(row.total_evaluations) || 0,
-      attitudeErrors: Number(row.attitude_errors) || 0,
-      businessErrors: Number(row.business_errors) || 0,
-    }));
-
-    return { success: true, data };
-  } catch (error) {
-    console.error('[BigQuery] getTenureStats error:', error);
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
-}
-
 export default {
   getDashboardStats,
   getCenterStats,
@@ -2720,7 +2715,6 @@ export default {
   getDailyErrors,
   getWeeklyErrors,
   getItemErrorStats,
-  getTenureStats,
   saveEvaluationsToBigQuery,
   checkAgentExists,
   getAgentAnalysisData,

@@ -6,7 +6,7 @@
 set -e
 
 # 프로젝트 설정
-PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-splyquizkm}"
+PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-csopp-25f2}"
 REGION="${GOOGLE_CLOUD_REGION:-asia-northeast3}"
 SERVICE_NAME="${CLOUD_RUN_SERVICE:-qc-dashboard}"
 
@@ -60,13 +60,14 @@ if [ -n "$EXISTING_JOB" ]; then
 fi
 
 # Cloud Scheduler 작업 생성
+# 스케줄: 0 20 * * * = 매일 20:00 (Asia/Seoul) = 저녁 8시 KST
 echo "🚀 Cloud Scheduler 작업 생성 중..."
-echo "   스케줄: 매일 저녁 8시 KST (오전 11시 UTC)"
+echo "   스케줄: 매일 저녁 8시 KST (0 20 * * * Asia/Seoul)"
 echo "   엔드포인트: $SERVICE_URL/api/sync-sheets"
 
 gcloud scheduler jobs create http $JOB_NAME \
   --location=$REGION \
-  --schedule="0 11 * * *" \
+  --schedule="0 20 * * *" \
   --uri="$SERVICE_URL/api/sync-sheets" \
   --http-method=POST \
   --time-zone="Asia/Seoul" \

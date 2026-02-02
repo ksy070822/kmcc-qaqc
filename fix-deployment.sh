@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # 프로젝트 ID 확인
-PROJECT_ID=${1:-"splyquizkm"}
+PROJECT_ID=${1:-"csopp-25f2"}
 SERVICE_NAME="qc-dashboard"
 REGION="asia-northeast3"
 REPOSITORY_NAME="cloud-run-source-deploy"

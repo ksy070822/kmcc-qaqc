@@ -4,7 +4,7 @@
 
 **에러 메시지:**
 ```
-Image 'asia-northeast3-docker.pkg.dev/splyquizkm/cloud-run-source-deploy/qc-dashboard:latest' not found.
+Image 'asia-northeast3-docker.pkg.dev/csopp-25f2/cloud-run-source-deploy/qc-dashboard:latest' not found.
 ```
 
 ## 해결 방법
@@ -29,7 +29,7 @@ gcloud artifacts repositories create cloud-run-source-deploy \
 cd /Users/may.08/Desktop/kmcc_qc_dashbord
 
 # fix-deployment.sh 스크립트 실행
-./fix-deployment.sh splyquizkm
+./fix-deployment.sh csopp-25f2
 
 # 또는 수동으로 실행
 gcloud builds submit \
@@ -70,8 +70,8 @@ gcloud run services logs read qc-dashboard \
 **해결:**
 ```bash
 # Cloud Build 서비스 계정에 Artifact Registry 권한 부여
-PROJECT_NUMBER=$(gcloud projects describe splyquizkm --format="value(projectNumber)")
-gcloud projects add-iam-policy-binding splyquizkm \
+PROJECT_NUMBER=$(gcloud projects describe csopp-25f2 --format="value(projectNumber)")
+gcloud projects add-iam-policy-binding csopp-25f2 \
   --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
   --role="roles/artifactregistry.writer"
 ```
@@ -81,8 +81,8 @@ gcloud projects add-iam-policy-binding splyquizkm \
 **해결:**
 ```bash
 # Cloud Build 서비스 계정에 Cloud Run 권한 부여
-PROJECT_NUMBER=$(gcloud projects describe splyquizkm --format="value(projectNumber)")
-gcloud projects add-iam-policy-binding splyquizkm \
+PROJECT_NUMBER=$(gcloud projects describe csopp-25f2 --format="value(projectNumber)")
+gcloud projects add-iam-policy-binding csopp-25f2 \
   --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
   --role="roles/run.admin"
 ```
@@ -93,7 +93,7 @@ gcloud projects add-iam-policy-binding splyquizkm \
 ```bash
 # Artifact Registry에 이미지가 있는지 확인
 gcloud artifacts docker images list \
-  asia-northeast3-docker.pkg.dev/splyquizkm/cloud-run-source-deploy/qc-dashboard \
+  asia-northeast3-docker.pkg.dev/csopp-25f2/cloud-run-source-deploy/qc-dashboard \
   --include-tags
 ```
 
@@ -124,7 +124,7 @@ gcloud run services describe qc-dashboard \
 git pull origin main
 
 # 2. 빌드 및 배포
-./fix-deployment.sh splyquizkm
+./fix-deployment.sh csopp-25f2
 
 # 3. 배포 확인
 gcloud run services describe qc-dashboard \

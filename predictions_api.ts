@@ -218,7 +218,7 @@ export async function calculatePredictions(
   targetMonth: string,  // '2026-01'
   targets: { attitude: number; ops: number }
 ): Promise<PredictionResult[]> {
-  const projectId = process.env.BIGQUERY_PROJECT_ID || 'splyquizkm';
+  const projectId = process.env.BIGQUERY_PROJECT_ID || 'csopp-25f2';
   const datasetId = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
   
   // 현재 날짜 기준 경과일/잔여일 계산
@@ -397,7 +397,7 @@ export async function getWatchListAgents(
   targetMonth: string,
   targets: { attitude: number; ops: number }
 ): Promise<WatchListItem[]> {
-  const projectId = process.env.BIGQUERY_PROJECT_ID || 'splyquizkm';
+  const projectId = process.env.BIGQUERY_PROJECT_ID || 'csopp-25f2';
   const datasetId = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
   
   // 고위험 상담사 조회 (태도 5% 초과 또는 오상담 6% 초과)

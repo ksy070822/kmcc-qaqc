@@ -14,7 +14,7 @@ export async function OPTIONS() {
 
 // BigQuery 클라이언트 초기화
 function getBigQueryClient(): BigQuery {
-  const projectId = process.env.BIGQUERY_PROJECT_ID || 'splyquizkm';
+  const projectId = process.env.BIGQUERY_PROJECT_ID || 'csopp-25f2';
   
   if (process.env.BIGQUERY_CREDENTIALS) {
     try {

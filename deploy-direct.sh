@@ -4,7 +4,7 @@
 
 set -e
 
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 SERVICE_NAME="qc-dashboard"
 REGION="asia-northeast3"
 REPOSITORY_NAME="cloud-run-source-deploy"

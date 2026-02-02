@@ -5,7 +5,7 @@
 
 set -e
 
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 BILLING_ACCOUNT_ID="" # 실제 Billing Account ID로 변경 필요
 
 echo "=========================================="

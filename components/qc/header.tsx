@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Calendar, RefreshCw, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -14,20 +15,29 @@ interface HeaderProps {
 }
 
 export function Header({ selectedDate, onDateChange, onRefresh, onSearch, lastUpdated }: HeaderProps) {
-  const today = new Date().toISOString().split("T")[0]
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]
-
-  const dates = Array.from({ length: 7 }, (_, i) => {
-    const date = new Date()
-    date.setDate(date.getDate() - i)
-    return date.toISOString().split("T")[0]
-  })
+  const [today, setToday] = useState("")
+  const [yesterday, setYesterday] = useState("")
+  const [dates, setDates] = useState<string[]>([])
+  
+  // 클라이언트에서만 날짜 계산 (hydration 오류 방지)
+  useEffect(() => {
+    const todayDate = new Date().toISOString().split("T")[0]
+    const yesterdayDate = new Date()
+    yesterdayDate.setDate(yesterdayDate.getDate() - 1)
+    const yesterdayStr = yesterdayDate.toISOString().split("T")[0]
+    
+    setToday(todayDate)
+    setYesterday(yesterdayStr)
+    setDates(Array.from({ length: 7 }, (_, i) => {
+      const date = new Date()
+      date.setDate(date.getDate() - i)
+      return date.toISOString().split("T")[0]
+    }))
+  }, [])
 
   const getDateLabel = (date: string) => {
     if (date === today) return `오늘 (${date})`
-    if (date === yesterdayStr) return `전일 (${date})`
+    if (date === yesterday) return `전일 (${date})`
     return date
   }
 
@@ -40,11 +50,13 @@ export function Header({ selectedDate, onDateChange, onRefresh, onSearch, lastUp
             <SelectValue placeholder="날짜 선택" />
           </SelectTrigger>
           <SelectContent>
-            {dates.map((date) => (
+            {dates.length > 0 ? dates.map((date) => (
               <SelectItem key={date} value={date}>
                 {getDateLabel(date)}
               </SelectItem>
-            ))}
+            )) : (
+              <SelectItem value={selectedDate}>{selectedDate}</SelectItem>
+            )}
           </SelectContent>
         </Select>
         <Button size="sm" onClick={onSearch} variant="default" className="bg-primary text-primary-foreground hover:bg-primary/90">

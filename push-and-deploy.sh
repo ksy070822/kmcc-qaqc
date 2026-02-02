@@ -62,10 +62,10 @@ if git push origin main; then
     echo -e "${YELLOW}Cloud Build 트리거가 자동으로 배포를 시작합니다.${NC}"
     echo ""
     echo -e "${BLUE}빌드 상태 확인:${NC}"
-    echo "  https://console.cloud.google.com/cloud-build/builds?project=splyquizkm"
+    echo "  https://console.cloud.google.com/cloud-build/builds?project=csopp-25f2"
     echo ""
     echo -e "${BLUE}Cloud Run 서비스 확인:${NC}"
-    echo "  https://console.cloud.google.com/run?project=splyquizkm"
+    echo "  https://console.cloud.google.com/run?project=csopp-25f2"
     echo ""
 else
     echo -e "${RED}✗ GitHub 푸시 실패${NC}"

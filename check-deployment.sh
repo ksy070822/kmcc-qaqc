@@ -2,7 +2,7 @@
 
 # 배포 상태 확인 스크립트
 
-PROJECT_ID=${1:-"splyquizkm"}
+PROJECT_ID=${1:-"csopp-25f2"}
 SERVICE_NAME="qc-dashboard"
 REGION="asia-northeast3"
 REPOSITORY_NAME="cloud-run-source-deploy"

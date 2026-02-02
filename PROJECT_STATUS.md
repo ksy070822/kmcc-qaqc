@@ -38,7 +38,7 @@
 ### 백엔드
 - **런타임**: Node.js
 - **데이터베이스**: Google BigQuery
-  - 프로젝트: `splyquizkm`
+  - 프로젝트: `csopp-25f2`
   - 데이터셋: `KMCC_QC`
   - 리전: `asia-northeast3` (서울)
 - **인증**: Google Cloud 서비스 계정 (JSON 키)
@@ -233,14 +233,14 @@ total_error_rate = attitude_error_rate + ops_error_rate
 
 #### 로컬 개발 (`.env.local`)
 ```bash
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
-GOOGLE_APPLICATION_CREDENTIALS=./splyquizkm-c7fc16583892.json
+GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-c7fc16583892.json
 ```
 
 #### Vercel 배포
 ```bash
-BIGQUERY_PROJECT_ID=splyquizkm
+BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
 BIGQUERY_CREDENTIALS={"type":"service_account",...전체 JSON...}
 ```
@@ -385,7 +385,7 @@ kmcc_qc_dashbord/
 ## 🔐 보안 주의사항
 
 ### 민감한 파일
-- `splyquizkm-c7fc16583892.json`: 서비스 계정 키 (`.gitignore`에 추가됨)
+- `csopp-25f2-c7fc16583892.json`: 서비스 계정 키 (`.gitignore`에 추가됨)
 - 환경 변수: Vercel에만 저장, 로컬 `.env.local`은 Git 제외
 
 ### 권한 관리

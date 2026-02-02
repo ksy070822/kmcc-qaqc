@@ -10,8 +10,13 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 function initializeGoogleAI(): GoogleGenerativeAI {
   const apiKey = process.env.GOOGLE_AI_API_KEY;
   
-  if (!apiKey || apiKey === 'AIzaSyCarWphjfIDxwY9Pp969_xpvsstzz7cEMQ') {
-    throw new Error('GOOGLE_AI_API_KEY 환경 변수가 설정되지 않았거나 기본값입니다. 프로덕션에서는 반드시 환경 변수로 설정해야 합니다.');
+  if (!apiKey) {
+    throw new Error('GOOGLE_AI_API_KEY 환경 변수가 설정되지 않았습니다. .env.local 파일에 GOOGLE_AI_API_KEY를 설정해주세요.');
+  }
+  
+  // API 키 형식 기본 검증 (AIza로 시작하는지 확인)
+  if (!apiKey.startsWith('AIza')) {
+    console.warn('[Google AI] API 키 형식이 예상과 다릅니다. Google AI Studio에서 발급한 API 키인지 확인해주세요.');
   }
   
   return new GoogleGenerativeAI(apiKey);
@@ -39,11 +44,11 @@ export async function callGemini(
 ): Promise<string> {
   try {
     const genAI = getGoogleAIClient();
-    // 모델 이름: gemini-2.0-flash-exp (Gemini 2.0 Flash 실험 버전)
-    // 또는 gemini-1.5-flash-002, gemini-1.5-pro-002
-    const modelName = process.env.GOOGLE_AI_MODEL || 'gemini-2.0-flash-exp';
+    // 모델: 2.5/3 시리즈 권장. gemini-2.0-flash-exp는 404 발생 → 2.5-flash로 대체
+    const envModel = process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash';
+    const modelName = envModel === 'gemini-2.0-flash-exp' ? 'gemini-2.5-flash' : envModel;
     
-    console.log('[Google AI] Calling model:', modelName);
+    console.log('[Google AI] Calling model:', modelName, envModel !== modelName ? `(env had: ${envModel})` : '');
     
     // 시스템 지시사항이 있으면 프롬프트에 포함
     const fullPrompt = systemInstruction 
@@ -96,11 +101,10 @@ export async function* callGeminiStream(
 ): AsyncGenerator<string, void, unknown> {
   try {
     const genAI = getGoogleAIClient();
-    // 모델 이름: gemini-2.0-flash-exp (Gemini 2.0 Flash 실험 버전)
-    // 또는 gemini-1.5-flash-002, gemini-1.5-pro-002
-    const modelName = process.env.GOOGLE_AI_MODEL || 'gemini-2.0-flash-exp';
+    const envModel = process.env.GOOGLE_AI_MODEL || 'gemini-2.5-flash';
+    const modelName = envModel === 'gemini-2.0-flash-exp' ? 'gemini-2.5-flash' : envModel;
     
-    console.log('[Google AI] Streaming model:', modelName);
+    console.log('[Google AI] Streaming model:', modelName, envModel !== modelName ? `(env had: ${envModel})` : '');
     
     // 시스템 지시사항이 있으면 프롬프트에 포함
     const fullPrompt = systemInstruction 

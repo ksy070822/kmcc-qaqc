@@ -2,7 +2,7 @@
 
 # Cloud Build 진행 상황 모니터링 스크립트
 
-PROJECT_ID=${1:-"splyquizkm"}
+PROJECT_ID=${1:-"csopp-25f2"}
 REGION="asia-northeast3"
 BUILD_ID=${2:-""}
 

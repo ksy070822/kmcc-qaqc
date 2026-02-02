@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { readYonsanGwangjuSheets, parseSheetRowsToEvaluations } from "@/lib/google-sheets";
 import { getBigQueryClient } from "@/lib/bigquery";
+import { startSync, updateProgress, finishSync } from "@/lib/sync-progress";
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || '14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o';
@@ -21,13 +22,16 @@ export async function OPTIONS() {
  * 증분 업데이트: 이미 존재하는 evaluation_id는 스킵
  */
 export async function POST(request: NextRequest) {
+  startSync('sync');
   try {
     console.log("[Sync Sheets] ===== Google Sheets 동기화 시작 =====");
+    updateProgress('용산/광주 시트 읽기');
 
     // Google Sheets에서 데이터 읽기
     const sheetsResult = await readYonsanGwangjuSheets(SPREADSHEET_ID);
     
     if (!sheetsResult.success) {
+      finishSync('sync', false, { error: sheetsResult.error });
       return NextResponse.json(
         { success: false, error: sheetsResult.error },
         { status: 500, headers: corsHeaders }
@@ -35,6 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!sheetsResult.yonsan || !sheetsResult.gwangju) {
+      finishSync('sync', false, { error: "시트 데이터를 읽을 수 없습니다." });
       return NextResponse.json(
         { success: false, error: "시트 데이터를 읽을 수 없습니다." },
         { status: 500, headers: corsHeaders }
@@ -85,6 +90,7 @@ export async function POST(request: NextRequest) {
 
         existingIds = new Set(rows.map((row: any) => row.evaluation_id));
         console.log('[Sync Sheets] 기존 데이터: ' + existingIds.size + '건');
+        updateProgress('중복 확인', existingIds.size, allEvaluations.length);
       } catch (error) {
         console.warn('[Sync Sheets] 기존 데이터 조회 실패, 전체 저장 시도:', error);
       }
@@ -98,6 +104,7 @@ export async function POST(request: NextRequest) {
     console.log('[Sync Sheets] 새 데이터: ' + newEvaluations.length + '건 (전체: ' + allEvaluations.length + '건)');
 
     if (newEvaluations.length === 0) {
+      finishSync('sync', true, { saved: 0, total: allEvaluations.length, existing: existingIds.size });
       return NextResponse.json(
         {
           success: true,
@@ -171,6 +178,7 @@ export async function POST(request: NextRequest) {
     });
 
     // BigQuery에 저장
+    updateProgress('BigQuery 저장', 0, bigqueryRows.length);
     const dataset = bigquery.dataset(DATASET_ID);
     const table = dataset.table('evaluations');
 
@@ -181,8 +189,11 @@ export async function POST(request: NextRequest) {
       const batch = bigqueryRows.slice(i, i + BATCH_SIZE);
       await table.insert(batch);
       savedCount += batch.length;
+      updateProgress('BigQuery 저장', savedCount, bigqueryRows.length);
       console.log('[Sync Sheets] 저장 진행: ' + savedCount + '/' + bigqueryRows.length + '건');
     }
+
+    finishSync('sync', true, { saved: savedCount, total: allEvaluations.length, existing: existingIds.size });
 
     console.log('[Sync Sheets] ===== 동기화 완료: ' + savedCount + '건 저장 =====');
 
@@ -202,6 +213,7 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("[Sync Sheets] 동기화 오류:", error);
+    finishSync('sync', false, { error: error instanceof Error ? error.message : String(error) });
     return NextResponse.json(
       {
         success: false,

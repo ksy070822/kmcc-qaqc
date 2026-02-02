@@ -36,10 +36,10 @@ pnpm add @google-cloud/bigquery
 ```bash
 BIGQUERY_PROJECT_ID=csopp-25f2
 BIGQUERY_DATASET_ID=KMCC_QC
-GOOGLE_APPLICATION_CREDENTIALS=./splyquizkm-c7fc16583892.json
+GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-service-account.json
 ```
 
-서비스 계정 키 파일(`splyquizkm-c7fc16583892.json`)을 프로젝트 루트에 저장합니다.
+서비스 계정 키 파일(`csopp-25f2-service-account.json`)을 프로젝트 루트에 저장합니다.
 
 ### Vercel 배포 환경
 

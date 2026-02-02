@@ -12,7 +12,7 @@
 
 import { getBigQueryClient } from '../lib/bigquery'
 
-const PROJECT_ID = 'splyquizkm'
+const PROJECT_ID = 'csopp-25f2'
 const DATASET_ID = 'KMCC_QC'
 
 async function deleteFakeData() {

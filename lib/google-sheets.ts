@@ -2,12 +2,35 @@ import { google } from 'googleapis';
 
 /**
  * Google Sheets API 클라이언트 초기화
+ * BigQuery와 동일한 인증 소스 사용: BIGQUERY_CREDENTIALS > GOOGLE_APPLICATION_CREDENTIALS > ADC
  */
 function getSheetsClient() {
+  // BigQuery와 동일한 credentials 사용 (Sheets/BQ 모두 접근 가능한 계정으로 통일)
+  if (process.env.BIGQUERY_CREDENTIALS) {
+    try {
+      const credentials = JSON.parse(process.env.BIGQUERY_CREDENTIALS);
+      const auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+      });
+      return google.sheets({ version: 'v4', auth });
+    } catch (e) {
+      console.warn('[Google Sheets] BIGQUERY_CREDENTIALS 파싱 실패, ADC 사용:', e);
+    }
+  }
+
+  if (process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    const auth = new google.auth.GoogleAuth({
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+    });
+    return google.sheets({ version: 'v4', auth });
+  }
+
+  // Application Default Credentials (Cloud Run 기본 SA 등)
   const auth = new google.auth.GoogleAuth({
     scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
   });
-
   return google.sheets({ version: 'v4', auth });
 }
 
@@ -358,5 +381,172 @@ function calculateBusinessErrors(row: any[], headerMap: Record<string, number>):
     }
   });
 
+  return count;
+}
+
+/**
+ * 용산2025 / 광주2025 시트 읽기 (1회 적재용)
+ */
+export async function readYonsan2025Gwangju2025Sheets(
+  spreadsheetId: string
+): Promise<{
+  success: boolean;
+  yonsan?: any[][];
+  gwangju?: any[][];
+  error?: string;
+}> {
+  try {
+    const yonsanResult = await readSheetData(spreadsheetId, '용산2025!A:BZ');
+    if (!yonsanResult.success) {
+      return { success: false, error: `용산2025 시트 읽기 실패: ${yonsanResult.error}` };
+    }
+
+    const gwangjuResult = await readSheetData(spreadsheetId, '광주2025!A:BZ');
+    if (!gwangjuResult.success) {
+      return { success: false, error: `광주2025 시트 읽기 실패: ${gwangjuResult.error}` };
+    }
+
+    return {
+      success: true,
+      yonsan: yonsanResult.data || [],
+      gwangju: gwangjuResult.data || [],
+    };
+  } catch (error) {
+    console.error('[Google Sheets] readYonsan2025Gwangju2025Sheets error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * 용산2025/광주2025 시트 파싱 (태도오류, 오상담/오처리 오류 컬럼 사용, 추가문의 누락(채팅) 지원)
+ */
+export function parseSheetRowsToEvaluations2025(
+  headers: string[],
+  rows: any[][],
+  center: string,
+  hasChannel: boolean
+): any[] {
+  const evaluations: any[] = [];
+  const headerMap: Record<string, number> = {};
+  headers.forEach((h, i) => {
+    const normalized = String(h || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    headerMap[normalized] = i;
+  });
+
+  const getIdx = (names: string[]): number | null => {
+    for (const n of names) {
+      const key = n.toLowerCase().trim().replace(/\s+/g, ' ');
+      if (headerMap[key] !== undefined) return headerMap[key];
+      for (const k of Object.keys(headerMap)) {
+        if (k.includes(key) || key.includes(k)) return headerMap[k];
+      }
+    }
+    return null;
+  };
+
+  rows.forEach((row, rowIndex) => {
+    try {
+      const nameIdx = getIdx(['이름', '상담사명']);
+      const idIdx = getIdx(['id', '상담사id']);
+      const evalDateIdx = getIdx(['평가일', '날짜']);
+      const consultIdIdx = getIdx(['상담id', 'consultid']);
+      const serviceIdx = getIdx(['서비스']);
+      const channelIdx = hasChannel ? getIdx(['채널', '유선/채팅']) : null;
+      const hireDateIdx = getIdx(['입사일']);
+      const tenureIdx = getIdx(['근속개월']);
+
+      if (nameIdx === null || idIdx === null || evalDateIdx === null) return;
+
+      const agentName = row[nameIdx]?.toString().trim() || '';
+      const agentId = row[idIdx]?.toString().trim() || '';
+      const evalDateStr = row[evalDateIdx]?.toString().trim() || '';
+
+      if (!agentName || !agentId || !evalDateStr) return;
+
+      const normalizedDate = normalizeDate(evalDateStr);
+      if (!normalizedDate) return;
+
+      const consultId = consultIdIdx !== null ? row[consultIdIdx]?.toString().trim() : '';
+      const service = serviceIdx !== null ? row[serviceIdx]?.toString().trim() : '';
+      const channel = hasChannel && channelIdx !== null ? row[channelIdx]?.toString().trim() : 'unknown';
+      const hireDate = hireDateIdx !== null ? row[hireDateIdx]?.toString().trim() : '';
+      const tenureMonths = tenureIdx !== null ? parseInt(row[tenureIdx]?.toString() || '0', 10) : 0;
+
+      // 태도오류, 오상담/오처리 오류 컬럼 우선 사용
+      let attitudeErrors = 0;
+      let businessErrors = 0;
+      const tagdoIdx = getIdx(['태도오류']);
+      const osangIdx = getIdx(['오상담/오처리 오류']);
+      if (tagdoIdx !== null && osangIdx !== null) {
+        const t = parseInt(row[tagdoIdx]?.toString() || '0', 10);
+        const o = parseInt(row[osangIdx]?.toString() || '0', 10);
+        if (!isNaN(t) && !isNaN(o)) {
+          attitudeErrors = t;
+          businessErrors = o;
+        }
+      }
+      if (attitudeErrors === 0 && businessErrors === 0) {
+        attitudeErrors = calculateAttitudeErrors2025(row, headerMap);
+        businessErrors = calculateBusinessErrors(row, headerMap);
+      }
+
+      const totalErrors = attitudeErrors + businessErrors;
+      const evaluationId = consultId
+        ? `${agentId}_${normalizedDate}_${consultId}`
+        : `${agentId}_${normalizedDate}_${rowIndex}`;
+
+      evaluations.push({
+        evaluationId,
+        date: normalizedDate,
+        agentId,
+        agentName,
+        center,
+        service,
+        channel: channel || 'unknown',
+        consultId,
+        hireDate,
+        tenureMonths,
+        attitudeErrors,
+        businessErrors,
+        totalErrors,
+        rawRow: row,
+      });
+    } catch (e) {
+      console.warn(`[Google Sheets] Row ${rowIndex + 1} parse error:`, e);
+    }
+  });
+
+  return evaluations;
+}
+
+function calculateAttitudeErrors2025(row: any[], headerMap: Record<string, number>): number {
+  const cols = [
+    '첫인사/끝인사 누락',
+    '공감표현 누락',
+    '사과표현 누락',
+    '추가문의 누락',
+    '추가문의 누락(채팅)',
+    '불친절',
+  ];
+  let count = 0;
+  cols.forEach((col) => {
+    const key = col.toLowerCase().trim().replace(/\s+/g, ' ');
+    let idx = headerMap[key];
+    if (idx === undefined) {
+      for (const [k] of Object.entries(headerMap)) {
+        if (k.includes('추가문의') || k.includes(key)) {
+          idx = headerMap[k];
+          break;
+        }
+      }
+    }
+    if (idx !== undefined) {
+      const v = row[idx]?.toString().toUpperCase().trim();
+      if (v === 'Y' || v === 'TRUE' || v === '1' || v === '예') count++;
+    }
+  });
   return count;
 }

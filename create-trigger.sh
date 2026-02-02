@@ -4,7 +4,7 @@
 
 set -e
 
-PROJECT_ID="splyquizkm"
+PROJECT_ID="csopp-25f2"
 REGION="asia-northeast3"
 TRIGGER_NAME="qc-dashboard-auto-deploy"
 REPO_OWNER="may070822"

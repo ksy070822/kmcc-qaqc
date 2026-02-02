@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Sidebar } from "@/components/qc/sidebar"
 import { Header } from "@/components/qc/header"
 import { Dashboard } from "@/components/qc/dashboard"
@@ -16,13 +16,28 @@ import { cn } from "@/lib/utils"
 export default function QCManagementApp() {
   const [currentTab, setCurrentTab] = useState("dashboard")
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
-  // 기본값을 전일(어제)로 설정 - 오늘은 평가 진행 중이므로 어제 결과를 보여줌
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split("T")[0]
-  const [selectedDate, setSelectedDate] = useState(yesterdayStr)
-  const [searchDate, setSearchDate] = useState(yesterdayStr)
-  const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString("ko-KR"))
+  const [selectedDate, setSelectedDate] = useState("")
+  const [searchDate, setSearchDate] = useState("")
+  const [lastUpdated, setLastUpdated] = useState("--:--:--")
+  
+  // 클라이언트에서만 날짜 및 시간 설정 (hydration 오류 방지)
+  useEffect(() => {
+    // 전일 날짜 계산 (KST 기준)
+    const now = new Date()
+    const kstOffset = 9 * 60 * 60 * 1000 // 9시간
+    const kstTime = new Date(now.getTime() + kstOffset)
+    const yesterday = new Date(kstTime)
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1)
+    
+    const year = yesterday.getUTCFullYear()
+    const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(yesterday.getUTCDate()).padStart(2, '0')
+    const yesterdayStr = `${year}-${month}-${day}`
+    
+    setSelectedDate(yesterdayStr)
+    setSearchDate(yesterdayStr)
+    setLastUpdated(new Date().toLocaleTimeString("ko-KR"))
+  }, [])
 
   const handleRefresh = useCallback(() => {
     setLastUpdated(new Date().toLocaleTimeString("ko-KR"))
