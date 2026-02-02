@@ -19,35 +19,47 @@ interface GoalStatus {
   endDate: string
 }
 
-export function GoalStatusBoard() {
+interface GoalStatusBoardProps {
+  selectedDate?: string
+}
+
+export function GoalStatusBoard({ selectedDate }: GoalStatusBoardProps) {
   const [goals, setGoals] = useState<GoalStatus[]>([])
   const [goalCurrentRates, setGoalCurrentRates] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
-  
-  // 현재 월 표시
+
+  // 선택된 날짜 기준 월 표시
   const currentMonth = useMemo(() => {
-    const now = new Date()
-    return `${now.getFullYear()}년 ${now.getMonth() + 1}월`
-  }, [])
-  
+    const date = selectedDate ? new Date(selectedDate) : new Date()
+    return `${date.getFullYear()}년 ${date.getMonth() + 1}월`
+  }, [selectedDate])
+
   // 목표 데이터 조회
   useEffect(() => {
     const fetchGoals = async () => {
       setLoading(true)
       try {
         // periodType 필터를 제거하고 currentMonth만 사용 (연간 목표도 현재 월과 겹치면 표시)
-        const response = await fetch('/api/goals?isActive=true&currentMonth=true')
+        const response = await fetch('/api/goals?isActive=true')
         const result = await response.json()
-        
+
         console.log('[GoalStatusBoard] Goals fetch result:', result)
-        
+
         if (result.success && result.data) {
           const goalsData = result.data
           console.log('[GoalStatusBoard] Goals data:', goalsData)
-          
+
+          // 선택된 날짜에 해당하는 목표만 필터링
+          const targetDate = selectedDate ? new Date(selectedDate) : new Date()
+          const targetDateStr = targetDate.toISOString().split('T')[0]
+
+          const activeGoals = goalsData.filter((goal: any) => {
+            return goal.periodStart <= targetDateStr && goal.periodEnd >= targetDateStr
+          })
+
           // 목표별 현재 실적 조회
           const rates: Record<string, number> = {}
-          for (const goal of goalsData) {
+          for (const goal of activeGoals) {
             try {
               const params = new URLSearchParams()
               params.append("action", "currentRate")
@@ -56,10 +68,10 @@ export function GoalStatusBoard() {
               if (goal.center) params.append("center", goal.center)
               params.append("startDate", goal.periodStart)
               params.append("endDate", goal.periodEnd)
-              
+
               const rateResponse = await fetch(`/api/goals?${params.toString()}`)
               const rateResult = await rateResponse.json()
-              
+
               if (rateResult.success && rateResult.data) {
                 rates[goal.id] = rateResult.data.currentRate
               }
@@ -67,20 +79,20 @@ export function GoalStatusBoard() {
               console.error(`Failed to fetch current rate for goal ${goal.id}:`, err)
             }
           }
-          
+
           setGoalCurrentRates(rates)
-          
+
           // GoalStatus 형식으로 변환
-          const today = new Date()
-          const goalStatuses: GoalStatus[] = goalsData.map((goal: any) => {
+          const today = selectedDate ? new Date(selectedDate) : new Date()
+          const goalStatuses: GoalStatus[] = activeGoals.map((goal: any) => {
             const goalStart = new Date(goal.periodStart)
             const goalEnd = new Date(goal.periodEnd)
             const totalDays = Math.ceil((goalEnd.getTime() - goalStart.getTime()) / (1000 * 60 * 60 * 24))
             const passedDays = Math.ceil((today.getTime() - goalStart.getTime()) / (1000 * 60 * 60 * 24))
             const progress = Math.min(100, Math.max(0, Math.round((passedDays / totalDays) * 100)))
-            
+
             const currentErrorRate = rates[goal.id] ?? (goal.targetRate * 0.92)
-            
+
             // 상태 판정
             let status: GoalStatus["status"] = "on-track"
             if (currentErrorRate <= goal.targetRate * 0.9) {
@@ -92,7 +104,7 @@ export function GoalStatusBoard() {
             } else {
               status = "at-risk"
             }
-            
+
             // goal.type이 '태도' | '오상담/오처리' | '합계' 형식일 수 있으므로 변환
             let goalType: "attitude" | "counseling" | "total" = "total";
             if (goal.type === "태도" || goal.type === "attitude") {
@@ -102,7 +114,7 @@ export function GoalStatusBoard() {
             } else if (goal.type === "합계" || goal.type === "total") {
               goalType = "total";
             }
-            
+
             return {
               id: goal.id,
               title: goal.name,
@@ -116,7 +128,7 @@ export function GoalStatusBoard() {
               endDate: goal.periodEnd,
             }
           })
-          
+
           setGoals(goalStatuses)
         }
       } catch (err) {
@@ -125,9 +137,9 @@ export function GoalStatusBoard() {
         setLoading(false)
       }
     }
-    
+
     fetchGoals()
-  }, [])
+  }, [selectedDate])
   const getStatusConfig = (status: string) => {
     switch (status) {
       case "achieved":
@@ -216,77 +228,77 @@ export function GoalStatusBoard() {
         ) : (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {goals.map((goal) => {
-            const statusConfig = getStatusConfig(goal.status)
-            const StatusIcon = statusConfig.icon
-            const achievementRate =
-              goal.targetRate > 0
-                ? Math.max(0, (1 - (goal.currentRate - goal.targetRate) / goal.targetRate) * 100)
-                : 100
+              const statusConfig = getStatusConfig(goal.status)
+              const StatusIcon = statusConfig.icon
+              const achievementRate =
+                goal.targetRate > 0
+                  ? Math.max(0, (1 - (goal.currentRate - goal.targetRate) / goal.targetRate) * 100)
+                  : 100
 
-            return (
-              <div key={goal.id} className={cn("rounded-lg border p-4 bg-white", statusConfig.borderColor)}>
-                <div className="flex items-start justify-between mb-3">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Target className="h-4 w-4 text-[#1e3a5f]" />
-                      <span className="font-medium text-sm text-foreground">{goal.title}</span>
+              return (
+                <div key={goal.id} className={cn("rounded-lg border p-4 bg-white", statusConfig.borderColor)}>
+                  <div className="flex items-start justify-between mb-3">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Target className="h-4 w-4 text-[#1e3a5f]" />
+                        <span className="font-medium text-sm text-foreground">{goal.title}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <Badge variant="outline" className="text-xs bg-white">
+                          {goal.center}
+                        </Badge>
+                        <Badge variant="outline" className={cn("text-xs", getTypeColor(goal.type))}>
+                          {getTypeLabel(goal.type)}
+                        </Badge>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <Badge variant="outline" className="text-xs bg-white">
-                        {goal.center}
-                      </Badge>
-                      <Badge variant="outline" className={cn("text-xs", getTypeColor(goal.type))}>
-                        {getTypeLabel(goal.type)}
-                      </Badge>
+                    <Badge className={cn("text-xs shrink-0", statusConfig.className)}>
+                      <StatusIcon className="mr-1 h-3 w-3" />
+                      {statusConfig.label}
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground">목표 오류율</p>
+                      <p className="text-lg font-bold text-foreground">{goal.targetRate.toFixed(1)}%</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">현재 오류율</p>
+                      <p
+                        className={cn(
+                          "text-lg font-bold",
+                          goal.currentRate <= goal.targetRate ? "text-emerald-600" : "text-red-600",
+                        )}
+                      >
+                        {goal.currentRate.toFixed(2)}%
+                      </p>
                     </div>
                   </div>
-                  <Badge className={cn("text-xs shrink-0", statusConfig.className)}>
-                    <StatusIcon className="mr-1 h-3 w-3" />
-                    {statusConfig.label}
-                  </Badge>
-                </div>
 
-                <div className="grid grid-cols-2 gap-3 mb-3">
-                  <div>
-                    <p className="text-xs text-muted-foreground">목표 오류율</p>
-                    <p className="text-lg font-bold text-foreground">{goal.targetRate.toFixed(1)}%</p>
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground">목표 달성률</span>
+                      <span className="font-mono font-semibold">{Math.min(100, achievementRate).toFixed(1)}%</span>
+                    </div>
+                    <div className="h-1.5 w-full rounded-full bg-slate-200">
+                      <div
+                        className={cn("h-1.5 rounded-full transition-all", statusConfig.progressColor)}
+                        style={{ width: `${Math.min(100, achievementRate)}%` }}
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-xs text-muted-foreground">현재 오류율</p>
-                    <p
-                      className={cn(
-                        "text-lg font-bold",
-                        goal.currentRate <= goal.targetRate ? "text-emerald-600" : "text-red-600",
-                      )}
-                    >
-                      {goal.currentRate.toFixed(2)}%
-                    </p>
-                  </div>
-                </div>
 
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">목표 달성률</span>
-                    <span className="font-mono font-semibold">{Math.min(100, achievementRate).toFixed(1)}%</span>
-                  </div>
-                  <div className="h-1.5 w-full rounded-full bg-slate-200">
-                    <div
-                      className={cn("h-1.5 rounded-full transition-all", statusConfig.progressColor)}
-                      style={{ width: `${Math.min(100, achievementRate)}%` }}
-                    />
+                  <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-3 w-3" />
+                      {goal.startDate} ~ {goal.endDate}
+                    </div>
+                    <span>진행률 {goal.progress}%</span>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between mt-3 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="h-3 w-3" />
-                    {goal.startDate} ~ {goal.endDate}
-                  </div>
-                  <span>진행률 {goal.progress}%</span>
-                </div>
-              </div>
-            )
-          })}
+              )
+            })}
           </div>
         )}
       </CardContent>

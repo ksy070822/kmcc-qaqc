@@ -111,22 +111,22 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   useEffect(() => {
     const calculateCenterTrends = async () => {
       if (!centerStats || centerStats.length === 0) return
-      
+
       try {
         // 전일 날짜 계산
         const currentDate = new Date(selectedDate || new Date().toISOString().split('T')[0])
         const previousDate = new Date(currentDate)
         previousDate.setDate(previousDate.getDate() - 1)
         const previousDateStr = previousDate.toISOString().split('T')[0]
-        
+
         // 전일 센터별 데이터 조회
         const response = await fetch(`/api/data?type=centers&startDate=${previousDateStr}&endDate=${previousDateStr}`)
         const result = await response.json()
-        
+
         if (result.success && result.data) {
           const prevCenterStats = result.data as Array<{ name: string; errorRate: number }>
           const trends: Record<string, number> = {}
-          
+
           centerStats.forEach(center => {
             const prevCenter = prevCenterStats.find(c => c.name === center.name)
             if (prevCenter) {
@@ -135,7 +135,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
               trends[center.name] = 0
             }
           })
-          
+
           setCenterTrends(trends)
         } else {
           // 전일 데이터가 없으면 0으로 설정
@@ -154,40 +154,40 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
         setCenterTrends(trends)
       }
     }
-    
+
     calculateCenterTrends()
   }, [centerStats, selectedDate])
 
   // 센터 데이터 변환 (CenterComparison 컴포넌트용)
   const centerData = centerStats.length > 0
     ? centerStats.map(center => ({
-        name: center.name,
-        errorRate: center.errorRate,
-        trend: centerTrends[center.name] || 0,
-        targetRate: 3.0,
-        groups: center.services.map(svc => ({
-          name: svc.name,
-          errorRate: svc.errorRate,
-          agentCount: svc.agentCount || 0,
-          trend: 0,
-        })),
-      }))
+      name: center.name,
+      errorRate: center.errorRate,
+      trend: centerTrends[center.name] || 0,
+      targetRate: 3.0,
+      groups: center.services.map(svc => ({
+        name: svc.name,
+        errorRate: svc.errorRate,
+        agentCount: svc.agentCount || 0,
+        trend: 0,
+      })),
+    }))
     : [
-        {
-          name: "용산",
-          errorRate: 0,
-          trend: 0,
-          targetRate: 3.0,
-          groups: [],
-        },
-        {
-          name: "광주",
-          errorRate: 0,
-          trend: 0,
-          targetRate: 3.0,
-          groups: [],
-        },
-      ]
+      {
+        name: "용산",
+        errorRate: 0,
+        trend: 0,
+        targetRate: 3.0,
+        groups: [],
+      },
+      {
+        name: "광주",
+        errorRate: 0,
+        trend: 0,
+        targetRate: 3.0,
+        groups: [],
+      },
+    ]
 
   const filteredCenters = selectedCenter === "all"
     ? centerData
@@ -234,7 +234,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
           </button>
         </div>
       )}
-      
+
       {/* 디버깅 정보 (개발 모드) */}
       {isMounted && process.env.NODE_ENV === 'development' && (
         <div className="bg-blue-50 border border-blue-200 px-4 py-2 rounded-md text-xs mb-4">
@@ -266,7 +266,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
       />
 
       {/* 목표 달성 현황 전광판 */}
-      <GoalStatusBoard />
+      <GoalStatusBoard selectedDate={selectedDate} />
 
       {/* 필터 */}
       <DashboardFilters
@@ -312,6 +312,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
             selectedService={selectedService}
             selectedChannel={selectedChannel}
             selectedTenure={selectedTenure}
+            selectedDate={selectedDate}
           />
         </TabsContent>
 

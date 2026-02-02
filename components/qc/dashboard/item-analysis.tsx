@@ -27,6 +27,7 @@ interface ItemAnalysisProps {
   selectedService: string
   selectedChannel: string
   selectedTenure: string
+  selectedDate?: string
 }
 
 const NAVY = "#1e3a5f"
@@ -34,13 +35,15 @@ const NAVY_LIGHT = "#2d4a6f"
 const KAKAO = "#f9e000"
 const KAKAO_DARK = "#e6ce00"
 
-export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure }: ItemAnalysisProps) {
+export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure, selectedDate }: ItemAnalysisProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
   const [selectedItem, setSelectedItem] = useState<string | null>(null)
 
-  // 최근 14일 데이터 가져오기
-  const endDate = new Date().toISOString().split("T")[0]
-  const startDate = new Date()
+  // 최근 14일 데이터 가져오기 (selectedDate 기준)
+  const statsDate = selectedDate ? new Date(selectedDate) : new Date()
+  const endDate = statsDate.toISOString().split("T")[0]
+
+  const startDate = new Date(statsDate)
   startDate.setDate(startDate.getDate() - 14)
   const startDateStr = startDate.toISOString().split("T")[0]
 
