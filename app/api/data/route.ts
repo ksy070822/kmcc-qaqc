@@ -8,7 +8,7 @@ import {
   getDailyErrors,
   getWeeklyErrors,
   getItemErrorStats,
-  getTenureStats,
+  // getTenureStats,
   getAgentDetail,
 } from "@/lib/bigquery"
 
@@ -45,8 +45,8 @@ export async function GET(request: Request) {
         } catch (dashboardError) {
           console.error("[API] Dashboard stats error:", dashboardError)
           return NextResponse.json(
-            { 
-              success: false, 
+            {
+              success: false,
               error: `Dashboard stats error: ${dashboardError instanceof Error ? dashboardError.message : String(dashboardError)}`,
               details: dashboardError instanceof Error ? dashboardError.stack : undefined
             },
@@ -101,8 +101,9 @@ export async function GET(request: Request) {
         })
         break
 
+      /*
       case "tenure-stats":
-        // 근속기간별 통계 조회
+        // 근속기간별 통계 조회 - Not implemented yet
         result = await getTenureStats({
           center: searchParams.get("center") || undefined,
           service: searchParams.get("service") || undefined,
@@ -111,6 +112,7 @@ export async function GET(request: Request) {
           endDate,
         })
         break
+      */
 
       case "agent-detail":
         const agentId = searchParams.get("agentId")
@@ -134,10 +136,10 @@ export async function GET(request: Request) {
       const errorMessage = result?.error || "Unknown error"
       console.error(`[API] Result error for type ${type}:`, errorMessage)
       return NextResponse.json(
-        { 
-          success: false, 
+        {
+          success: false,
           error: errorMessage,
-          type 
+          type
         },
         { status: 500, headers: corsHeaders }
       )
@@ -149,10 +151,10 @@ export async function GET(request: Request) {
       // dashboard 타입의 경우 기본값 반환
       if (type === 'dashboard') {
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: 'Dashboard stats data is empty or missing',
-            type 
+            type
           },
           { status: 500, headers: corsHeaders }
         )
@@ -167,13 +169,13 @@ export async function GET(request: Request) {
     console.error("[API] Data fetch error:", error)
     const errorMessage = error instanceof Error ? error.message : String(error)
     const errorStack = error instanceof Error ? error.stack : undefined
-    
+
     return NextResponse.json(
-      { 
-        success: false, 
+      {
+        success: false,
         error: errorMessage,
         stack: errorStack,
-        type 
+        type
       },
       { status: 500, headers: corsHeaders }
     )
