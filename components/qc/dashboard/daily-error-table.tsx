@@ -3,13 +3,13 @@
 import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { evaluationItems } from "@/lib/mock-data"
+import { evaluationItems } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { useDailyErrors } from "@/hooks/use-daily-errors"
 import { Loader2 } from "lucide-react"
 
-const NAVY = "#1e3a5f"
-const KAKAO = "#f9e000"
+const NAVY = "#2c6edb"
+const KAKAO = "#ffcd00"
 
 export function DailyErrorTable() {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
@@ -70,6 +70,10 @@ export function DailyErrorTable() {
   const filteredItems =
     category === "all" ? evaluationItems : evaluationItems.filter((item) => item.category === category)
 
+  // 태도 / 오상담 항목 분리
+  const attitudeItems = evaluationItems.filter((item) => item.category === "상담태도")
+  const businessItems = evaluationItems.filter((item) => item.category === "오상담/오처리")
+
   // 최근 14일만 표시
   const recentData = dailyData.slice(-14)
 
@@ -125,8 +129,8 @@ export function DailyErrorTable() {
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-slate-200 bg-[#1e3a5f]/5">
-                <th className="sticky left-0 bg-[#1e3a5f]/5 text-left p-2 font-medium text-slate-700 min-w-[120px]">
+              <tr className="border-b border-slate-200 bg-[#2c6edb]/5">
+                <th className="sticky left-0 bg-[#2c6edb]/5 text-left p-2 font-medium text-slate-700 min-w-[120px]">
                   항목
                 </th>
                 {recentData.map((d) => (
@@ -134,22 +138,25 @@ export function DailyErrorTable() {
                     {d.date}
                   </th>
                 ))}
-                <th className="p-2 font-semibold text-slate-800 text-center bg-[#1e3a5f]/10 min-w-[50px]">합계</th>
+                <th className="p-2 font-semibold text-slate-800 text-center bg-[#2c6edb]/10 min-w-[50px]">합계</th>
               </tr>
             </thead>
             <tbody>
-              <tr className="border-b border-slate-100 bg-[#1e3a5f]/5">
-                <td className="sticky left-0 bg-[#1e3a5f]/5 p-2 font-semibold text-slate-700">일별 QC 모니터링건</td>
+              {/* 일별 QC 모니터링건 (검수건수) */}
+              <tr className="border-b border-slate-100 bg-[#2c6edb]/5">
+                <td className="sticky left-0 bg-[#2c6edb]/5 p-2 font-semibold text-slate-700">일별 QC 검수건</td>
                 {recentData.map((d) => (
                   <td key={`total-${d.fullDate}`} className="p-2 text-center font-semibold text-slate-700">
                     {d.total as number}
                   </td>
                 ))}
-                <td className="p-2 text-center font-bold text-slate-800 bg-[#1e3a5f]/10">
+                <td className="p-2 text-center font-bold text-slate-800 bg-[#2c6edb]/10">
                   {recentData.reduce((sum, d) => sum + (d.total as number), 0)}
                 </td>
               </tr>
-              {filteredItems.map((item, idx) => {
+
+              {/* ── 상담태도 항목 (첫인사~불친절) ── */}
+              {(category === "all" || category === "상담태도") && attitudeItems.map((item, idx) => {
                 const rowTotal = recentData.reduce((sum, d) => sum + (d[item.id] as number), 0)
                 return (
                   <tr
@@ -162,12 +169,7 @@ export function DailyErrorTable() {
                         idx % 2 === 0 ? "bg-white" : "bg-slate-50/50",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "inline-block w-2 h-2 rounded-full mr-2",
-                          item.category === "상담태도" ? "bg-[#1e3a5f]" : "bg-[#f9e000]",
-                        )}
-                      />
+                      <span className="inline-block w-2 h-2 rounded-full mr-2 bg-[#2c6edb]" />
                       {item.shortName}
                     </td>
                     {recentData.map((d) => {
@@ -184,28 +186,104 @@ export function DailyErrorTable() {
                         </td>
                       )
                     })}
-                    <td
-                      className={cn(
-                        "p-2 text-center font-semibold bg-slate-100",
-                        rowTotal > 100 ? "text-red-600" : "text-slate-800",
-                      )}
-                    >
+                    <td className={cn("p-2 text-center font-semibold bg-slate-100", rowTotal > 100 ? "text-red-600" : "text-slate-800")}>
                       {rowTotal}
                     </td>
                   </tr>
                 )
               })}
-              <tr className="border-t-2 border-slate-300 bg-[#f9e000]/20">
-                <td className="sticky left-0 bg-[#f9e000]/20 p-2 font-semibold text-slate-800">태도+업무 미흡 건수</td>
-                {recentData.map((d) => (
-                  <td key={`att-proc-${d.fullDate}`} className="p-2 text-center font-semibold text-slate-700">
-                    {d.total as number}
+
+              {/* ── 태도 소계 ── */}
+              {(category === "all" || category === "상담태도") && (
+                <tr className="border-b-2 border-[#2c6edb]/30 bg-[#2c6edb]/10">
+                  <td className="sticky left-0 bg-[#2c6edb]/10 p-2 font-bold text-[#2c6edb]">상담태도 합계</td>
+                  {recentData.map((d) => {
+                    const attSum = attitudeItems.reduce((sum, item) => sum + (d[item.id] as number), 0)
+                    return (
+                      <td key={`att-sum-${d.fullDate}`} className="p-2 text-center font-bold text-[#2c6edb]">
+                        {attSum > 0 ? attSum : "-"}
+                      </td>
+                    )
+                  })}
+                  <td className="p-2 text-center font-bold text-[#2c6edb] bg-[#2c6edb]/15">
+                    {recentData.reduce((sum, d) => sum + attitudeItems.reduce((s, item) => s + (d[item.id] as number), 0), 0)}
                   </td>
-                ))}
-                <td className="p-2 text-center font-bold text-slate-800 bg-[#f9e000]/30">
-                  {recentData.reduce((sum, d) => sum + (d.total as number), 0)}
-                </td>
-              </tr>
+                </tr>
+              )}
+
+              {/* ── 오상담/오처리 항목 (상담유형오설정~상담이력미흡) ── */}
+              {(category === "all" || category === "오상담/오처리") && businessItems.map((item, idx) => {
+                const rowTotal = recentData.reduce((sum, d) => sum + (d[item.id] as number), 0)
+                return (
+                  <tr
+                    key={item.id}
+                    className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}
+                  >
+                    <td
+                      className={cn(
+                        "sticky left-0 p-2 font-medium text-slate-700",
+                        idx % 2 === 0 ? "bg-white" : "bg-slate-50/50",
+                      )}
+                    >
+                      <span className="inline-block w-2 h-2 rounded-full mr-2 bg-[#ffcd00]" />
+                      {item.shortName}
+                    </td>
+                    {recentData.map((d) => {
+                      const count = d[item.id] as number
+                      return (
+                        <td
+                          key={`${item.id}-${d.fullDate}`}
+                          className={cn(
+                            "p-2 text-center",
+                            count > 10 ? "text-red-600 font-semibold" : count > 5 ? "text-amber-600" : "text-slate-600",
+                          )}
+                        >
+                          {count > 0 ? count : "-"}
+                        </td>
+                      )
+                    })}
+                    <td className={cn("p-2 text-center font-semibold bg-slate-100", rowTotal > 100 ? "text-red-600" : "text-slate-800")}>
+                      {rowTotal}
+                    </td>
+                  </tr>
+                )
+              })}
+
+              {/* ── 오상담 소계 ── */}
+              {(category === "all" || category === "오상담/오처리") && (
+                <tr className="border-b-2 border-[#d4a017]/30 bg-[#ffcd00]/15">
+                  <td className="sticky left-0 bg-[#ffcd00]/15 p-2 font-bold text-[#9a7b00]">오상담/오처리 합계</td>
+                  {recentData.map((d) => {
+                    const bizSum = businessItems.reduce((sum, item) => sum + (d[item.id] as number), 0)
+                    return (
+                      <td key={`biz-sum-${d.fullDate}`} className="p-2 text-center font-bold text-[#9a7b00]">
+                        {bizSum > 0 ? bizSum : "-"}
+                      </td>
+                    )
+                  })}
+                  <td className="p-2 text-center font-bold text-[#9a7b00] bg-[#ffcd00]/25">
+                    {recentData.reduce((sum, d) => sum + businessItems.reduce((s, item) => s + (d[item.id] as number), 0), 0)}
+                  </td>
+                </tr>
+              )}
+
+              {/* ── 전체 합계 (태도 + 오상담) ── */}
+              {category === "all" && (
+                <tr className="border-t-2 border-slate-400 bg-slate-200">
+                  <td className="sticky left-0 bg-slate-200 p-2 font-bold text-slate-900">태도+오상담 합계</td>
+                  {recentData.map((d) => {
+                    const allSum = evaluationItems.reduce((sum, item) => sum + (d[item.id] as number), 0)
+                    return (
+                      <td key={`all-sum-${d.fullDate}`} className="p-2 text-center font-bold text-slate-900">
+                        {allSum > 0 ? allSum : "-"}
+                      </td>
+                    )
+                  })}
+                  <td className="p-2 text-center font-extrabold text-slate-900 bg-slate-300">
+                    {recentData.reduce((sum, d) => sum + evaluationItems.reduce((s, item) => s + (d[item.id] as number), 0), 0)}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

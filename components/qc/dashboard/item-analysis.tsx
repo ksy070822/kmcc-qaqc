@@ -17,10 +17,11 @@ import {
   Line,
   Legend,
 } from "recharts"
-import { evaluationItems } from "@/lib/mock-data"
+import { evaluationItems } from "@/lib/constants"
 import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useItemStats } from "@/hooks/use-item-stats"
+import { useDailyErrors } from "@/hooks/use-daily-errors"
 
 interface ItemAnalysisProps {
   selectedCenter: string
@@ -30,10 +31,9 @@ interface ItemAnalysisProps {
   selectedDate?: string
 }
 
-const NAVY = "#1e3a5f"
-const NAVY_LIGHT = "#2d4a6f"
-const KAKAO = "#f9e000"
-const KAKAO_DARK = "#e6ce00"
+const NAVY = "#2c6edb"
+const NAVY_DARK = "#202237"
+const KAKAO = "#ffcd00"
 
 export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure, selectedDate }: ItemAnalysisProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
@@ -89,8 +89,28 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
   const attitudeItems = itemData.filter((item) => item.category === "상담태도")
   const processItems = itemData.filter((item) => item.category === "오상담/오처리")
 
-  // 항목별 추이 데이터는 일단 빈 배열로 설정 (추후 구현 가능)
-  const selectedItemTrend = selectedItem ? [] : null
+  // 항목별 일자별 추이 데이터
+  const { data: dailyErrorsData } = useDailyErrors({
+    startDate: startDateStr,
+    endDate,
+    center: selectedCenter !== "all" ? selectedCenter : undefined,
+    service: selectedService !== "all" ? selectedService : undefined,
+    channel: selectedChannel !== "all" ? selectedChannel : undefined,
+  })
+
+  // 선택된 항목의 일자별 추이 차트 데이터
+  const selectedItemTrendData = useMemo(() => {
+    if (!selectedItem || !dailyErrorsData || dailyErrorsData.length === 0) return []
+
+    return dailyErrorsData.map((day) => {
+      const itemError = day.items.find((i) => i.itemId === selectedItem)
+      return {
+        date: day.date,
+        label: `${new Date(day.date).getMonth() + 1}/${new Date(day.date).getDate()}`,
+        errorCount: itemError?.errorCount || 0,
+      }
+    }).sort((a, b) => a.date.localeCompare(b.date))
+  }, [selectedItem, dailyErrorsData])
 
   if (loading) {
     return (
@@ -155,18 +175,18 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
               {(selectedCategory === "all" || selectedCategory === "상담태도") && (
                 <div>
                   <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#1e3a5f]" />
+                    <span className="w-3 h-3 rounded-full bg-[#2c6edb]" />
                     상담태도 (5개 항목)
                   </h4>
                   <div className="h-[200px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={attitudeItems} layout="vertical" margin={{ left: 120, right: 30 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#64748b" }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                        <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#666666" }} />
                         <YAxis
                           dataKey="name"
                           type="category"
-                          tick={{ fontSize: 11, fill: "#475569" }}
+                          tick={{ fontSize: 11, fill: "#666666" }}
                           width={120}
                           tickLine={false}
                           axisLine={false}
@@ -175,7 +195,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                           formatter={(value: number) => [`${value.toFixed(2)}%`, "오류율"]}
                           contentStyle={{
                             backgroundColor: "#fff",
-                            border: "1px solid #e2e8f0",
+                            border: "1px solid #D9D9D9",
                             borderRadius: "8px",
                           }}
                         />
@@ -190,18 +210,18 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
               {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && (
                 <div>
                   <h4 className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#f9e000]" />
+                    <span className="w-3 h-3 rounded-full bg-[#ffcd00]" />
                     오상담/오처리 (11개 항목)
                   </h4>
                   <div className="h-[380px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <BarChart data={processItems} layout="vertical" margin={{ left: 140, right: 30 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                        <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#64748b" }} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                        <XAxis type="number" tickFormatter={(v) => `${v}%`} tick={{ fontSize: 11, fill: "#666666" }} />
                         <YAxis
                           dataKey="name"
                           type="category"
-                          tick={{ fontSize: 11, fill: "#475569" }}
+                          tick={{ fontSize: 11, fill: "#666666" }}
                           width={140}
                           tickLine={false}
                           axisLine={false}
@@ -210,11 +230,11 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                           formatter={(value: number) => [`${value.toFixed(2)}%`, "오류율"]}
                           contentStyle={{
                             backgroundColor: "#fff",
-                            border: "1px solid #e2e8f0",
+                            border: "1px solid #D9D9D9",
                             borderRadius: "8px",
                           }}
                         />
-                        <Bar dataKey="errorRate" fill={KAKAO_DARK} radius={[0, 4, 4, 0]} />
+                        <Bar dataKey="errorRate" fill={KAKAO} radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -233,7 +253,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                     <th className="px-3 py-2 text-left font-medium text-slate-600">평가항목</th>
                     <th className="px-3 py-2 text-right font-medium text-slate-600">오류건수</th>
                     <th className="px-3 py-2 text-right font-medium text-slate-600">오류율</th>
-                    <th className="px-3 py-2 text-right font-medium text-slate-600">전일대비</th>
+                    <th className="px-3 py-2 text-right font-medium text-slate-600">전영업일 대비</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -252,8 +272,8 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                           className={cn(
                             "text-xs",
                             item.category === "상담태도"
-                              ? "border-[#1e3a5f] text-[#1e3a5f] bg-slate-50"
-                              : "border-[#e6ce00] text-[#a69500] bg-yellow-50",
+                              ? "border-[#2c6edb] text-[#2c6edb] bg-slate-50"
+                              : "border-[#ffcd00] text-[#ffcd00] bg-yellow-50",
                           )}
                         >
                           {item.category === "상담태도" ? "태도" : "업무"}
@@ -264,7 +284,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                           <div
                             className={cn(
                               "h-2.5 w-2.5 rounded-full",
-                              item.category === "상담태도" ? "bg-[#1e3a5f]" : "bg-[#f9e000]",
+                              item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]",
                             )}
                           />
                           {item.name}
@@ -315,9 +335,49 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                 </SelectContent>
               </Select>
 
-              {selectedItem ? (
+              {selectedItem && selectedItemTrendData.length > 0 ? (
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-700 mb-3">
+                    {itemData.find(i => i.id === selectedItem)?.name} - 일자별 오류건수 추이
+                  </h4>
+                  <div className="h-[300px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={selectedItemTrendData} margin={{ left: 10, right: 20, top: 10, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11, fill: "#666666" }}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11, fill: "#666666" }}
+                          tickLine={false}
+                          axisLine={false}
+                          allowDecimals={false}
+                        />
+                        <Tooltip
+                          formatter={(value: number) => [`${value}건`, "오류건수"]}
+                          contentStyle={{
+                            backgroundColor: "#fff",
+                            border: "1px solid #D9D9D9",
+                            borderRadius: "8px",
+                          }}
+                        />
+                        <Line
+                          type="monotone"
+                          dataKey="errorCount"
+                          stroke={NAVY}
+                          strokeWidth={2}
+                          dot={{ fill: NAVY, r: 3 }}
+                          activeDot={{ r: 5 }}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              ) : selectedItem ? (
                 <div className="h-[300px] flex items-center justify-center text-slate-400">
-                  추이 데이터는 추후 구현 예정입니다
+                  선택한 항목의 데이터가 없습니다
                 </div>
               ) : (
                 <div className="h-[300px] flex items-center justify-center text-slate-400">

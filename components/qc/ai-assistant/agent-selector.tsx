@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Search, User, Users, X } from "lucide-react"
 import { useAgents } from "@/hooks/use-agents"
-import { serviceGroups, channelTypes } from "@/lib/mock-data"
+import { serviceGroups, channelTypes } from "@/lib/constants"
 
 interface AgentSelectorProps {
   selectedAgentId?: string
@@ -19,6 +19,7 @@ interface AgentSelectorProps {
   }
   onAgentSelect: (agentId: string | undefined) => void
   onGroupSelect: (group: { center?: string; service?: string; channel?: string } | undefined) => void
+  onClear?: () => void
 }
 
 export function AgentSelector({

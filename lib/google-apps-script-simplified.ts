@@ -5,8 +5,8 @@ export const appsScriptForYourSheets = `
  * 이 코드를 구글 시트 > 도구 > Apps Script에 붙여넣으세요
  */
 
-// 웹앱 URL 설정 (Vercel에 배포 후 수정)
-const WEBAPP_URL = "https://your-app.vercel.app/api/sync";
+// 웹앱 URL 설정 (Cloud Run 배포)
+const WEBAPP_URL = "https://qc-dashboard-wlof52lhea-du.a.run.app/api/sync";
 
 // 로우 데이터 시트 이름
 const RAW_DATA_SHEETS = ["용산LAW", "광주LAW"];

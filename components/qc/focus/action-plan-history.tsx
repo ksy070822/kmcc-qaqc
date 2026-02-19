@@ -4,12 +4,13 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Calendar, CheckCircle, Clock, AlertTriangle, ChevronRight, TrendingDown, MessageSquare } from "lucide-react"
 
 interface ActionPlanHistoryItem {
   id: string
+  agentId?: string
   agentName: string
   center: string
   group: string
@@ -114,7 +115,7 @@ export function ActionPlanHistory({ plans, onViewDetail }: ActionPlanHistoryProp
                     <Button
                       variant="outline"
                       size="sm"
-                      className="text-xs bg-[#fee500]/20 border-[#fee500] text-slate-700 hover:bg-[#fee500]/30"
+                      className="text-xs bg-[#ffcd00]/20 border-[#ffcd00] text-slate-700 hover:bg-[#ffcd00]/30"
                       onClick={(e) => {
                         e.stopPropagation()
                         handleViewFeedback(plan)
@@ -140,9 +141,12 @@ export function ActionPlanHistory({ plans, onViewDetail }: ActionPlanHistoryProp
         <DialogContent className="max-w-md bg-white">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <MessageSquare className="h-5 w-5 text-[#1e3a5f]" />
+              <MessageSquare className="h-5 w-5 text-[#2c6edb]" />
               관리자 피드백
             </DialogTitle>
+            <DialogDescription className="text-slate-500">
+              해당 상담사의 액션플랜에 대한 관리자 피드백입니다.
+            </DialogDescription>
           </DialogHeader>
           {selectedPlan && (
             <div className="space-y-4">
@@ -161,7 +165,7 @@ export function ActionPlanHistory({ plans, onViewDetail }: ActionPlanHistoryProp
               </div>
               <div className="border-t border-slate-200 pt-4">
                 <h4 className="text-sm font-medium text-slate-500 mb-2">관리자 피드백</h4>
-                <div className="rounded-lg border border-[#1e3a5f]/30 bg-[#1e3a5f]/5 p-3">
+                <div className="rounded-lg border border-[#2c6edb]/30 bg-[#2c6edb]/5 p-3">
                   <p className="text-sm text-slate-700">{selectedPlan.managerFeedback}</p>
                   {selectedPlan.feedbackDate && (
                     <p className="text-xs text-slate-500 mt-2">작성일: {selectedPlan.feedbackDate}</p>

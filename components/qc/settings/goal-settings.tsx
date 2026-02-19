@@ -353,12 +353,12 @@ export function GoalSettings() {
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle className="flex items-center gap-2 text-lg text-foreground">
-            <Target className="h-5 w-5 text-[#1e3a5f]" />
+            <Target className="h-5 w-5 text-[#2c6edb]" />
             목표 설정
           </CardTitle>
           <p className="text-sm text-muted-foreground mt-1">센터별, 유형별 품질 목표를 설정합니다.</p>
         </div>
-        <Button onClick={handleAddNew} className="bg-[#1e3a5f] hover:bg-[#2d4a6f]">
+        <Button onClick={handleAddNew} className="bg-[#2c6edb] hover:bg-[#202237]">
           <Plus className="mr-2 h-4 w-4" />새 목표 추가
         </Button>
       </CardHeader>
@@ -416,7 +416,7 @@ export function GoalSettings() {
                       {getTypeLabel(goal.type)}
                     </Badge>
                   </TableCell>
-                  <TableCell className="text-center font-mono font-semibold text-[#1e3a5f]">
+                  <TableCell className="text-center font-mono font-semibold text-[#2c6edb]">
                     {goal.targetRate.toFixed(1)}%
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
@@ -542,7 +542,7 @@ export function GoalSettings() {
             <Button
               onClick={handleSave}
               disabled={!formData.name || !formData.targetRate || !formData.startDate || !formData.endDate || saving}
-              className="bg-[#1e3a5f] hover:bg-[#2d4a6f]"
+              className="bg-[#2c6edb] hover:bg-[#202237]"
             >
               {saving ? (
                 <>

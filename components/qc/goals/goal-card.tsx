@@ -10,20 +10,47 @@ export interface GoalData {
   id: string
   title: string
   center: "전체" | "용산" | "광주"
-  group?: string
-  type?: "attitude" | "counseling" | "total"
+  service?: string
+  channel?: string
+  type: "attitude" | "counseling" | "total"
   targetErrorRate: number
   currentErrorRate: number
-  period: "monthly" | "quarterly"
+  period: "monthly" | "quarterly" | "yearly"
   startDate: string
   endDate: string
   progress: number
-  status: "on-track" | "at-risk" | "achieved" | "missed"
+  status: "achieved" | "on-track" | "at-risk" | "missed"
 }
 
 interface GoalCardProps {
   goal: GoalData
   onEdit: (goal: GoalData) => void
+}
+
+function getTypeLabel(type: GoalData["type"]) {
+  switch (type) {
+    case "attitude":
+      return "상담태도"
+    case "counseling":
+      return "오상담/오처리"
+    case "total":
+      return "합계"
+    default:
+      return type
+  }
+}
+
+function getTypeColor(type: GoalData["type"]) {
+  switch (type) {
+    case "attitude":
+      return "bg-blue-50 text-blue-700 border-blue-200"
+    case "counseling":
+      return "bg-amber-50 text-amber-700 border-amber-200"
+    case "total":
+      return "bg-slate-100 text-slate-700 border-slate-300"
+    default:
+      return "bg-slate-100 text-slate-700 border-slate-300"
+  }
 }
 
 export function GoalCard({ goal, onEdit }: GoalCardProps) {
@@ -64,26 +91,13 @@ export function GoalCard({ goal, onEdit }: GoalCardProps) {
     }
   }
 
-  const getTypeLabel = () => {
-    switch (goal.type) {
-      case "attitude":
-        return "상담태도"
-      case "counseling":
-        return "오상담/오처리"
-      case "total":
-        return "합계"
-      default:
-        return null
-    }
-  }
-
   const statusConfig = getStatusConfig()
   const StatusIcon = statusConfig.icon
   const achievementRate =
     goal.targetErrorRate > 0
       ? Math.max(0, (1 - (goal.currentErrorRate - goal.targetErrorRate) / goal.targetErrorRate) * 100)
       : 100
-  const typeLabel = getTypeLabel()
+  const typeLabel = getTypeLabel(goal.type)
 
   return (
     <Card className={cn("border shadow-sm", statusConfig.borderClass)}>
@@ -91,29 +105,28 @@ export function GoalCard({ goal, onEdit }: GoalCardProps) {
         <div className="flex items-start justify-between">
           <div className="space-y-1">
             <CardTitle className="flex items-center gap-2 text-base text-foreground">
-              <Target className="h-4 w-4 text-[#1e3a5f]" />
+              <Target className="h-4 w-4 text-[#2c6edb]" />
               {goal.title}
             </CardTitle>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className="text-xs">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <Badge variant="outline" className="text-xs bg-white">
                 {goal.center}
-                {goal.group && ` ${goal.group}`}
               </Badge>
-              {typeLabel && (
-                <Badge
-                  variant="outline"
-                  className={cn(
-                    "text-xs",
-                    goal.type === "attitude" && "bg-blue-50 text-blue-700 border-blue-200",
-                    goal.type === "counseling" && "bg-amber-50 text-amber-700 border-amber-200",
-                    goal.type === "total" && "bg-slate-100 text-slate-700 border-slate-300",
-                  )}
-                >
-                  {typeLabel}
+              {goal.service && goal.service !== 'all' && (
+                <Badge variant="outline" className="text-xs bg-white border-blue-200 text-blue-700">
+                  {goal.service}
                 </Badge>
               )}
+              {goal.channel && goal.channel !== 'all' && (
+                <Badge variant="outline" className="text-xs bg-white border-green-200 text-green-700">
+                  {goal.channel === 'chat' ? '채팅' : goal.channel === 'call' ? '유선' : goal.channel}
+                </Badge>
+              )}
+              <Badge variant="outline" className={cn("text-xs", getTypeColor(goal.type))}>
+                {getTypeLabel(goal.type)}
+              </Badge>
               <Badge variant="outline" className="text-xs">
-                {goal.period === "monthly" ? "월간" : "분기"}
+                {goal.period === "monthly" ? "월간" : goal.period === "quarterly" ? "분기" : "연간"}
               </Badge>
             </div>
           </div>

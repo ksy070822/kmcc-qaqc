@@ -55,6 +55,21 @@ export function AgentAnalysis() {
         }
       }
       
+      // Calculate total errors: use actual error count if available, otherwise sum attitude + business errors
+      let totalErrors = 0
+      if (agent.totalErrors !== undefined && agent.totalErrors !== null) {
+        // Use actual total error count from agent data
+        totalErrors = agent.totalErrors
+      } else if (agent.attitudeErrors !== undefined && agent.opsErrors !== undefined) {
+        // Sum attitude and business error counts
+        totalErrors = agent.attitudeErrors + agent.opsErrors
+      } else {
+        // Fallback: estimate from error rates if counts are not available
+        const estimatedAttitudeErrors = Math.round((agent.attitudeErrorRate / 100) * agent.totalEvaluations)
+        const estimatedOpsErrors = Math.round((agent.opsErrorRate / 100) * agent.totalEvaluations)
+        totalErrors = estimatedAttitudeErrors + estimatedOpsErrors
+      }
+
       return {
         id: agent.id,
         name: agent.name,
@@ -64,7 +79,7 @@ export function AgentAnalysis() {
         errorRate,
         trend: 0, // 전일대비는 useEffect에서 계산
         totalCalls: agent.totalEvaluations,
-        totalErrors: Math.floor((agent.attitudeErrorRate + agent.opsErrorRate) / 2),
+        totalErrors: totalErrors,
         topIssue,
         status: (errorRate > 4 ? "위험" : "양호") as "양호" | "위험",
         // 전일대비 계산을 위한 원본 데이터 보관

@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { groups } from "@/lib/mock-data"
+import { groups } from "@/lib/constants"
 import type { GoalData } from "./goal-card"
 
 interface GoalFormModalProps {
@@ -19,29 +19,43 @@ interface GoalFormModalProps {
 export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModalProps) {
   const [title, setTitle] = useState("")
   const [center, setCenter] = useState<"전체" | "용산" | "광주">("전체")
-  const [group, setGroup] = useState<string>("")
+  // Group is replaced by Service/Channel logic basically, but keeping interface consistent for now
   const [targetErrorRate, setTargetErrorRate] = useState("")
-  const [period, setPeriod] = useState<"monthly" | "quarterly">("monthly")
+  const [period, setPeriod] = useState<"monthly" | "quarterly" | "yearly">("monthly")
   const [startDate, setStartDate] = useState("")
   const [endDate, setEndDate] = useState("")
+
+  // New fields
+  const [type, setType] = useState<"attitude" | "ops" | "total">("total")
+  const [service, setService] = useState<string>("all")
+  const [channel, setChannel] = useState<string>("all")
 
   useEffect(() => {
     if (goal) {
       setTitle(goal.title)
       setCenter(goal.center)
-      setGroup(goal.group || "")
       setTargetErrorRate(goal.targetErrorRate.toString())
-      setPeriod(goal.period)
+      setPeriod(goal.period as any) // Type casting needed as we expanded period type
       setStartDate(goal.startDate)
       setEndDate(goal.endDate)
+
+      // Initialize new fields from goal data if available, otherwise defaults
+      setType(goal.type === "attitude" ? "attitude" : goal.type === "counseling" ? "ops" : "total")
+      // Currently GoalData interface might need updates to hold service/channel, 
+      // but for now we default to 'all' or infer if we added it to GoalData.
+      // Assuming GoalData doesn't have them yet, defaulting to all.
+      setService("all")
+      setChannel("all")
     } else {
       setTitle("")
       setCenter("전체")
-      setGroup("")
       setTargetErrorRate("")
       setPeriod("monthly")
       setStartDate("")
       setEndDate("")
+      setType("total")
+      setService("all")
+      setChannel("all")
     }
   }, [goal, open])
 
@@ -50,16 +64,28 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
       id: goal?.id,
       title,
       center,
-      group: group || undefined,
       targetErrorRate: Number(targetErrorRate),
       period,
       startDate,
       endDate,
-    })
+      // Pass new fields. Note: onSave expects Partial<GoalData>. 
+      // We will cast these into the object, and index.tsx needs to handle them.
+      type: type === "attitude" ? "attitude" : type === "ops" ? "counseling" : "total",
+      // @ts-ignore - appending temporary fields that will be handled in index.tsx
+      service: service === "all" ? undefined : service,
+      // @ts-ignore
+      channel: channel === "all" ? undefined : channel,
+    } as any)
     onOpenChange(false)
   }
 
-  const availableGroups = center === "전체" ? [] : center === "용산" ? groups["용산"] : groups["광주"]
+  // Mock services data
+  const services = {
+    "용산": ["모빌리티", "T map", "NUGU"],
+    "광주": ["택시", "대리", "주차", "바이크"],
+  }
+
+  const currentServices = center === "용산" ? services["용산"] : center === "광주" ? services["광주"] : []
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -82,6 +108,34 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
 
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
+              <Label>목표 유형 *</Label>
+              <Select value={type} onValueChange={(v: any) => setType(v)}>
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue placeholder="유형 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="attitude">상담태도</SelectItem>
+                  <SelectItem value="ops">오상담/오처리</SelectItem>
+                  <SelectItem value="total">합계</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="targetRate">목표 오류율 (%) *</Label>
+              <Input
+                id="targetRate"
+                type="number"
+                step="0.1"
+                value={targetErrorRate}
+                onChange={(e) => setTargetErrorRate(e.target.value)}
+                className="bg-secondary"
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
               <Label>센터</Label>
               <Select value={center} onValueChange={(v: any) => setCenter(v)}>
                 <SelectTrigger className="bg-secondary">
@@ -96,38 +150,6 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
             </div>
 
             <div className="space-y-2">
-              <Label>그룹 (선택)</Label>
-              <Select value={group} onValueChange={setGroup} disabled={center === "전체"}>
-                <SelectTrigger className="bg-secondary">
-                  <SelectValue placeholder="전체" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="전체">전체</SelectItem>
-                  {availableGroups.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {g}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="targetRate">목표 오류율 (%) *</Label>
-              <Input
-                id="targetRate"
-                type="number"
-                step="0.1"
-                placeholder="3.0"
-                value={targetErrorRate}
-                onChange={(e) => setTargetErrorRate(e.target.value)}
-                className="bg-secondary"
-              />
-            </div>
-
-            <div className="space-y-2">
               <Label>기간 유형</Label>
               <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
                 <SelectTrigger className="bg-secondary">
@@ -136,6 +158,40 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
                 <SelectContent>
                   <SelectItem value="monthly">월간</SelectItem>
                   <SelectItem value="quarterly">분기</SelectItem>
+                  <SelectItem value="yearly">연간</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <Label>서비스 (선택)</Label>
+              <Select value={service} onValueChange={setService} disabled={center === "전체"}>
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue placeholder="전체" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  {currentServices.map((svc) => (
+                    <SelectItem key={svc} value={svc}>
+                      {svc}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>채널 (선택)</Label>
+              <Select value={channel} onValueChange={setChannel}>
+                <SelectTrigger className="bg-secondary">
+                  <SelectValue placeholder="전체" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">전체</SelectItem>
+                  <SelectItem value="chat">채팅</SelectItem>
+                  <SelectItem value="call">유선</SelectItem>
                 </SelectContent>
               </Select>
             </div>

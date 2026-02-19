@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAgents } from '@/lib/bigquery';
+import { getCorsHeaders } from '@/lib/cors';
 
 // CORS 헤더
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const corsHeaders = getCorsHeaders();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });

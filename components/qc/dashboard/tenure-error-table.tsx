@@ -3,9 +3,28 @@
 import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { evaluationItems, serviceGroups, channelTypes, tenureCategories } from "@/lib/mock-data"
+import { evaluationItems, serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+
+// 심야는 채널 통합 (유선+채팅 합산)
+const MERGED_CHANNEL_SERVICES = ["심야"]
+
+// 서비스-채널 조합 키 생성
+function buildServiceChannelKeys(center: "용산" | "광주"): { key: string; label: string; center: string }[] {
+  const keys: { key: string; label: string; center: string }[] = []
+  for (const service of serviceGroups[center]) {
+    if (MERGED_CHANNEL_SERVICES.includes(service)) {
+      // 심야: 채널 통합
+      keys.push({ key: `${center}-${service}-통합`, label: service, center })
+    } else {
+      for (const channel of channelTypes) {
+        keys.push({ key: `${center}-${service}-${channel}`, label: `${service} ${channel}`, center })
+      }
+    }
+  }
+  return keys
+}
 
 export function TenureErrorTable() {
   const [selectedCenter, setSelectedCenter] = useState<"all" | "용산" | "광주">("all")
@@ -13,79 +32,76 @@ export function TenureErrorTable() {
   const [tenureStats, setTenureStats] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  
-  // 실제 데이터 조회
+
+  // 근속기간별 오류 데이터 조회
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchTenureStats = async () => {
       setLoading(true)
       setError(null)
-      
       try {
-        const endDate = new Date().toISOString().split('T')[0]
-        const startDate = new Date()
-        startDate.setDate(startDate.getDate() - 30)
-        const startDateStr = startDate.toISOString().split('T')[0]
-        
-        const params = new URLSearchParams()
-        params.append("type", "tenure-stats")
-        params.append("startDate", startDateStr)
-        params.append("endDate", endDate)
-        if (selectedCenter !== "all") params.append("center", selectedCenter)
-        if (selectedService !== "all") params.append("service", selectedService)
-        
-        const response = await fetch(`/api/data?${params.toString()}`)
-        const result = await response.json()
-        
-        if (result.success && result.data) {
-          setTenureStats(result.data)
+        const params = new URLSearchParams({ type: "tenure-stats" })
+        if (selectedCenter !== "all") params.set("center", selectedCenter)
+        if (selectedService !== "all") params.set("service", selectedService)
+        const res = await fetch(`/api/data?${params.toString()}`)
+        const json = await res.json()
+        if (json.success && json.data) {
+          setTenureStats(json.data)
         } else {
-          setError(result.error || "데이터를 불러올 수 없습니다.")
+          setError(json.error || "데이터 조회에 실패했습니다.")
         }
       } catch (err) {
-        setError(err instanceof Error ? err.message : "데이터 로딩 실패")
+        setError(err instanceof Error ? err.message : "네트워크 오류가 발생했습니다.")
       } finally {
         setLoading(false)
       }
     }
-    
-    fetchData()
+    fetchTenureStats()
   }, [selectedCenter, selectedService])
-  
+
+  // 서비스-채널 키 목록 (센터별)
+  const allKeys = useMemo(() => {
+    if (selectedCenter === "all") {
+      return [
+        ...buildServiceChannelKeys("용산"),
+        ...buildServiceChannelKeys("광주"),
+      ]
+    }
+    return buildServiceChannelKeys(selectedCenter)
+  }, [selectedCenter])
+
   // 데이터 변환
   const tenureData = useMemo(() => {
     const data: Record<string, Record<string, Record<string, number>>> = {}
-    const allServices = [
-      ...serviceGroups["용산"].map((s) => ({ center: "용산", service: s })),
-      ...serviceGroups["광주"].map((s) => ({ center: "광주", service: s })),
-    ]
 
-    allServices.forEach(({ center, service }) => {
-      channelTypes.forEach((channel) => {
-        const key = `${center}-${service}-${channel}`
-        data[key] = {}
-        tenureCategories.forEach((tenure) => {
-          data[key][tenure] = {}
-          evaluationItems.forEach((item) => {
-            data[key][tenure][item.id] = 0
-          })
-        })
-      })
-    })
-    
+    // 키별 빈 데이터 초기화
+    for (const { key } of allKeys) {
+      data[key] = {}
+      for (const tenure of tenureCategories) {
+        data[key][tenure] = {}
+        for (const item of evaluationItems) {
+          data[key][tenure][item.id] = 0
+        }
+      }
+    }
+
     // 실제 데이터 매핑
     tenureStats.forEach((stat) => {
-      const key = `${stat.center}-${stat.service}-${stat.channel}`
+      const isMerged = MERGED_CHANNEL_SERVICES.includes(stat.service)
+      const key = isMerged
+        ? `${stat.center}-${stat.service}-통합`
+        : `${stat.center}-${stat.service}-${stat.channel}`
+
       if (data[key] && data[key][stat.tenureGroup]) {
         Object.entries(stat.items).forEach(([itemId, count]) => {
           if (data[key][stat.tenureGroup][itemId] !== undefined) {
-            data[key][stat.tenureGroup][itemId] = count as number
+            data[key][stat.tenureGroup][itemId] += count as number
           }
         })
       }
     })
 
     return data
-  }, [tenureStats])
+  }, [tenureStats, allKeys])
 
   const services =
     selectedCenter === "all"
@@ -93,12 +109,39 @@ export function TenureErrorTable() {
       : serviceGroups[selectedCenter]
 
   // 필터링된 키 목록
-  const filteredKeys = Object.keys(tenureData).filter((key) => {
-    const [center, service] = key.split("-")
-    if (selectedCenter !== "all" && center !== selectedCenter) return false
-    if (selectedService !== "all" && service !== selectedService) return false
-    return true
-  })
+  const filteredKeys = useMemo(() => {
+    return allKeys.filter(({ key }) => {
+      const parts = key.split("-")
+      const service = parts.slice(1, -1).join("-") // center-서비스명-channel (서비스명에 -가 없으므로 parts[1])
+      if (selectedService !== "all" && parts[1] !== selectedService) return false
+      return true
+    })
+  }, [allKeys, selectedService])
+
+  // 센터별 그룹핑 (헤더 행 삽입용)
+  const groupedByCenterKeys = useMemo(() => {
+    const groups: { center: string; keys: typeof filteredKeys }[] = []
+    let currentCenter = ""
+    let currentGroup: typeof filteredKeys = []
+
+    for (const item of filteredKeys) {
+      if (item.center !== currentCenter) {
+        if (currentGroup.length > 0) {
+          groups.push({ center: currentCenter, keys: currentGroup })
+        }
+        currentCenter = item.center
+        currentGroup = [item]
+      } else {
+        currentGroup.push(item)
+      }
+    }
+    if (currentGroup.length > 0) {
+      groups.push({ center: currentCenter, keys: currentGroup })
+    }
+    return groups
+  }, [filteredKeys])
+
+  const colCount = evaluationItems.length + 3 // 구분(2) + items(16) + 합계(1)
 
   return (
     <Card className="border-slate-200">
@@ -145,108 +188,132 @@ export function TenureErrorTable() {
             <span>데이터 로딩 중...</span>
           </div>
         )}
-        
+
         {error && (
           <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm mb-4">
             <strong>데이터 로드 오류:</strong> {error}
           </div>
         )}
-        
+
         {!loading && !error && (
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-slate-200 bg-[#1e3a5f]/5">
-                <th className="sticky left-0 bg-[#1e3a5f]/5 text-left p-2 font-medium text-slate-700" colSpan={2}>
+              <tr className="border-b border-slate-200 bg-[#2c6edb]/5">
+                <th className="sticky left-0 bg-[#2c6edb]/5 text-left p-2 font-medium text-slate-700" colSpan={2}>
                   구분
                 </th>
-                {evaluationItems.slice(0, 8).map((item) => (
+                {evaluationItems.map((item) => (
                   <th key={item.id} className="p-2 font-medium text-slate-600 text-center whitespace-nowrap">
                     <span
                       className={cn(
                         "inline-block w-2 h-2 rounded-full mr-1",
-                        item.category === "상담태도" ? "bg-[#1e3a5f]" : "bg-[#f9e000]",
+                        item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]",
                       )}
                     />
                     {item.shortName}
                   </th>
                 ))}
-                <th className="p-2 font-semibold text-slate-800 text-center bg-[#1e3a5f]/10">합계</th>
+                <th className="p-2 font-semibold text-slate-800 text-center bg-[#2c6edb]/10">합계</th>
               </tr>
             </thead>
             <tbody>
-              {filteredKeys.map((key, keyIdx) => {
-                const [center, service, channel] = key.split("-")
-                const tenureRows = tenureCategories.map((tenure, tenureIdx) => {
-                  const rowData = tenureData[key][tenure]
-                  const total = evaluationItems.slice(0, 8).reduce((sum, item) => sum + (rowData[item.id] || 0), 0)
-
-                  return (
-                    <tr
-                      key={`${key}-${tenure}`}
+              {groupedByCenterKeys.map((group) => (
+                <>
+                  {/* 센터 헤더 행 */}
+                  <tr key={`header-${group.center}`} className={cn(
+                    "border-b-2",
+                    group.center === "용산"
+                      ? "bg-[#2c6edb]/20 border-[#2c6edb]/30"
+                      : "bg-[#ffcd00]/20 border-[#ffcd00]/30",
+                  )}>
+                    <td
+                      colSpan={colCount}
                       className={cn(
-                        "border-b border-slate-100",
-                        tenureIdx === tenureCategories.length - 1 ? "border-b-2" : "",
+                        "sticky left-0 p-2 font-bold text-sm",
+                        group.center === "용산"
+                          ? "bg-[#2c6edb]/20 text-[#2c6edb]"
+                          : "bg-[#ffcd00]/20 text-[#666666]",
                       )}
                     >
-                      {tenureIdx === 0 && (
-                        <td
-                          rowSpan={tenureCategories.length + 1}
-                          className={cn(
-                            "sticky left-0 p-2 font-semibold text-slate-700 border-r border-slate-200",
-                            center === "용산" ? "bg-[#1e3a5f]/10" : "bg-[#f9e000]/20",
-                          )}
-                        >
-                          {service} {channel}
-                        </td>
-                      )}
-                      <td className="p-2 text-slate-600 bg-slate-50">{tenure}</td>
-                      {evaluationItems.slice(0, 8).map((item) => (
-                        <td
-                          key={`${key}-${tenure}-${item.id}`}
-                          className={cn(
-                            "p-2 text-center",
-                            (rowData[item.id] || 0) > 5 ? "text-red-600 font-semibold" : "text-slate-600",
-                          )}
-                        >
-                          {rowData[item.id] || 0}
-                        </td>
-                      ))}
-                      <td className="p-2 text-center font-semibold bg-slate-100 text-slate-800">{total}</td>
-                    </tr>
-                  )
-                })
-
-                // 소계 행
-                const subtotalRow = (
-                  <tr key={`${key}-subtotal`} className="bg-slate-100 border-b-2 border-slate-300">
-                    <td className="p-2 font-semibold text-slate-700 bg-slate-100">계</td>
-                    {evaluationItems.slice(0, 8).map((item) => {
-                      const subtotal = tenureCategories.reduce(
-                        (sum, tenure) => sum + (tenureData[key][tenure][item.id] || 0),
-                        0,
-                      )
-                      return (
-                        <td key={`${key}-subtotal-${item.id}`} className="p-2 text-center font-semibold text-slate-700">
-                          {subtotal}
-                        </td>
-                      )
-                    })}
-                    <td className="p-2 text-center font-bold text-slate-800 bg-[#1e3a5f]/10">
-                      {tenureCategories.reduce(
-                        (sum, tenure) =>
-                          sum +
-                          evaluationItems
-                            .slice(0, 8)
-                            .reduce((s, item) => s + (tenureData[key][tenure][item.id] || 0), 0),
-                        0,
-                      )}
+                      {group.center}센터
                     </td>
                   </tr>
-                )
 
-                return [...tenureRows, subtotalRow]
-              })}
+                  {/* 서비스-채널별 행 */}
+                  {group.keys.map(({ key, label }) => {
+                    const tenureRows = tenureCategories.map((tenure, tenureIdx) => {
+                      const rowData = tenureData[key]?.[tenure] || {}
+                      const total = evaluationItems.reduce((sum, item) => sum + (rowData[item.id] || 0), 0)
+
+                      return (
+                        <tr
+                          key={`${key}-${tenure}`}
+                          className={cn(
+                            "border-b border-slate-100",
+                            tenureIdx === tenureCategories.length - 1 ? "border-b-2" : "",
+                          )}
+                        >
+                          {tenureIdx === 0 && (
+                            <td
+                              rowSpan={tenureCategories.length + 1}
+                              className={cn(
+                                "sticky left-0 p-2 font-semibold text-slate-700 border-r border-slate-200",
+                                group.center === "용산" ? "bg-[#2c6edb]/10" : "bg-[#ffcd00]/10",
+                              )}
+                            >
+                              {label}
+                            </td>
+                          )}
+                          <td className="p-2 text-slate-600 bg-slate-50">{tenure}</td>
+                          {evaluationItems.map((item) => (
+                            <td
+                              key={`${key}-${tenure}-${item.id}`}
+                              className={cn(
+                                "p-2 text-center",
+                                (rowData[item.id] || 0) > 5 ? "text-red-600 font-semibold" : "text-slate-600",
+                              )}
+                            >
+                              {rowData[item.id] || 0}
+                            </td>
+                          ))}
+                          <td className="p-2 text-center font-semibold bg-slate-100 text-slate-800">{total}</td>
+                        </tr>
+                      )
+                    })
+
+                    // 소계 행
+                    const subtotalRow = (
+                      <tr key={`${key}-subtotal`} className="bg-slate-100 border-b-2 border-slate-300">
+                        <td className="p-2 font-semibold text-slate-700 bg-slate-100">계</td>
+                        {evaluationItems.map((item) => {
+                          const subtotal = tenureCategories.reduce(
+                            (sum, tenure) => sum + (tenureData[key]?.[tenure]?.[item.id] || 0),
+                            0,
+                          )
+                          return (
+                            <td key={`${key}-subtotal-${item.id}`} className="p-2 text-center font-semibold text-slate-700">
+                              {subtotal}
+                            </td>
+                          )
+                        })}
+                        <td className="p-2 text-center font-bold text-slate-800 bg-[#2c6edb]/10">
+                          {tenureCategories.reduce(
+                            (sum, tenure) =>
+                              sum +
+                              evaluationItems
+                                .slice(0, 8)
+                                .reduce((s, item) => s + (tenureData[key]?.[tenure]?.[item.id] || 0), 0),
+                            0,
+                          )}
+                        </td>
+                      </tr>
+                    )
+
+                    return [...tenureRows, subtotalRow]
+                  })}
+                </>
+              ))}
             </tbody>
           </table>
         </div>

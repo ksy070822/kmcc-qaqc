@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getBigQueryClient } from '@/lib/bigquery';
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
+const TARGETS_TABLE = '`' + DATASET_ID + '.targets`';
 
 export async function GET(request: NextRequest) {
   try {
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest) {
     let sampleData: any[] = [];
     try {
       const [rows] = await bigquery.query({
-        query: `SELECT * FROM \`${DATASET_ID}.targets\` LIMIT 5`,
+        query: `SELECT * FROM ${TARGETS_TABLE} LIMIT 5`,
         location: 'asia-northeast3',
       });
       sampleData = rows;

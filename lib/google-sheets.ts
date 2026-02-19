@@ -117,10 +117,10 @@ export function parseSheetRowsToEvaluations(
 ): any[] {
   const evaluations: any[] = [];
 
-  // 헤더 인덱스 매핑
+  // 헤더 인덱스 매핑 (줄바꿈·공백 정규화)
   const headerMap: Record<string, number> = {};
   headers.forEach((h, i) => {
-    const normalized = h.trim().toLowerCase();
+    const normalized = h.trim().toLowerCase().replace(/\s+/g, ' ');
     headerMap[normalized] = i;
   });
 
@@ -498,6 +498,9 @@ export function parseSheetRowsToEvaluations2025(
         ? `${agentId}_${normalizedDate}_${consultId}`
         : `${agentId}_${normalizedDate}_${rowIndex}`;
 
+      // 개별 오류 항목 추출
+      const errorDetails = extractIndividualErrors(row, headerMap);
+
       evaluations.push({
         evaluationId,
         date: normalizedDate,
@@ -512,6 +515,7 @@ export function parseSheetRowsToEvaluations2025(
         attitudeErrors,
         businessErrors,
         totalErrors,
+        ...errorDetails,
         rawRow: row,
       });
     } catch (e) {

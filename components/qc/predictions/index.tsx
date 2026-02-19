@@ -22,11 +22,40 @@ import {
   type GroupPrediction,
   type AgentPrediction
 } from "@/lib/predictions"
-import { groups, serviceGroups, channelTypes, tenureCategories } from "@/lib/mock-data"
+import { groups, serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
+
+// 운영 그룹 화이트리스트 (실제 운영 서비스/채널 조합만 허용)
+const OPERATIONAL_GROUPS: Record<string, string[]> = {
+  용산: ["택시/유선", "택시/채팅", "퀵/유선", "퀵/채팅"],
+  광주: [
+    "택시/유선", "택시/채팅",
+    "대리/유선", "대리/채팅",
+    "바이크마스/유선", "바이크마스/채팅", "바이크/마스/유선", "바이크/마스/채팅",
+    "주차카오너/유선", "주차카오너/채팅", "주차/카오너/유선", "주차/카오너/채팅",
+    "퀵/유선", "퀵/채팅",
+    "심야/통합", "심야",
+  ],
+}
+
+// 운영 그룹 여부 확인
+function isOperationalGroup(center: string, group: string): boolean {
+  const allowedGroups = OPERATIONAL_GROUPS[center]
+  if (!allowedGroups) return false
+  return allowedGroups.some(g => group === g || group.replace(/\//g, '') === g.replace(/\//g, ''))
+}
+
+// 관리자 직무 키워드 (제외 대상)
+const MANAGER_KEYWORDS = ["팀장", "매니저", "관리자", "리더", "supervisor", "manager", "team lead"]
+function isManager(agent: any): boolean {
+  const group = (agent.group || agent.service || '').toLowerCase()
+  const channel = (agent.channel || '').toLowerCase()
+  return MANAGER_KEYWORDS.some(kw => group.includes(kw) || channel.includes(kw))
+}
 import { getStatusColorsByProbability } from "@/lib/utils"
 import { usePredictions } from "@/hooks/use-predictions"
 import { useAgents } from "@/hooks/use-agents"
-import { Loader2 } from "lucide-react"
+import { usePredictionAI } from "@/hooks/use-prediction-ai"
+import { Loader2, Bot } from "lucide-react"
 
 interface PredictionsProps {
   onNavigateToFocus: () => void
@@ -77,10 +106,7 @@ function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
     }
     
     const watchReasons = checkWatchListConditions(
-      attitudePrediction.predictedRate,
-      processPrediction.predictedRate,
-      attitudePrediction.targetRate,
-      processPrediction.targetRate
+      totalPrediction
     )
     
     return {
@@ -96,10 +122,13 @@ function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
   })
 }
 
-// API 응답을 AgentPrediction 형식으로 변환
+// API 응답을 AgentPrediction 형식으로 변환 (관리자 직무 제외)
 function convertToAgentPredictions(agents: any[], predictionsData?: any[]): AgentPrediction[] {
+  // 관리자 직무 제외
+  const filteredAgents = agents.filter(agent => !isManager(agent))
+
   // 실제 상담사 데이터를 사용하되, 예측 정보는 그룹 예측에서 가져오거나 계산
-  return agents.slice(0, 50).map((agent) => {
+  return filteredAgents.slice(0, 50).map((agent) => {
     const attRate = agent.attitudeErrorRate
     const procRate = agent.opsErrorRate
     const totalRate = Number(((attRate + procRate) / 2).toFixed(2))
@@ -115,7 +144,6 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
       
       if (groupPrediction) {
         // 그룹의 태도/오상담 추세를 기반으로 판단
-        // 둘 중 하나라도 악화면 악화, 둘 다 개선이면 개선, 나머지는 안정
         if (groupPrediction.attitudeTrend === 'worsening' || groupPrediction.opsTrend === 'worsening') {
           trend = 'worsening'
         } else if (groupPrediction.attitudeTrend === 'improving' && groupPrediction.opsTrend === 'improving') {
@@ -124,10 +152,16 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
           trend = 'stable'
         }
       } else {
-        // 그룹 예측 데이터가 없으면 상담사의 현재/이전 주 오류율 비교
-        // 간단한 추세 계산: 현재 주와 이전 주 비교
-        // (실제로는 별도 API 호출이 필요하지만, 일단 안정으로 설정)
-        trend = 'stable'
+        // 그룹 예측 데이터가 없으면 오류율 기준으로 추세 추정
+        // 태도+오상담 합산 오류율이 높으면 악화, 낮으면 안정
+        const totalRate = (attRate + procRate) / 2
+        if (totalRate > 6) {
+          trend = 'worsening'
+        } else if (totalRate > 3) {
+          trend = 'stable'
+        } else {
+          trend = 'improving'
+        }
       }
     }
     
@@ -169,9 +203,14 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
 function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
   const weeks = ['W1', 'W2', 'W3', 'W4']
   const result: any[] = []
-  
+
+  const yongsanPreds = predictions.filter(p => p.center === '용산')
+  const gwangjuPreds = predictions.filter(p => p.center === '광주')
+  const yongsanCount = yongsanPreds.length || 1
+  const gwangjuCount = gwangjuPreds.length || 1
+
   weeks.forEach((week) => {
-    const weekData = {
+    const weekData: any = {
       week,
       용산_태도: 0,
       용산_오상담: 0,
@@ -180,111 +219,69 @@ function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
       목표_태도: 3.0,
       목표_오상담: 3.0,
     }
-    
-    predictions.forEach((p) => {
-      const weekIndex = weeks.indexOf(week)
-      if (p.weeklyMetrics && p.weeklyMetrics[weekIndex]) {
-        const metrics = p.weeklyMetrics[weekIndex]
-        if (p.center === '용산') {
-          weekData.용산_태도 += metrics.attitudeRate
-          weekData.용산_오상담 += metrics.opsRate
-        } else if (p.center === '광주') {
-          weekData.광주_태도 += metrics.attitudeRate
-          weekData.광주_오상담 += metrics.opsRate
-        }
-      }
-    })
-    
-    // 평균 계산
-    const yongsanCount = predictions.filter(p => p.center === '용산').length || 1
-    const gwangjuCount = predictions.filter(p => p.center === '광주').length || 1
-    weekData.용산_태도 = Number((weekData.용산_태도 / yongsanCount).toFixed(2))
-    weekData.용산_오상담 = Number((weekData.용산_오상담 / yongsanCount).toFixed(2))
-    weekData.광주_태도 = Number((weekData.광주_태도 / gwangjuCount).toFixed(2))
-    weekData.광주_오상담 = Number((weekData.광주_오상담 / gwangjuCount).toFixed(2))
-    
+
+    const weekIndex = weeks.indexOf(week)
+
     if (week === 'W4') {
+      // W4: weeklyMetrics에 실적이 없으면 w4Predicted 예측값 사용
+      let yongsanHasW4 = false
+      let gwangjuHasW4 = false
+
+      predictions.forEach((p) => {
+        const w4Metric = p.weeklyMetrics?.find((m: any) => m.week === 'W4')
+        if (w4Metric) {
+          if (p.center === '용산') { weekData.용산_태도 += w4Metric.attitudeRate; weekData.용산_오상담 += w4Metric.opsRate; yongsanHasW4 = true }
+          if (p.center === '광주') { weekData.광주_태도 += w4Metric.attitudeRate; weekData.광주_오상담 += w4Metric.opsRate; gwangjuHasW4 = true }
+        }
+      })
+
+      // 실적 데이터가 없으면 예측값으로 대체
+      if (!yongsanHasW4) {
+        weekData.용산_태도 = Number((yongsanPreds.reduce((s, p) => s + (p.w4PredictedAttitude || 0), 0) / yongsanCount).toFixed(2))
+        weekData.용산_오상담 = Number((yongsanPreds.reduce((s, p) => s + (p.w4PredictedOps || 0), 0) / yongsanCount).toFixed(2))
+      } else {
+        weekData.용산_태도 = Number((weekData.용산_태도 / yongsanCount).toFixed(2))
+        weekData.용산_오상담 = Number((weekData.용산_오상담 / yongsanCount).toFixed(2))
+      }
+      if (!gwangjuHasW4) {
+        weekData.광주_태도 = Number((gwangjuPreds.reduce((s, p) => s + (p.w4PredictedAttitude || 0), 0) / gwangjuCount).toFixed(2))
+        weekData.광주_오상담 = Number((gwangjuPreds.reduce((s, p) => s + (p.w4PredictedOps || 0), 0) / gwangjuCount).toFixed(2))
+      } else {
+        weekData.광주_태도 = Number((weekData.광주_태도 / gwangjuCount).toFixed(2))
+        weekData.광주_오상담 = Number((weekData.광주_오상담 / gwangjuCount).toFixed(2))
+      }
       weekData.isPredicted = true
+    } else {
+      // W1~W3: 실적 데이터 사용
+      predictions.forEach((p) => {
+        if (p.weeklyMetrics && p.weeklyMetrics[weekIndex]) {
+          const metrics = p.weeklyMetrics[weekIndex]
+          if (p.center === '용산') {
+            weekData.용산_태도 += metrics.attitudeRate
+            weekData.용산_오상담 += metrics.opsRate
+          } else if (p.center === '광주') {
+            weekData.광주_태도 += metrics.attitudeRate
+            weekData.광주_오상담 += metrics.opsRate
+          }
+        }
+      })
+
+      weekData.용산_태도 = Number((weekData.용산_태도 / yongsanCount).toFixed(2))
+      weekData.용산_오상담 = Number((weekData.용산_오상담 / yongsanCount).toFixed(2))
+      weekData.광주_태도 = Number((weekData.광주_태도 / gwangjuCount).toFixed(2))
+      weekData.광주_오상담 = Number((weekData.광주_오상담 / gwangjuCount).toFixed(2))
     }
-    
+
     result.push(weekData)
   })
-  
+
   return result
 }
 
-// 목업 그룹별 예측 데이터 (fallback용)
-const generateGroupPredictions = (): GroupPrediction[] => {
-  const predictions: GroupPrediction[] = []
-  
-  Object.entries(groups).forEach(([center, groupList]) => {
-    const centerTargets = targets2026[center as keyof typeof targets2026]
-    
-    groupList.forEach((group) => {
-      const [service, channel] = group.split("/")
-      const weeklyAtt = [Math.random() * 2 + 1, Math.random() * 2 + 1.5, Math.random() * 2 + 1.2]
-      const weeklyProc = [Math.random() * 3 + 2, Math.random() * 3 + 2.5, Math.random() * 3 + 2.2]
-      
-      const attPrediction = generatePrediction(
-        weeklyAtt[2],
-        weeklyAtt,
-        centerTargets.attitude,
-        15,
-        16
-      )
-      
-      const procPrediction = generatePrediction(
-        weeklyProc[2],
-        weeklyProc,
-        centerTargets.process,
-        15,
-        16
-      )
-      
-      const totalCurrent = (attPrediction.currentRate + procPrediction.currentRate) / 2
-      const totalPredicted = (attPrediction.predictedRate + procPrediction.predictedRate) / 2
-      const totalTarget = (centerTargets.attitude + centerTargets.process) / 2
-      
-      const totalPrediction: PredictionResult = {
-        currentRate: Number(totalCurrent.toFixed(2)),
-        predictedRate: Number(totalPredicted.toFixed(2)),
-        targetRate: Number(totalTarget.toFixed(2)),
-        achievementProbability: Math.round((attPrediction.achievementProbability + procPrediction.achievementProbability) / 2),
-        trend: attPrediction.trend === 'worsening' || procPrediction.trend === 'worsening' ? 'worsening' : 
-               attPrediction.trend === 'improving' && procPrediction.trend === 'improving' ? 'improving' : 'stable',
-        riskLevel: attPrediction.riskLevel === 'critical' || procPrediction.riskLevel === 'critical' ? 'critical' :
-                   attPrediction.riskLevel === 'high' || procPrediction.riskLevel === 'high' ? 'high' :
-                   attPrediction.riskLevel === 'medium' || procPrediction.riskLevel === 'medium' ? 'medium' : 'low',
-        weeklyRates: weeklyAtt.map((a, i) => Number(((a + weeklyProc[i]) / 2).toFixed(2))),
-        w4Predicted: Number(((attPrediction.w4Predicted + procPrediction.w4Predicted) / 2).toFixed(2)),
-      }
-      
-      const watchReasons = [
-        ...checkWatchListConditions(attPrediction),
-        ...checkWatchListConditions(procPrediction),
-      ]
-      
-      predictions.push({
-        center: center as "용산" | "광주",
-        group,
-        service,
-        channel,
-        attitudePrediction: attPrediction,
-        processPrediction: procPrediction,
-        totalPrediction,
-        watchListReason: watchReasons.length > 0 ? [...new Set(watchReasons)] : undefined,
-      })
-    })
-  })
-  
-  return predictions
-}
+// Mock functions removed - using actual API data only
+// generateGroupPredictions() removed - use API data instead
+// generateWeeklyTrendData() removed - use API data instead
 
-// 주차별 추이 차트 데이터
-// API 데이터가 없을 때 빈 배열 반환 (mock 데이터 사용 안 함)
-const generateWeeklyTrendData = () => {
-  return []
-}
 
 export function Predictions({ onNavigateToFocus }: PredictionsProps) {
   const [selectedCenter, setSelectedCenter] = useState<string>("전체")
@@ -307,6 +304,9 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
     service: selectedService !== "전체" ? selectedService : undefined,
     channel: selectedChannel !== "전체" ? selectedChannel : undefined,
   })
+
+  // AI 예측 분석
+  const { analysis: aiAnalysis, loading: aiLoading, error: aiError, generateAnalysis } = usePredictionAI()
   
   // API 데이터를 컴포넌트 형식으로 변환
   const groupPredictions = useMemo(() => {
@@ -336,12 +336,14 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
     if (predictionsData && predictionsData.length > 0) {
       return generateWeeklyTrendDataFromAPI(predictionsData)
     }
-    return generateWeeklyTrendData()
+    return []
   }, [predictionsData])
   
-  // 필터링
+  // 필터링 (운영 그룹만 표시 - unknown, 게시판/보드, 팀장, 지금여기모니터링 등 제외)
   const filteredGroupPredictions = useMemo(() => {
     return groupPredictions.filter((p) => {
+      // 운영 그룹 필터
+      if (!isOperationalGroup(p.center, p.group)) return false
       if (selectedCenter !== "전체" && p.center !== selectedCenter) return false
       if (selectedService !== "전체" && p.service !== selectedService) return false
       if (selectedChannel !== "전체" && p.channel !== selectedChannel) return false
@@ -351,6 +353,8 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
   
   const filteredAgentPredictions = useMemo(() => {
     return agentPredictions.filter((p) => {
+      // 운영 그룹만 표시
+      if (!isOperationalGroup(p.center, p.group)) return false
       if (selectedCenter !== "전체" && p.center !== selectedCenter) return false
       return true
     })
@@ -585,11 +589,11 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
               
               // Progress bar 색상 (hex)
               const getProgressColor = (prob: number) => {
-                if (prob >= 80) return '#22c55e' // green
-                if (prob >= 60) return '#3b82f6' // blue
-                if (prob >= 40) return '#eab308' // yellow
-                if (prob >= 20) return '#f97316' // orange
-                return '#ef4444' // red
+                if (prob >= 80) return '#34A853' // green
+                if (prob >= 60) return '#2c6edb' // blue
+                if (prob >= 40) return '#ffcd00' // yellow
+                if (prob >= 20) return '#DD2222' // orange
+                return '#DD2222' // red
               }
               
               return (
@@ -677,24 +681,123 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
               <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={weeklyTrendData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
                     <XAxis dataKey="week" tick={{ fontSize: 12 }} />
                     <YAxis tick={{ fontSize: 12 }} domain={[0, 'auto']} />
                     <Tooltip 
-                      contentStyle={{ backgroundColor: 'white', border: '1px solid #e5e7eb' }}
+                      contentStyle={{ backgroundColor: 'white', border: '1px solid #D9D9D9' }}
                       formatter={(value: number, name: string) => [`${value}%`, name.replace('_', ' ')]}
                     />
                     <Legend />
-                    <ReferenceLine y={3.0} stroke="#ef4444" strokeDasharray="5 5" label={{ value: '목표', position: 'right', fontSize: 12 }} />
-                    <Line type="monotone" dataKey="용산_태도" stroke="#1e3a5f" strokeWidth={2} dot={{ fill: '#1e3a5f' }} name="용산 태도" />
-                    <Line type="monotone" dataKey="용산_오상담" stroke="#1e3a5f" strokeWidth={2} strokeDasharray="5 5" dot={{ fill: '#1e3a5f' }} name="용산 오상담" />
-                    <Line type="monotone" dataKey="광주_태도" stroke="#f9e000" strokeWidth={2} dot={{ fill: '#f9e000' }} name="광주 태도" />
-                    <Line type="monotone" dataKey="광주_오상담" stroke="#f9e000" strokeWidth={2} strokeDasharray="5 5" dot={{ fill: '#f9e000' }} name="광주 오상담" />
+                    <ReferenceLine y={3.0} stroke="#DD2222" strokeDasharray="5 5" label={{ value: '목표', position: 'right', fontSize: 12 }} />
+                    <Line type="monotone" dataKey="용산_태도" stroke="#2c6edb" strokeWidth={2} dot={{ fill: '#2c6edb' }} name="용산 태도" />
+                    <Line type="monotone" dataKey="용산_오상담" stroke="#2c6edb" strokeWidth={2} strokeDasharray="5 5" dot={{ fill: '#2c6edb' }} name="용산 오상담" />
+                    <Line type="monotone" dataKey="광주_태도" stroke="#ffcd00" strokeWidth={2} dot={{ fill: '#ffcd00' }} name="광주 태도" />
+                    <Line type="monotone" dataKey="광주_오상담" stroke="#ffcd00" strokeWidth={2} strokeDasharray="5 5" dot={{ fill: '#ffcd00' }} name="광주 오상담" />
                   </LineChart>
                 </ResponsiveContainer>
               </div>
               <p className="text-xs text-muted-foreground mt-2 text-center">* W4는 W2→W3 변화량 기반 예측값입니다</p>
               </CardContent>
+              </Card>
+
+              {/* AI 예측 분석 */}
+              <Card className="border border-indigo-200 bg-indigo-50/30">
+                <CardHeader className="pb-3">
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Bot className="h-5 w-5 text-indigo-600" />
+                    AI 예측 분석
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {!aiAnalysis && !aiLoading && !aiError && (
+                    <div className="text-center py-4">
+                      <p className="text-sm text-muted-foreground mb-3">
+                        AI가 현재 예측 데이터를 분석하여 추이, 월말 전망, 액션플랜을 제안합니다.
+                      </p>
+                      <Button
+                        variant="outline"
+                        className="border-indigo-300 text-indigo-700 hover:bg-indigo-100"
+                        onClick={() => generateAnalysis(
+                          selectedCenter !== "전체" ? selectedCenter : undefined,
+                          predictionsData || [],
+                          centerSummary
+                        )}
+                      >
+                        <Bot className="h-4 w-4 mr-2" />
+                        AI 분석 생성
+                      </Button>
+                    </div>
+                  )}
+
+                  {aiLoading && (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="h-5 w-5 animate-spin mr-2 text-indigo-600" />
+                      <span className="text-sm text-indigo-700">AI가 분석 중...</span>
+                    </div>
+                  )}
+
+                  {aiError && (
+                    <div className="space-y-2">
+                      <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm">
+                        {aiError}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => generateAnalysis(
+                          selectedCenter !== "전체" ? selectedCenter : undefined,
+                          predictionsData || [],
+                          centerSummary
+                        )}
+                      >
+                        다시 시도
+                      </Button>
+                    </div>
+                  )}
+
+                  {aiAnalysis && (
+                    <div className="space-y-3">
+                      <div
+                        className="prose prose-sm prose-slate max-w-none
+                          [&_h2]:text-base [&_h2]:font-bold [&_h2]:mt-4 [&_h2]:mb-2
+                          [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-3 [&_h3]:mb-1
+                          [&_ul]:my-1 [&_li]:my-0.5 [&_p]:my-1
+                          [&_strong]:text-slate-900"
+                        dangerouslySetInnerHTML={{
+                          __html: aiAnalysis
+                            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                            .replace(/^- \[ \] (.*$)/gm, '<li class="flex items-start gap-2"><input type="checkbox" disabled class="mt-1" /><span>$1</span></li>')
+                            .replace(/^- (.*$)/gm, '<li>$1</li>')
+                            .replace(/(<li>[\s\S]*?<\/li>)/gm, (match) => {
+                              if (!match.startsWith('<ul>')) return match;
+                              return match;
+                            })
+                            .replace(/((?:<li[^>]*>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>')
+                            .replace(/\n\n/g, '</p><p>')
+                            .replace(/\n/g, '<br/>')
+                        }}
+                      />
+                      <div className="border-t pt-3 flex justify-end">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-indigo-600 hover:text-indigo-800"
+                          onClick={() => generateAnalysis(
+                            selectedCenter !== "전체" ? selectedCenter : undefined,
+                            predictionsData || [],
+                            centerSummary
+                          )}
+                        >
+                          <Bot className="h-4 w-4 mr-1" />
+                          다시 분석
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
               </Card>
             </TabsContent>
             
@@ -765,6 +868,13 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                     <Users className="h-5 w-5" />
                     상담사별 위험 순위 (상위 50명)
                   </CardTitle>
+                  {/* 위험도 정의 */}
+                  <div className="flex flex-wrap gap-3 text-xs text-slate-500 mt-2">
+                    <span><Badge className="bg-red-100 text-red-700 border-red-300 text-[10px] mr-1">긴급</Badge>태도 &gt;10% 또는 오상담 &gt;12%</span>
+                    <span><Badge className="bg-orange-100 text-orange-700 border-orange-300 text-[10px] mr-1">주의</Badge>태도 &gt;5% 또는 오상담 &gt;6%</span>
+                    <span><Badge className="bg-blue-100 text-blue-700 border-blue-300 text-[10px] mr-1">관찰</Badge>전체 오류율 &gt;5%</span>
+                    <span><Badge className="bg-green-100 text-green-700 border-green-300 text-[10px] mr-1">안정</Badge>전체 오류율 ≤5%</span>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {agentsLoading && (
@@ -791,8 +901,8 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                     <TableHead className="w-20">센터</TableHead>
                     <TableHead>그룹</TableHead>
                     <TableHead>상담사</TableHead>
-                    <TableHead className="text-center">태도율</TableHead>
-                    <TableHead className="text-center">오상담율</TableHead>
+                    <TableHead className="text-center">태도오류</TableHead>
+                    <TableHead className="text-center">오상담/오처리오류</TableHead>
                     <TableHead className="text-center">추세</TableHead>
                     <TableHead className="text-center">위험도</TableHead>
                     <TableHead>주요 오류</TableHead>
@@ -809,13 +919,16 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                       <TableCell>{p.group}</TableCell>
                       <TableCell className="font-medium">{p.agentName} / {p.agentId}</TableCell>
                       <TableCell className={`text-center ${p.attitudeRate > 5 ? 'text-red-600 font-bold' : ''}`}>
-                        {p.attitudeRate}%
+                        {p.attitudeRate.toFixed(1)}%
                       </TableCell>
                       <TableCell className={`text-center ${p.processRate > 6 ? 'text-red-600 font-bold' : ''}`}>
-                        {p.processRate}%
+                        {p.processRate.toFixed(1)}%
                       </TableCell>
                       <TableCell className="text-center">
-                        <TrendIcon trend={p.trend} />
+                        <div className="flex items-center justify-center gap-1">
+                          <TrendIcon trend={p.trend} />
+                          <span className={trendStyles[p.trend].color + " text-xs"}>{trendStyles[p.trend].label}</span>
+                        </div>
                       </TableCell>
                       <TableCell className="text-center">
                         <RiskBadge level={p.riskLevel} />
@@ -893,7 +1006,7 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                       <TableRow key={i} className={i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/50 hover:bg-slate-100"}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${p.center === "용산" ? "bg-[#1e3a5f]" : "bg-[#f9e000]"}`} />
+                            <span className={`h-2 w-2 rounded-full ${p.center === "용산" ? "bg-[#2c6edb]" : "bg-[#ffcd00]"}`} />
                             <span className="text-slate-700">{p.center}</span>
                           </div>
                         </TableCell>
@@ -935,8 +1048,8 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                       <TableHead className="text-slate-600 font-medium">센터</TableHead>
                       <TableHead className="text-slate-600 font-medium">그룹</TableHead>
                       <TableHead className="text-slate-600 font-medium">상담사</TableHead>
-                      <TableHead className="text-center text-slate-600 font-medium">태도율</TableHead>
-                      <TableHead className="text-center text-slate-600 font-medium">오상담율</TableHead>
+                      <TableHead className="text-center text-slate-600 font-medium">태도오류</TableHead>
+                      <TableHead className="text-center text-slate-600 font-medium">오상담/오처리오류</TableHead>
                       <TableHead className="text-center text-slate-600 font-medium">위험도</TableHead>
                       <TableHead className="text-slate-600 font-medium">등록 사유</TableHead>
                     </TableRow>
@@ -946,17 +1059,17 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                       <TableRow key={p.agentId} className={i % 2 === 0 ? "bg-white hover:bg-slate-50" : "bg-slate-50/50 hover:bg-slate-100"}>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <span className={`h-2 w-2 rounded-full ${p.center === "용산" ? "bg-[#1e3a5f]" : "bg-[#f9e000]"}`} />
+                            <span className={`h-2 w-2 rounded-full ${p.center === "용산" ? "bg-[#2c6edb]" : "bg-[#ffcd00]"}`} />
                             <span className="text-slate-700">{p.center}</span>
                           </div>
                         </TableCell>
                         <TableCell className="text-slate-700">{p.group}</TableCell>
                         <TableCell className="font-medium text-slate-800">{p.agentName} / {p.agentId}</TableCell>
                         <TableCell className="text-center">
-                          <span className={`font-medium ${p.attitudeRate > 5 ? 'text-red-600' : 'text-slate-700'}`}>{p.attitudeRate}%</span>
+                          <span className={`font-medium ${p.attitudeRate > 5 ? 'text-red-600' : 'text-slate-700'}`}>{p.attitudeRate.toFixed(1)}%</span>
                         </TableCell>
                         <TableCell className="text-center">
-                          <span className={`font-medium ${p.processRate > 6 ? 'text-red-600' : 'text-slate-700'}`}>{p.processRate}%</span>
+                          <span className={`font-medium ${p.processRate > 6 ? 'text-red-600' : 'text-slate-700'}`}>{p.processRate.toFixed(1)}%</span>
                         </TableCell>
                         <TableCell className="text-center"><RiskBadge level={p.riskLevel} /></TableCell>
                         <TableCell>

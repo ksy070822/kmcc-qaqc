@@ -9,7 +9,7 @@ import { CalendarIcon, Search } from "lucide-react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { cn } from "@/lib/utils"
-import { serviceGroups, channelTypes, tenureCategories } from "@/lib/mock-data"
+import { serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
 
 interface DashboardFiltersProps {
   selectedCenter: string
@@ -40,16 +40,27 @@ export function DashboardFilters({
   onDateChange,
   onSearch,
 }: DashboardFiltersProps) {
-  // 기본값: 전날
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const defaultDate = yesterday.toISOString().split('T')[0]
-  
+  // 기본값: 이번 주 목~수 (목요일 시작, 수요일 종료)
+  const getThursdayToWednesday = () => {
+    const today = new Date()
+    const dayOfWeek = today.getDay() // 0=Sun, 1=Mon, ..., 4=Thu, 6=Sat
+    // 가장 최근 목요일 찾기
+    const daysBack = (dayOfWeek - 4 + 7) % 7
+    const thursday = new Date(today)
+    thursday.setDate(today.getDate() - daysBack)
+    // 다음 수요일
+    const wednesday = new Date(thursday)
+    wednesday.setDate(thursday.getDate() + 6)
+    return { thursday, wednesday }
+  }
+  const { thursday: defaultStart, wednesday: defaultEnd } = getThursdayToWednesday()
+  const defaultDate = defaultStart.toISOString().split('T')[0]
+
   const [startDate, setStartDate] = useState<Date | undefined>(
-    propStartDate ? new Date(propStartDate) : yesterday
+    propStartDate ? new Date(propStartDate) : defaultStart
   )
   const [endDate, setEndDate] = useState<Date | undefined>(
-    propEndDate ? new Date(propEndDate) : yesterday
+    propEndDate ? new Date(propEndDate) : defaultEnd
   )
   const [startDateOpen, setStartDateOpen] = useState(false)
   const [endDateOpen, setEndDateOpen] = useState(false)
@@ -89,18 +100,20 @@ export function DashboardFilters({
     }
   }
   
-  // 조회 버튼 클릭 - 모든 필터 적용
+  // 조회 버튼 클릭 - 날짜 범위 업데이트 후 데이터 갱신
   const handleSearch = () => {
-    // 날짜 범위 업데이트
+    const startStr = startDate ? startDate.toISOString().split('T')[0] : defaultDate
+    const endStr = endDate ? endDate.toISOString().split('T')[0] : defaultDate
+
+    // 날짜 범위를 상위로 전달 → useEffect가 fetchData를 자동 트리거
     if (onDateChange) {
-      const startStr = startDate ? startDate.toISOString().split('T')[0] : defaultDate
-      const endStr = endDate ? endDate.toISOString().split('T')[0] : defaultDate
       onDateChange(startStr, endStr)
     }
-    
-    // 조회 핸들러 호출 (모든 필터 정보는 이미 상위 컴포넌트의 state에 반영됨)
+
+    // 날짜가 이미 같은 경우(변경 없으면 useEffect 미트리거)에 대비해 명시적 refetch
+    // setTimeout으로 state 반영 후 호출
     if (onSearch) {
-      onSearch()
+      setTimeout(() => onSearch(), 0)
     }
   }
 
@@ -226,7 +239,7 @@ export function DashboardFilters({
         <Button 
           onClick={handleSearch} 
           size="sm" 
-          className="bg-[#1e3a5f] text-white hover:bg-[#2d4a6f] min-w-[100px]"
+          className="bg-[#2c6edb] text-white hover:bg-[#202237] min-w-[100px]"
         >
           <Search className="mr-2 h-4 w-4" />
           Q 조회

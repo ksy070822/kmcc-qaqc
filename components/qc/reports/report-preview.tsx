@@ -54,7 +54,7 @@ interface ReportPreviewProps {
   onDownload: () => void
 }
 
-const CHART_COLORS = ["#3b82f6", "#f59e0b", "#22c55e", "#ef4444", "#8b5cf6", "#ec4899"]
+const CHART_COLORS = ["#2c6edb", "#ffcd00", "#34A853", "#DD2222", "#7C3AED", "#4a85e3"]
 
 export function ReportPreview({ report, onDownload }: ReportPreviewProps) {
   if (!report) {
@@ -156,24 +156,24 @@ export function ReportPreview({ report, onDownload }: ReportPreviewProps) {
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={report.dailyTrend || []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "#6b7280", fontSize: 11 }} domain={[0, 6]} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                  <XAxis dataKey="date" tick={{ fill: "#666666", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#666666", fontSize: 11 }} domain={[0, 6]} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px" }}
+                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #D9D9D9", borderRadius: "8px" }}
                   />
                   <Legend />
                   <ReferenceLine
                     y={3}
-                    stroke="#ef4444"
+                    stroke="#DD2222"
                     strokeDasharray="5 5"
-                    label={{ value: "목표", fill: "#ef4444", fontSize: 11 }}
+                    label={{ value: "목표", fill: "#DD2222", fontSize: 11 }}
                   />
                   <Line
                     type="monotone"
                     dataKey="errorRate"
                     name="오류율"
-                    stroke="#3b82f6"
+                    stroke="#2c6edb"
                     strokeWidth={2.5}
                     dot={false}
                   />
@@ -187,11 +187,11 @@ export function ReportPreview({ report, onDownload }: ReportPreviewProps) {
             <div className="h-[220px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={report.topIssues || []} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis type="number" tick={{ fill: "#6b7280", fontSize: 11 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fill: "#374151", fontSize: 11 }} width={100} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                  <XAxis type="number" tick={{ fill: "#666666", fontSize: 11 }} />
+                  <YAxis dataKey="name" type="category" tick={{ fill: "#666666", fontSize: 11 }} width={100} />
                   <Tooltip
-                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px" }}
+                    contentStyle={{ backgroundColor: "#fff", border: "1px solid #D9D9D9", borderRadius: "8px" }}
                   />
                   <Bar dataKey="count" radius={[0, 4, 4, 0]}>
                     {report.topIssues.map((_, index) => (

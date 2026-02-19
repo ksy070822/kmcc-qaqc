@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
@@ -25,10 +25,30 @@ import { appsScriptFullTemplate, spreadsheetTemplate } from "@/lib/google-apps-s
 export function DataSyncSettings() {
   const [webappUrl, setWebappUrl] = useState("")
   const [syncInterval, setSyncInterval] = useState("15")
-  const [lastSync, setLastSync] = useState("2024-12-16 14:30:22")
-  const [syncStatus, setSyncStatus] = useState<"success" | "error" | "syncing" | "idle">("success")
+  const [lastSync, setLastSync] = useState("--:--:--")
+  const [syncStatus, setSyncStatus] = useState<"success" | "error" | "syncing" | "idle">("idle")
   const [copied, setCopied] = useState<string | null>(null)
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null)
+
+  // Fetch sync status on component mount
+  useEffect(() => {
+    const fetchSyncStatus = async () => {
+      try {
+        const response = await fetch("/api/debug/sync-status")
+        const data = await response.json()
+
+        if (data.success && data.data) {
+          setLastSync(data.data.lastSync || "--:--:--")
+          setSyncStatus(data.data.status || "idle")
+        }
+      } catch (error) {
+        console.error("Failed to fetch sync status:", error)
+        // Keep default values if fetch fails
+      }
+    }
+
+    fetchSyncStatus()
+  }, [])
 
   const handleCopyCode = (code: string, type: string) => {
     navigator.clipboard.writeText(code)
@@ -60,16 +80,42 @@ export function DataSyncSettings() {
 
   const handleManualSync = async () => {
     setSyncStatus("syncing")
+    setTestResult(null)
 
-    // 시뮬레이션 (실제로는 Apps Script에서 트리거)
-    setTimeout(() => {
-      setSyncStatus("success")
-      setLastSync(new Date().toLocaleString("ko-KR"))
-    }, 2000)
+    try {
+      const response = await fetch("/api/sync-sheets", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      })
+      const data = await response.json()
+
+      if (data.success) {
+        setLastSync(new Date().toLocaleString("ko-KR"))
+        setSyncStatus("success")
+        setTestResult({
+          success: true,
+          message: data.message || "동기화가 완료되었습니다.",
+        })
+      } else {
+        setSyncStatus("error")
+        setTestResult({
+          success: false,
+          message: data.message || "동기화 중 오류가 발생했습니다.",
+        })
+      }
+    } catch (error) {
+      setSyncStatus("error")
+      setTestResult({
+        success: false,
+        message: "동기화 요청에 실패했습니다.",
+      })
+    }
   }
 
   // 현재 앱의 URL (배포 후 자동 설정)
-  const currentAppUrl = typeof window !== "undefined" ? window.location.origin : "https://your-app.vercel.app"
+  const currentAppUrl = typeof window !== "undefined" ? window.location.origin : "https://qc-dashboard-wlof52lhea-du.a.run.app"
 
   return (
     <div className="space-y-6">

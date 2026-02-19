@@ -1,7 +1,9 @@
 "use client"
 
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 import {
   Line,
   XAxis,
@@ -27,6 +29,7 @@ interface TrendData {
 
 interface ErrorTrendChartProps {
   data: TrendData[]
+  weeklyData?: TrendData[]
   targetRate: number
   dateRange?: {
     startDate: string
@@ -35,42 +38,57 @@ interface ErrorTrendChartProps {
 }
 
 const COLORS = {
-  yongsan: "#1e3a5f",
-  gwangju: "#f9e000",
-  target: "#ef4444",
+  yongsan: "#2c6edb",
+  gwangju: "#ffcd00",
+  target: "#DD2222",
 }
 
-export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChartProps) {
+export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }: ErrorTrendChartProps) {
+  const [viewMode, setViewMode] = useState<"daily" | "weekly">("daily")
+
+  const activeData = viewMode === "weekly" ? weeklyData : data
+
   // 날짜 범위 표시 텍스트 계산
   const getDateRangeLabel = () => {
+    if (viewMode === "weekly") {
+      return "최근 6주"
+    }
     if (dateRange && dateRange.startDate && dateRange.endDate) {
       const start = new Date(dateRange.startDate);
       const end = new Date(dateRange.endDate);
       const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       return `${daysDiff}일`;
     }
-    return "최근 14일";
+    return "최근 1개월";
   };
+
   const renderChart = (yongsanKey: keyof TrendData, gwangjuKey: keyof TrendData, title: string) => (
     <div className="h-[300px]">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-          <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 12 }} axisLine={{ stroke: "#d1d5db" }} />
+        <ComposedChart data={activeData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+          <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+          <XAxis
+            dataKey="date"
+            tick={{ fill: "#666666", fontSize: viewMode === "weekly" ? 11 : 12 }}
+            axisLine={{ stroke: "#D9D9D9" }}
+            angle={viewMode === "weekly" ? -20 : 0}
+            textAnchor={viewMode === "weekly" ? "end" : "middle"}
+            height={viewMode === "weekly" ? 50 : 30}
+          />
           <YAxis
-            tick={{ fill: "#6b7280", fontSize: 12 }}
-            axisLine={{ stroke: "#d1d5db" }}
+            tick={{ fill: "#666666", fontSize: 12 }}
+            axisLine={{ stroke: "#D9D9D9" }}
             domain={[0, "auto"]}
             tickFormatter={(value) => `${value}%`}
           />
           <Tooltip
             contentStyle={{
               backgroundColor: "#fff",
-              border: "1px solid #e5e7eb",
+              border: "1px solid #D9D9D9",
               borderRadius: "8px",
               boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
             }}
-            labelStyle={{ color: "#111827", fontWeight: 600 }}
+            labelStyle={{ color: "#000000", fontWeight: 600 }}
             formatter={(value: number, name: string) => {
               const displayName = name.includes("용산") ? "용산" : "광주"
               return [`${value.toFixed(2)}%`, displayName]
@@ -80,7 +98,6 @@ export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChart
             formatter={(value) => (value.includes("용산") ? "용산" : "광주")}
             wrapperStyle={{ paddingTop: "10px" }}
           />
-          {/* 목표선 - 빨간색 */}
           <ReferenceLine
             y={targetRate}
             stroke={COLORS.target}
@@ -93,7 +110,6 @@ export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChart
               position: "insideTopRight",
             }}
           />
-          {/* 용산 - 남색 */}
           <Line
             type="monotone"
             dataKey={yongsanKey}
@@ -103,7 +119,6 @@ export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChart
             activeDot={{ r: 6, fill: COLORS.yongsan }}
             name={`용산_${title}`}
           />
-          {/* 광주 - 카카오 노란색 */}
           <Line
             type="monotone"
             dataKey={gwangjuKey}
@@ -119,7 +134,7 @@ export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChart
   )
 
   const getLatestValues = (yongsanKey: keyof TrendData, gwangjuKey: keyof TrendData) => {
-    const latest = data[data.length - 1]
+    const latest = activeData[activeData.length - 1]
     return {
       yongsan: latest?.[yongsanKey] as number,
       gwangju: latest?.[gwangjuKey] as number,
@@ -131,7 +146,33 @@ export function ErrorTrendChart({ data, targetRate, dateRange }: ErrorTrendChart
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-lg">
           <span>센터별 오류율 추이</span>
-          <span className="text-sm font-normal text-gray-500">{getDateRangeLabel()}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-md border border-gray-200 overflow-hidden text-xs">
+              <button
+                onClick={() => setViewMode("daily")}
+                className={cn(
+                  "px-3 py-1 transition-colors",
+                  viewMode === "daily"
+                    ? "bg-[#2c6edb] text-white"
+                    : "bg-white text-gray-600 hover:bg-gray-100"
+                )}
+              >
+                일간
+              </button>
+              <button
+                onClick={() => setViewMode("weekly")}
+                className={cn(
+                  "px-3 py-1 transition-colors",
+                  viewMode === "weekly"
+                    ? "bg-[#2c6edb] text-white"
+                    : "bg-white text-gray-600 hover:bg-gray-100"
+                )}
+              >
+                주차별
+              </button>
+            </div>
+            <span className="text-sm font-normal text-gray-500">{getDateRangeLabel()}</span>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent>

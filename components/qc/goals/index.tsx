@@ -24,14 +24,14 @@ export function GoalManagement() {
     periodType: "monthly",
     isActive: true,
   })
-  
+
   // 목표별 현재 실적 조회
   useEffect(() => {
     if (!goalsData || goalsData.length === 0) return
-    
+
     const fetchCurrentRates = async () => {
       const rates: Record<string, number> = {}
-      
+
       for (const goal of goalsData) {
         try {
           const params = new URLSearchParams()
@@ -41,10 +41,10 @@ export function GoalManagement() {
           if (goal.center) params.append("center", goal.center)
           params.append("startDate", goal.periodStart)
           params.append("endDate", goal.periodEnd)
-          
+
           const response = await fetch(`/api/goals?${params.toString()}`)
           const result = await response.json()
-          
+
           if (result.success && result.data) {
             rates[goal.id] = result.data.currentRate
           }
@@ -52,18 +52,18 @@ export function GoalManagement() {
           console.error(`Failed to fetch current rate for goal ${goal.id}:`, err)
         }
       }
-      
+
       setGoalCurrentRates(rates)
     }
-    
+
     fetchCurrentRates()
   }, [goalsData])
 
   // GoalData 형식으로 변환 (현재 실적은 별도로 조회)
   const goals: GoalData[] = useMemo(() => {
     if (!goalsData) return []
-    
-    return goalsData.map((goal) => {
+
+    return goalsData.map((goal: any) => {
       // 현재 실적과 progress는 별도로 계산 (useEffect에서)
       const today = new Date()
       const goalStart = new Date(goal.periodStart)
@@ -71,10 +71,10 @@ export function GoalManagement() {
       const totalDays = Math.ceil((goalEnd.getTime() - goalStart.getTime()) / (1000 * 60 * 60 * 24))
       const passedDays = Math.ceil((today.getTime() - goalStart.getTime()) / (1000 * 60 * 60 * 24))
       const progress = Math.min(100, Math.max(0, Math.round((passedDays / totalDays) * 100)))
-      
+
       // 실제 현재 실적 (API에서 조회한 값 사용, 없으면 임시값)
       const currentErrorRate = goalCurrentRates[goal.id] ?? (goal.targetRate * 0.92)
-      
+
       // 상태 판정 (현재 오류율이 목표보다 낮거나 같으면 달성/순항, 높으면 위험/미달)
       let status: GoalData["status"] = "on-track"
       if (currentErrorRate <= goal.targetRate * 0.9) {
@@ -86,15 +86,17 @@ export function GoalManagement() {
       } else {
         status = "at-risk" // 목표 초과: 주의
       }
-      
+
       return {
         id: goal.id,
         title: goal.name,
         center: goal.center || "전체",
+        service: goal.service || undefined,
+        channel: goal.channel || undefined,
         type: goal.type === "attitude" ? "attitude" : goal.type === "ops" ? "counseling" : "total",
         targetErrorRate: goal.targetRate,
         currentErrorRate,
-        period: "monthly",
+        period: goal.periodType as any || "monthly",
         startDate: goal.periodStart,
         endDate: goal.periodEnd,
         progress,
@@ -110,16 +112,80 @@ export function GoalManagement() {
       if (filterType !== "all" && goal.type !== filterType) return false
       return true
     })
-    }, [goals, filterCenter, filterStatus, filterType])
+  }, [goals, filterCenter, filterStatus, filterType])
 
-  const chartData = useMemo(
-    () => [
-      { name: "전체", target: 3.0, attitudeRate: 1.85, counselingRate: 2.95, totalRate: 2.85 },
-      { name: "용산", target: 2.8, attitudeRate: 1.65, counselingRate: 2.75, totalRate: 2.65 },
-      { name: "광주", target: 3.2, attitudeRate: 2.45, counselingRate: 3.55, totalRate: 3.45 },
-    ],
-    [],
-  )
+  const chartData = useMemo(() => {
+    // Compute chart data from goalsData and goalCurrentRates
+    if (!goalsData || goalsData.length === 0) {
+      return []
+    }
+
+    const centerData: Record<string, any> = {}
+
+    // Group goals by center
+    goalsData.forEach((goal: any) => {
+      const center = goal.center || "전체"
+      if (!centerData[center]) {
+        centerData[center] = {
+          name: center,
+          attitudePlans: [],
+          counselingPlans: [],
+          totalPlans: [],
+        }
+      }
+
+      const currentRate = goalCurrentRates[goal.id] ?? goal.targetRate * 0.92
+
+      if (goal.type === "attitude") {
+        centerData[center].attitudePlans.push(currentRate)
+      } else if (goal.type === "ops") {
+        centerData[center].counselingPlans.push(currentRate)
+      } else if (goal.type === "total") {
+        centerData[center].totalPlans.push(currentRate)
+      }
+    })
+
+    // Calculate averages for each center
+    const result = Object.values(centerData).map((center: any) => {
+      const attitudeRate =
+        center.attitudePlans.length > 0
+          ? Number(
+            (
+              center.attitudePlans.reduce((a: number, b: number) => a + b, 0) /
+              center.attitudePlans.length
+            ).toFixed(2),
+          )
+          : 0
+      const counselingRate =
+        center.counselingPlans.length > 0
+          ? Number(
+            (
+              center.counselingPlans.reduce((a: number, b: number) => a + b, 0) /
+              center.counselingPlans.length
+            ).toFixed(2),
+          )
+          : 0
+      const totalRate =
+        center.totalPlans.length > 0
+          ? Number(
+            (
+              center.totalPlans.reduce((a: number, b: number) => a + b, 0) /
+              center.totalPlans.length
+            ).toFixed(2),
+          )
+          : (attitudeRate + counselingRate) / 2
+
+      return {
+        name: center.name,
+        target: 3.0, // Default target
+        attitudeRate,
+        counselingRate,
+        totalRate,
+      }
+    })
+
+    return result
+  }, [goalsData, goalCurrentRates])
 
   const handleEdit = (goal: GoalData) => {
     setEditingGoal(goal)
@@ -131,7 +197,7 @@ export function GoalManagement() {
       const isEdit = !!goalData.id
       const url = '/api/goals'
       const method = isEdit ? 'PUT' : 'POST'
-      
+
       // GoalData를 API 형식으로 변환
       const apiData = {
         id: goalData.id,
@@ -143,8 +209,12 @@ export function GoalManagement() {
         periodStart: goalData.startDate,
         periodEnd: goalData.endDate,
         isActive: true,
+        // @ts-ignore - added via GoalFormModal
+        service: goalData.service || null,
+        // @ts-ignore
+        channel: goalData.channel || null,
       }
-      
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -152,9 +222,9 @@ export function GoalManagement() {
         },
         body: JSON.stringify(apiData),
       })
-      
+
       const result = await response.json()
-      
+
       if (result.success) {
         console.log(`Goal ${isEdit ? 'updated' : 'created'} successfully:`, result.data)
         setEditingGoal(null)
@@ -189,8 +259,8 @@ export function GoalManagement() {
         g.targetErrorRate > 0
           ? Math.min(100, (1 - (g.currentErrorRate - g.targetErrorRate) / g.targetErrorRate) * 100)
           : 100
-        return sum + rate
-      }, 0) / goals.length : 0
+      return sum + rate
+    }, 0) / goals.length : 0
 
   return (
     <div className="space-y-6">
@@ -199,14 +269,14 @@ export function GoalManagement() {
           <strong>데이터 로드 오류:</strong> {error}
         </div>
       )}
-      
+
       {loading && (
         <div className="flex items-center justify-center py-8">
           <Loader2 className="h-6 w-6 animate-spin mr-2" />
           <span>데이터 로딩 중...</span>
         </div>
       )}
-      
+
       <GoalSummary
         totalGoals={goals.length}
         achievedGoals={achievedCount}
@@ -254,7 +324,7 @@ export function GoalManagement() {
             </SelectContent>
           </Select>
         </div>
-        <Button onClick={handleAddNew} className="bg-[#1e3a5f] hover:bg-[#2d4a6f]">
+        <Button onClick={handleAddNew} className="bg-[#2c6edb] hover:bg-[#202237]">
           <Plus className="mr-2 h-4 w-4" />새 목표 등록
         </Button>
       </div>

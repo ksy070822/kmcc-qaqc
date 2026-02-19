@@ -236,3 +236,115 @@ export interface GroupAnalysisContext {
     errorRate: number
   }>
 }
+
+// ============================================================
+// 주간보고 관련 타입
+// ============================================================
+
+export interface WeeklyReportItem {
+  reportId: string
+  reportWeek: string
+  reportDate: string
+  center: string
+  service: string
+  weekEvaluations: number
+  weekAttitudeRate: number
+  weekOpsRate: number
+  prevWeekAttitudeRate: number
+  prevWeekOpsRate: number
+  prevWeekActivities: string
+  currentWeekIssues: string
+  causeAnalysis: string
+  nextWeekPlan: string
+  registeredAgentCount: number
+  managerId: string
+  managerName: string
+  status: 'draft' | 'submitted' | 'reviewed'
+  reviewedBy?: string
+  reviewComment?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WeeklyReportInput {
+  reportId?: string
+  reportWeek: string
+  center: string
+  service: string
+  weekEvaluations?: number
+  weekAttitudeRate?: number
+  weekOpsRate?: number
+  prevWeekAttitudeRate?: number
+  prevWeekOpsRate?: number
+  prevWeekActivities?: string
+  currentWeekIssues?: string
+  causeAnalysis?: string
+  nextWeekPlan?: string
+  managerId?: string
+  managerName?: string
+  status?: 'draft' | 'submitted' | 'reviewed'
+  registeredAgents?: UnderperformingRegistration[]
+}
+
+// ============================================================
+// 부진상담사 관리 타입
+// ============================================================
+
+export interface CoachingRecord {
+  week: string
+  attitudeRate: number
+  opsRate: number
+  evaluationCount: number
+  coachingNote?: string
+  improvementPlan?: string
+  improved?: boolean
+  recordedAt: string
+}
+
+export interface UnderperformingRegistration {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  registrationReason: string
+  problematicItems: string[]
+  baselineAttitudeRate: number
+  baselineOpsRate: number
+  baselineEvaluationCount: number
+  coachingNote?: string
+  improvementPlan?: string
+}
+
+export interface UnderperformingAgent {
+  trackingId: string
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  registeredWeek: string
+  registeredDate: string
+  sourceReportId?: string
+  registrationReason: string
+  problematicItems: string[]
+  baselineAttitudeRate: number
+  baselineOpsRate: number
+  baselineEvaluationCount: number
+  currentAttitudeRate: number
+  currentOpsRate: number
+  currentEvaluationCount: number
+  weeksTracked: number
+  consecutiveImprovedWeeks: number
+  consecutiveWorsenedWeeks: number
+  bestAttitudeRate: number
+  bestOpsRate: number
+  coachingRecords: CoachingRecord[]
+  status: 'registered' | 'tracking' | 'improved' | 'resolved' | 'escalated'
+  resolvedDate?: string
+  escalatedDate?: string
+  resolutionNote?: string
+  managerId?: string
+  createdAt: string
+  updatedAt: string
+}

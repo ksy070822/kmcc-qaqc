@@ -81,7 +81,7 @@ export function ImprovementStats({
       <Card className="md:col-span-2 lg:col-span-4 border-slate-200">
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base text-slate-900">
-            <Target className="h-4 w-4 text-[#1e3a5f]" />
+            <Target className="h-4 w-4 text-[#2c6edb]" />
             액션플랜 성공률
           </CardTitle>
         </CardHeader>
@@ -89,7 +89,7 @@ export function ImprovementStats({
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-500">목표 달성률</span>
-              <span className="font-mono font-bold text-[#1e3a5f]">{successRate}%</span>
+              <span className="font-mono font-bold text-[#2c6edb]">{successRate}%</span>
             </div>
             <div className="h-3 w-full rounded-full bg-slate-200">
               <div

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { ActionPlanModal, type ActionPlanData } from "./action-plan-modal"
 import { ActionPlanHistory } from "./action-plan-history"
 import { ImprovementStats } from "./improvement-stats"
 import { AlertTriangle, FileText, Download, Loader2 } from "lucide-react"
-import { groups, tenures } from "@/lib/mock-data"
+import { groups, tenures } from "@/lib/constants"
 import { useWatchList } from "@/hooks/use-watchlist"
 
 export function FocusManagement() {
@@ -20,6 +20,14 @@ export function FocusManagement() {
   const [selectedAgents, setSelectedAgents] = useState<string[]>([])
   const [planModalOpen, setPlanModalOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<WatchlistAgent | null>(null)
+  const [actionPlanStats, setActionPlanStats] = useState({
+    totalPlans: 0,
+    completedPlans: 0,
+    inProgressPlans: 0,
+    delayedPlans: 0,
+    avgImprovement: 0,
+    successRate: 0,
+  })
 
   // BigQuery에서 집중관리 대상 가져오기
   const { data: watchlistData, loading, error } = useWatchList({
@@ -28,6 +36,9 @@ export function FocusManagement() {
     tenure: selectedTenure,
   })
 
+  const [actionPlanHistory, setActionPlanHistory] = useState<any[]>([])
+  const [actionPlansLoading, setActionPlansLoading] = useState(false)
+
   // WatchlistAgent 형식으로 변환
   const watchlistAgents: WatchlistAgent[] = useMemo(() => {
     return (watchlistData || []).map((agent) => {
@@ -35,10 +46,28 @@ export function FocusManagement() {
       const tenure = agent.tenureGroup || ""
       
       // 주요이슈: topErrors 배열에서 첫 번째 항목 사용, 없으면 reason 사용
-      const mainIssue = agent.topErrors && agent.topErrors.length > 0 
-        ? agent.topErrors[0] 
+      const mainIssue = agent.topErrors && agent.topErrors.length > 0
+        ? agent.topErrors[0]
         : agent.reason || "오류율 기준 초과"
-      
+
+      // Calculate daysOnList from registration date if available
+      let daysOnList = 1
+      if (agent.registeredAt) {
+        const registeredDate = new Date(agent.registeredAt)
+        const today = new Date()
+        const diffTime = Math.abs(today.getTime() - registeredDate.getTime())
+        daysOnList = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      }
+
+      // Derive action plan status from actionPlans data
+      let actionPlanStatus: "none" | "pending" | "in-progress" | "completed" | "delayed" = "none"
+      if (actionPlanHistory.length > 0) {
+        const agentPlan = actionPlanHistory.find((p: any) => p.agentId === agent.agentId)
+        if (agentPlan) {
+          actionPlanStatus = agentPlan.status || "none"
+        }
+      }
+
       return {
         id: `${agent.agentId}_${agent.service}_${agent.channel}`, // 고유 키 생성
         agentId: agent.agentId,
@@ -51,12 +80,12 @@ export function FocusManagement() {
         counselingRate: agent.opsRate,
         errorRate: agent.totalRate,
         trend: agent.trend || 0, // 전월 대비 증감율 (BigQuery에서 계산됨)
-        daysOnList: 1, // TODO: 등록일 기반 계산
+        daysOnList: daysOnList, // Calculate from registration date
         mainIssue: mainIssue,
-        actionPlanStatus: "none" as const, // TODO: action plan 상태 연동
+        actionPlanStatus: actionPlanStatus, // Derived from action plans data
       }
     })
-  }, [watchlistData])
+  }, [watchlistData, actionPlanHistory])
 
   const filteredAgents = useMemo(() => {
     return watchlistAgents.filter((a) => {
@@ -67,34 +96,52 @@ export function FocusManagement() {
     })
   }, [watchlistAgents, selectedCenter, selectedChannel, selectedTenure])
 
-  const actionPlanHistory = useMemo(() => {
-    return Array.from({ length: 10 }, (_, i) => {
-      const isYongsan = i % 2 === 0
-      const groupList = isYongsan ? groups["용산"] : groups["광주"]
-      return {
-        id: `plan-history-${i}`,
-        agentName: `상담사${i + 1}`,
-        center: isYongsan ? "용산" : "광주",
-        group: groupList[i % groupList.length],
-        issue: ["전산 세팅오류 다발", "불친절 반복", "본인확인 누락", "가이드 미준수"][i % 4],
-        plan: ["1:1 코칭", "재교육 실시", "모니터링 강화", "업무 프로세스 점검"][i % 4],
-        createdAt: `2024-12-${String(15 - i).padStart(2, "0")}`,
-        targetDate: `2024-12-${String(22 - i).padStart(2, "0")}`,
-        status: (["completed", "in-progress", "pending", "delayed"] as const)[i % 4],
-        result: i % 4 === 0 ? "오류율 2.5% 감소" : undefined,
-        improvement: i % 4 === 0 ? Number((Math.random() * 3 + 1).toFixed(1)) : undefined,
-        managerFeedback:
-          i % 2 === 0
-            ? [
-                "코칭 진행 후 태도 개선이 눈에 띄게 향상되었습니다. 지속적인 관찰이 필요합니다.",
-                "재교육 완료 후 오류율이 크게 감소했습니다. 우수 사례로 공유 예정입니다.",
-                "모니터링 결과 개선 추세가 보입니다. 다음 주까지 추가 관찰 진행합니다.",
-                "업무 프로세스 점검 완료. 시스템 개선이 필요한 부분을 IT팀에 요청했습니다.",
-              ][Math.floor(i / 2) % 4]
-            : undefined,
-        feedbackDate: i % 2 === 0 ? `2024-12-${String(17 - i).padStart(2, "0")}` : undefined,
+  // Fetch action plans from API and calculate stats
+  useEffect(() => {
+    const fetchActionPlans = async () => {
+      setActionPlansLoading(true)
+      try {
+        const response = await fetch('/api/action-plans')
+        const result = await response.json()
+        if (result.success && result.data) {
+          const plans = result.data
+          setActionPlanHistory(plans)
+
+          // Calculate statistics from action plans
+          const totalPlans = plans.length
+          const completedPlans = plans.filter((p: any) => p.status === 'completed').length
+          const inProgressPlans = plans.filter((p: any) => p.status === 'in-progress').length
+          const delayedPlans = plans.filter((p: any) => p.status === 'delayed').length
+
+          // Calculate average improvement from completed plans
+          const improvementValues = plans
+            .filter((p: any) => p.improvement !== undefined && p.improvement !== null)
+            .map((p: any) => p.improvement)
+          const avgImprovement = improvementValues.length > 0
+            ? Number((improvementValues.reduce((a: number, b: number) => a + b, 0) / improvementValues.length).toFixed(2))
+            : 0
+
+          // Calculate success rate
+          const successRate = totalPlans > 0 ? Math.round((completedPlans / totalPlans) * 100) : 0
+
+          setActionPlanStats({
+            totalPlans,
+            completedPlans,
+            inProgressPlans,
+            delayedPlans,
+            avgImprovement,
+            successRate,
+          })
+        }
+      } catch (err) {
+        console.error('Failed to fetch action plans:', err)
+        setActionPlanHistory([])
+      } finally {
+        setActionPlansLoading(false)
       }
-    })
+    }
+
+    fetchActionPlans()
   }, [])
 
   const handleSelectAgent = (id: string) => {
@@ -114,8 +161,57 @@ export function FocusManagement() {
     setPlanModalOpen(true)
   }
 
-  const handleSavePlan = (plan: ActionPlanData) => {
-    console.log("Saving plan:", plan)
+  const handleSavePlan = async (plan: ActionPlanData) => {
+    try {
+      const agentInfo = selectedAgent
+      const payload = {
+        id: `AP_${plan.agentId}_${Date.now()}`,
+        agentId: plan.agentId,
+        agentName: agentInfo?.name || '',
+        center: agentInfo?.center || '',
+        group: agentInfo?.group || '',
+        issue: plan.issue,
+        plan: plan.plan,
+        status: plan.status,
+        targetDate: plan.targetDate,
+        notes: plan.notes || '',
+      }
+
+      const response = await fetch('/api/action-plans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const result = await response.json()
+
+      if (result.success) {
+        // 저장 성공 시 액션플랜 이력 새로고침
+        const refreshRes = await fetch('/api/action-plans')
+        const refreshResult = await refreshRes.json()
+        if (refreshResult.success && refreshResult.data) {
+          const plans = refreshResult.data
+          setActionPlanHistory(plans)
+          const totalPlans = plans.length
+          const completedPlans = plans.filter((p: any) => p.status === 'completed').length
+          const inProgressPlans = plans.filter((p: any) => p.status === 'in-progress').length
+          const delayedPlans = plans.filter((p: any) => p.status === 'delayed').length
+          const improvementValues = plans
+            .filter((p: any) => p.improvement !== undefined && p.improvement !== null)
+            .map((p: any) => p.improvement)
+          const avgImprovement = improvementValues.length > 0
+            ? Number((improvementValues.reduce((a: number, b: number) => a + b, 0) / improvementValues.length).toFixed(2))
+            : 0
+          const successRate = totalPlans > 0 ? Math.round((completedPlans / totalPlans) * 100) : 0
+          setActionPlanStats({ totalPlans, completedPlans, inProgressPlans, delayedPlans, avgImprovement, successRate })
+        }
+      } else {
+        console.error('액션플랜 저장 실패:', result.error)
+        alert(`저장 실패: ${result.error || '알 수 없는 오류'}`)
+      }
+    } catch (err) {
+      console.error('액션플랜 저장 에러:', err)
+      alert('저장 중 오류가 발생했습니다.')
+    }
   }
 
   return (
@@ -134,12 +230,12 @@ export function FocusManagement() {
       )}
       
       <ImprovementStats
-        totalPlans={45}
-        completedPlans={28}
-        inProgressPlans={12}
-        delayedPlans={5}
-        avgImprovement={2.3}
-        successRate={62}
+        totalPlans={actionPlanStats.totalPlans}
+        completedPlans={actionPlanStats.completedPlans}
+        inProgressPlans={actionPlanStats.inProgressPlans}
+        delayedPlans={actionPlanStats.delayedPlans}
+        avgImprovement={actionPlanStats.avgImprovement}
+        successRate={actionPlanStats.successRate}
       />
 
       <Tabs defaultValue="watchlist" className="space-y-4">
@@ -206,7 +302,7 @@ export function FocusManagement() {
                   <span className="text-sm font-normal text-slate-500">({filteredAgents.length}명)</span>
                 </span>
                 {selectedAgents.length > 0 && (
-                  <Button size="sm" className="bg-[#1e3a5f] hover:bg-[#2d4a6f]">
+                  <Button size="sm" className="bg-[#2c6edb] hover:bg-[#202237]">
                     선택된 {selectedAgents.length}명 일괄 처리
                   </Button>
                 )}

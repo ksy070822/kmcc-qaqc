@@ -33,13 +33,13 @@ export function GoalAchievementChart({ data }: GoalAchievementChartProps) {
         <div className="h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data} margin={{ top: 20, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="name" tick={{ fill: "#6b7280", fontSize: 12 }} />
-              <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} domain={[0, "auto"]} unit="%" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+              <XAxis dataKey="name" tick={{ fill: "#666666", fontSize: 12 }} />
+              <YAxis tick={{ fill: "#666666", fontSize: 12 }} domain={[0, "auto"]} unit="%" />
               <Tooltip
                 contentStyle={{
                   backgroundColor: "#fff",
-                  border: "1px solid #e5e7eb",
+                  border: "1px solid #D9D9D9",
                   borderRadius: "8px",
                 }}
                 formatter={(value: number, name: string) => [`${value.toFixed(2)}%`, name]}
@@ -47,13 +47,13 @@ export function GoalAchievementChart({ data }: GoalAchievementChartProps) {
               <Legend />
               <ReferenceLine
                 y={3}
-                stroke="#ef4444"
+                stroke="#DD2222"
                 strokeDasharray="5 5"
-                label={{ value: "목표", fill: "#ef4444", fontSize: 11 }}
+                label={{ value: "목표", fill: "#DD2222", fontSize: 11 }}
               />
-              <Bar dataKey="attitudeRate" name="상담태도" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="counselingRate" name="오상담/오처리" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="totalRate" name="전체" fill="#1e3a5f" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="attitudeRate" name="상담태도" fill="#2c6edb" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="counselingRate" name="오상담/오처리" fill="#ffcd00" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="totalRate" name="전체" fill="#2c6edb" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

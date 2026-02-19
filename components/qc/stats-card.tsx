@@ -9,6 +9,7 @@ interface StatsCardProps {
   value: string | number
   subtitle?: string
   trend?: number
+  trendLabel?: string
   variant?: "default" | "success" | "warning" | "destructive"
   onClick?: () => void
   clickable?: boolean
@@ -18,7 +19,7 @@ interface StatsCardProps {
   }
 }
 
-export function StatsCard({ title, value, subtitle, trend, variant = "default", onClick, clickable, centerBreakdown }: StatsCardProps) {
+export function StatsCard({ title, value, subtitle, trend, trendLabel, variant = "default", onClick, clickable, centerBreakdown }: StatsCardProps) {
   const getTrendIcon = () => {
     if (trend === undefined) return <Minus className="h-4 w-4" />
     if (trend === 0) return <Minus className="h-4 w-4" />
@@ -56,15 +57,14 @@ export function StatsCard({ title, value, subtitle, trend, variant = "default", 
       <CardContent className="p-4">
         <div className="space-y-1">
           <p className="text-sm font-medium text-muted-foreground">{title}</p>
-          <div className="flex items-baseline gap-2">
-            <p className="text-2xl font-bold tracking-tight text-foreground">{value}</p>
-            {trend !== undefined && (
-              <div className={cn("flex items-center gap-1 text-sm font-medium", getTrendColor())}>
-                {getTrendIcon()}
-                <span>{trend > 0 ? '+' : ''}{trend.toFixed(2)}%p</span>
-              </div>
-            )}
-          </div>
+          <p className="text-2xl font-bold tracking-tight text-foreground whitespace-nowrap">{value}</p>
+          {trend !== undefined && (
+            <div className={cn("flex items-center gap-1 text-sm font-medium whitespace-nowrap", getTrendColor())}>
+              {getTrendIcon()}
+              <span>{trend > 0 ? '+' : ''}{trend.toFixed(2)}%p</span>
+              {trendLabel && <span className="text-xs text-muted-foreground font-normal ml-0.5">{trendLabel}</span>}
+            </div>
+          )}
           {subtitle && <p className="text-xs text-muted-foreground break-words leading-tight">{subtitle}</p>}
           {centerBreakdown && (
             <p className="text-xs text-muted-foreground break-words leading-tight mt-1">

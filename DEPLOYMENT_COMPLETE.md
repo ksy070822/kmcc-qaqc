@@ -134,9 +134,9 @@ GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-c7fc16583892.json
    - Apps Script 트리거 설정 (매일 저녁 8시)
    - 또는 Cloud Scheduler + Cloud Functions
 
-4. **Vercel 배포**
-   - 환경 변수 설정
-   - BIGQUERY_CREDENTIALS JSON 입력
+4. **Cloud Run 배포**
+   - GitHub push → Cloud Build 자동 배포
+   - URL: https://qc-dashboard-wlof52lhea-du.a.run.app
 
 ---
 

@@ -36,7 +36,7 @@ yarn-error.log*
 .env.test.local
 .env.production.local
 
-# Vercel
+# Vercel (미사용)
 .vercel
 
 # TypeScript
@@ -49,3 +49,13 @@ next-env.d.ts
 !package-lock.json
 !tsconfig.json
 !components.json
+!.mcp.json
+
+# Claude Code local settings (personal)
+.claude/settings.local.json
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# Agit data
+아지트글취합 /

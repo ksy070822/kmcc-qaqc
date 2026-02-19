@@ -19,6 +19,10 @@ function initializeBigQuery(): BigQuery {
       return new BigQuery({
         projectId,
         credentials,
+        scopes: [
+          'https://www.googleapis.com/auth/bigquery',
+          'https://www.googleapis.com/auth/drive.readonly',
+        ],
       });
     } catch (error) {
       console.error('[BigQuery] Failed to parse BIGQUERY_CREDENTIALS:', error);
@@ -37,12 +41,22 @@ function initializeBigQuery(): BigQuery {
     return new BigQuery({
       projectId,
       keyFilename: credentialsPath,
+      scopes: [
+        'https://www.googleapis.com/auth/bigquery',
+        'https://www.googleapis.com/auth/drive.readonly',
+      ],
     });
   }
   
   // 기본 인증 사용 (Application Default Credentials)
   console.log('[BigQuery] Using Application Default Credentials');
-  return new BigQuery({ projectId });
+  return new BigQuery({
+    projectId,
+    scopes: [
+      'https://www.googleapis.com/auth/bigquery',
+      'https://www.googleapis.com/auth/drive.readonly',
+    ],
+  });
 }
 
 // BigQuery 클라이언트 싱글톤
@@ -57,6 +71,147 @@ export function getBigQueryClient(): BigQuery {
 
 // 데이터셋 ID
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
+const HR_DATASET_ID = 'kMCC_HR';
+
+// BigQuery 테이블 참조 (Turbopack SWC 파서 호환을 위해 문자열 상수 사용)
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
+const TARGETS_TABLE = '`' + DATASET_ID + '.targets`';
+const ACTION_PLANS_TABLE = '`' + DATASET_ID + '.action_plans`';
+
+// BigQuery 위치 (기본값: asia-northeast3)
+const GCP_LOCATION = process.env.GCP_LOCATION || 'asia-northeast3';
+
+// ============================================
+// HR 데이터 CTE 헬퍼
+// ============================================
+
+/**
+ * HR 테이블 UNION CTE SQL을 반환 (상담사만, TRIM+LOWER 정규화)
+ * Google Sheets 외부 테이블이므로 drive.readonly 스코프 필요
+ */
+function getHrAgentsCte(): string {
+  return `
+    hr_agents AS (
+      SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
+      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+      WHERE type = '상담사' AND hire_date IS NOT NULL
+      UNION ALL
+      SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
+      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+      WHERE type = '상담사' AND hire_date IS NOT NULL
+    )`;
+}
+
+// ============================================
+// HR 데이터 메모리 캐시 (Google Sheets 외부 테이블 성능 최적화)
+// ============================================
+
+let hrAgentsCache: Map<string, string> | null = null; // agent_id → hire_date(ISO)
+let hrCacheTimestamp = 0;
+const HR_CACHE_TTL = 6 * 60 * 60 * 1000; // 6시간
+
+/**
+ * HR 상담사 데이터를 메모리 캐시로 반환
+ * 첫 호출 시 BigQuery(Google Sheets 외부 테이블)를 1회 조회 후 캐시
+ * 이후 6시간 동안 캐시 히트 (Sheets API 호출 없이 즉시 반환)
+ */
+async function getHrAgentsMap(): Promise<Map<string, string>> {
+  if (hrAgentsCache && Date.now() - hrCacheTimestamp < HR_CACHE_TTL) {
+    return hrAgentsCache;
+  }
+
+  console.log('[BigQuery] Building HR agents cache from Google Sheets external tables...');
+  const bigquery = getBigQueryClient();
+
+  const query = `
+    SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+    WHERE type = '상담사' AND hire_date IS NOT NULL
+    UNION ALL
+    SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+    WHERE type = '상담사' AND hire_date IS NOT NULL
+  `;
+
+  const [rows] = await bigquery.query({ query, location: GCP_LOCATION });
+
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    const agentId = String(row.agent_id || '').trim();
+    const hireDate = row.hire_date;
+    if (agentId && hireDate) {
+      // BigQuery DATE → ISO string
+      const dateStr = typeof hireDate === 'string'
+        ? hireDate
+        : hireDate.value
+          ? hireDate.value
+          : String(hireDate);
+      map.set(agentId, dateStr);
+    }
+  }
+
+  hrAgentsCache = map;
+  hrCacheTimestamp = Date.now();
+  console.log(`[BigQuery] HR cache built: ${map.size} agents`);
+  return map;
+}
+
+/**
+ * HR 캐시 사전 빌드 (비동기, fire-and-forget)
+ * 대시보드 첫 로드 시 호출하여 근속기간별 탭 접근 시 즉시 응답
+ */
+export function warmupHrCache(): void {
+  getHrAgentsMap().catch(err => {
+    console.warn('[BigQuery] HR cache warmup failed:', err);
+  });
+}
+
+/**
+ * hire_date에서 근속 개월 수 계산
+ */
+function calcTenureMonths(hireDateStr: string): number {
+  const hireDate = new Date(hireDateStr);
+  const now = new Date();
+  return (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
+}
+
+/**
+ * 근속 개월 수 → 그룹 분류
+ */
+function calcTenureGroup(months: number): string {
+  if (months < 3) return '3개월 미만';
+  if (months < 6) return '3개월 이상';
+  if (months < 12) return '6개월 이상';
+  return '12개월 이상';
+}
+
+// ============================================
+// BigQuery 쿼리 재시도 유틸리티
+// ============================================
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  delayMs: number = 1000
+): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      if (attempt === maxRetries) throw error;
+      const isRetryable = error instanceof Error && (
+        error.message.includes('UNAVAILABLE') ||
+        error.message.includes('DEADLINE_EXCEEDED') ||
+        error.message.includes('INTERNAL') ||
+        error.message.includes('rateLimitExceeded')
+      );
+      if (!isRetryable) throw error;
+      console.warn(`[BigQuery] Retry ${attempt}/${maxRetries} after ${delayMs * attempt}ms`);
+      await new Promise(resolve => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+  throw new Error('Unreachable');
+}
 
 // ============================================
 // 대시보드 통계 조회
@@ -72,86 +227,90 @@ export interface DashboardStats {
   businessErrorRate: number;
   overallErrorRate: number;
   date: string;
+  // 주간 범위
+  weekStart?: string;
+  weekEnd?: string;
+  // 전주 대비 트렌드
+  prevWeekStart?: string;
+  prevWeekEnd?: string;
+  attitudeTrend?: number;
+  businessTrend?: number;
+  overallTrend?: number;
+  // 센터별 오류율
+  yongsanAttitudeErrorRate?: number;
+  yongsanBusinessErrorRate?: number;
+  yongsanOverallErrorRate?: number;
+  gwangjuAttitudeErrorRate?: number;
+  gwangjuBusinessErrorRate?: number;
+  gwangjuOverallErrorRate?: number;
+  // 센터별 전주 대비 트렌드
+  yongsanOverallTrend?: number;
+  gwangjuOverallTrend?: number;
 }
 
 export async function getDashboardStats(targetDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-    
-    // 날짜가 없으면 전일(어제) 날짜를 기본값으로 사용
-    let queryDate = targetDate;
-    let dateFilter = '';
-    let params: any = {};
-    
+
+    // 기준 날짜 결정 (미지정 시 전영업일)
+    let queryDate: string = targetDate || '';
+
     if (!queryDate) {
-      // 날짜 미지정 시 전일 날짜 계산 (KST 기준)
       const now = new Date();
-      // UTC 시간을 한국 시간으로 변환 (UTC+9)
-      const kstOffset = 9 * 60 * 60 * 1000; // 9시간을 밀리초로
+      const kstOffset = 9 * 60 * 60 * 1000;
       const kstTime = new Date(now.getTime() + kstOffset);
-      
-      // 전일 날짜 계산
       const yesterday = new Date(kstTime);
-      yesterday.setUTCDate(yesterday.getUTCDate() - 1); // 어제
-      
-      const year = yesterday.getUTCFullYear();
-      const month = String(yesterday.getUTCMonth() + 1).padStart(2, '0');
-      const day = String(yesterday.getUTCDate()).padStart(2, '0');
-      queryDate = `${year}-${month}-${day}`;
-      
-      console.log(`[BigQuery] 날짜 미지정, 전일 날짜 사용: ${queryDate} (KST 기준)`);
+      yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+      queryDate = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterday.getUTCDate()).padStart(2, '0')}`;
     }
-    
-    // 먼저 해당 날짜에 데이터가 있는지 확인
-    const checkQuery = `
-      SELECT COUNT(*) as cnt
-      FROM \`${DATASET_ID}.evaluations\`
-      WHERE evaluation_date = @checkDate
-    `;
-    
+
+    // 데이터가 있는 최근 날짜 찾기 (fallback)
     try {
       const [checkRows] = await bigquery.query({
-        query: checkQuery,
+        query: `SELECT COUNT(*) as cnt FROM ${EVAL_TABLE} WHERE evaluation_date = @checkDate`,
         params: { checkDate: queryDate },
-        location: 'asia-northeast3',
+        location: GCP_LOCATION,
       });
-      
-      const hasData = checkRows.length > 0 && checkRows[0].cnt > 0;
-      
-      // 데이터가 없으면 최근 데이터가 있는 날짜 찾기
-      if (!hasData) {
-        console.log(`[BigQuery] ${queryDate}에 데이터 없음, 최근 데이터 날짜 찾기`);
+      if (!(checkRows.length > 0 && checkRows[0].cnt > 0)) {
         const [recentRows] = await bigquery.query({
-          query: `
-            SELECT FORMAT_DATE('%Y-%m-%d', evaluation_date) as date_str
-            FROM \`${DATASET_ID}.evaluations\`
-            WHERE evaluation_date <= @checkDate
-            ORDER BY evaluation_date DESC
-            LIMIT 1
-          `,
+          query: `SELECT FORMAT_DATE('%Y-%m-%d', evaluation_date) as date_str FROM ${EVAL_TABLE} WHERE evaluation_date <= @checkDate ORDER BY evaluation_date DESC LIMIT 1`,
           params: { checkDate: queryDate },
-          location: 'asia-northeast3',
+          location: GCP_LOCATION,
         });
-        
         if (recentRows.length > 0 && recentRows[0].date_str) {
           queryDate = recentRows[0].date_str;
-          console.log(`[BigQuery] 최근 데이터 날짜 사용: ${queryDate}`);
-        } else {
-          console.warn(`[BigQuery] 데이터가 전혀 없습니다. 원래 날짜(${queryDate}) 사용`);
         }
-      } else {
-        console.log(`[BigQuery] ${queryDate}에 데이터 있음 (${checkRows[0].cnt}건)`);
       }
     } catch (checkError) {
-      console.warn(`[BigQuery] 날짜 확인 중 오류 (계속 진행):`, checkError);
+      console.warn(`[BigQuery] 날짜 확인 중 오류:`, checkError);
     }
-    
-    // 모든 통계를 전일 기준으로 조회
-    dateFilter = 'WHERE evaluation_date = @queryDate';
-    params.queryDate = queryDate;
-    
-    console.log(`[BigQuery] getDashboardStats: ${queryDate} (전일 기준)`);
-    
+
+    // 이번주 목~수 범위 계산 (목요일 시작, 수요일 종료)
+    const qd = new Date(queryDate + 'T00:00:00Z');
+    const dayOfWeek = qd.getUTCDay(); // 0=일, 1=월, ..., 4=목, 6=토
+    const daysBackToThursday = (dayOfWeek - 4 + 7) % 7;
+    const thursday = new Date(qd);
+    thursday.setUTCDate(thursday.getUTCDate() - daysBackToThursday);
+    const wednesday = new Date(thursday);
+    wednesday.setUTCDate(thursday.getUTCDate() + 6);
+    const fmtDate = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+    const weekStart = fmtDate(thursday);
+    // weekEnd는 수요일 또는 queryDate 중 이른 날짜 (아직 수요일이 안 된 경우)
+    const weekEnd = fmtDate(wednesday) <= queryDate ? fmtDate(wednesday) : queryDate;
+
+    // 전주 목~수 범위 계산
+    const prevThursday = new Date(thursday);
+    prevThursday.setUTCDate(prevThursday.getUTCDate() - 7);
+    const prevWednesday = new Date(prevThursday);
+    prevWednesday.setUTCDate(prevThursday.getUTCDate() + 6);
+    const prevWeekStart = fmtDate(prevThursday);
+    const prevWeekEnd = fmtDate(prevWednesday);
+
+    console.log(`[BigQuery] getDashboardStats: 이번주(목~수) ${weekStart}~${weekEnd}, 전주 ${prevWeekStart}~${prevWeekEnd}`);
+
+    const dateFilter = 'WHERE evaluation_date BETWEEN @weekStart AND @weekEnd';
+    const params: any = { weekStart, weekEnd };
+
     const query = `
       WITH daily_stats AS (
         SELECT
@@ -160,7 +319,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
           COUNT(DISTINCT agent_id) as agent_count,
           SUM(COALESCE(attitude_error_count, 0)) as total_attitude_errors,
           SUM(COALESCE(business_error_count, 0)) as total_ops_errors
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${dateFilter}
         GROUP BY center
       ),
@@ -168,7 +327,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
         SELECT
           center,
           COUNT(DISTINCT agent_id) as watchlist_count
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${dateFilter}
         AND (
           (attitude_error_count / 5.0 * 100) > 5
@@ -185,7 +344,14 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
           COALESCE(SUM(CASE WHEN wc.center = '광주' THEN wc.watchlist_count ELSE 0 END), 0) as watchlistGwangju,
           COALESCE(SUM(ds.total_attitude_errors), 0) as total_attitude_errors,
           COALESCE(SUM(ds.total_ops_errors), 0) as total_ops_errors,
-          COALESCE(SUM(ds.evaluation_count), 0) as total_evaluation_count
+          COALESCE(SUM(ds.evaluation_count), 0) as total_evaluation_count,
+          -- 센터별 오류율
+          COALESCE(SUM(CASE WHEN ds.center = '용산' THEN ds.total_attitude_errors ELSE 0 END), 0) as yongsan_attitude_errors,
+          COALESCE(SUM(CASE WHEN ds.center = '용산' THEN ds.total_ops_errors ELSE 0 END), 0) as yongsan_ops_errors,
+          COALESCE(SUM(CASE WHEN ds.center = '용산' THEN ds.evaluation_count ELSE 0 END), 0) as yongsan_eval_count,
+          COALESCE(SUM(CASE WHEN ds.center = '광주' THEN ds.total_attitude_errors ELSE 0 END), 0) as gwangju_attitude_errors,
+          COALESCE(SUM(CASE WHEN ds.center = '광주' THEN ds.total_ops_errors ELSE 0 END), 0) as gwangju_ops_errors,
+          COALESCE(SUM(CASE WHEN ds.center = '광주' THEN ds.evaluation_count ELSE 0 END), 0) as gwangju_eval_count
         FROM daily_stats ds
         LEFT JOIN watchlist_counts wc ON ds.center = wc.center
       )
@@ -195,16 +361,21 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
         totalEvaluations,
         watchlistYongsan,
         watchlistGwangju,
-        CASE 
-          WHEN total_evaluation_count > 0 
+        CASE
+          WHEN total_evaluation_count > 0
           THEN ROUND(SAFE_DIVIDE(total_attitude_errors, total_evaluation_count * 5) * 100, 2)
           ELSE 0
         END as attitudeErrorRate,
-        CASE 
-          WHEN total_evaluation_count > 0 
+        CASE
+          WHEN total_evaluation_count > 0
           THEN ROUND(SAFE_DIVIDE(total_ops_errors, total_evaluation_count * 11) * 100, 2)
           ELSE 0
-        END as businessErrorRate
+        END as businessErrorRate,
+        -- 센터별 오류율
+        CASE WHEN yongsan_eval_count > 0 THEN ROUND(SAFE_DIVIDE(yongsan_attitude_errors, yongsan_eval_count * 5) * 100, 2) ELSE 0 END as yongsanAttitudeErrorRate,
+        CASE WHEN yongsan_eval_count > 0 THEN ROUND(SAFE_DIVIDE(yongsan_ops_errors, yongsan_eval_count * 11) * 100, 2) ELSE 0 END as yongsanBusinessErrorRate,
+        CASE WHEN gwangju_eval_count > 0 THEN ROUND(SAFE_DIVIDE(gwangju_attitude_errors, gwangju_eval_count * 5) * 100, 2) ELSE 0 END as gwangjuAttitudeErrorRate,
+        CASE WHEN gwangju_eval_count > 0 THEN ROUND(SAFE_DIVIDE(gwangju_ops_errors, gwangju_eval_count * 11) * 100, 2) ELSE 0 END as gwangjuBusinessErrorRate
       FROM aggregated_stats
     `;
     
@@ -214,7 +385,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -223,7 +394,7 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
     console.log(`[BigQuery] Query date:`, queryDate);
     
     // 기본 데이터 구조 생성 함수
-    const createDefaultStats = (date: string) => ({
+    const createDefaultStats = (): DashboardStats => ({
       totalAgentsYongsan: 0,
       totalAgentsGwangju: 0,
       totalEvaluations: 0,
@@ -232,80 +403,136 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       attitudeErrorRate: 0,
       businessErrorRate: 0,
       overallErrorRate: 0,
-      date: date || queryDate,
+      date: queryDate,
+      weekStart, weekEnd, prevWeekStart, prevWeekEnd,
+      attitudeTrend: 0,
+      businessTrend: 0,
+      overallTrend: 0,
+      yongsanAttitudeErrorRate: 0,
+      yongsanBusinessErrorRate: 0,
+      yongsanOverallErrorRate: 0,
+      gwangjuAttitudeErrorRate: 0,
+      gwangjuBusinessErrorRate: 0,
+      gwangjuOverallErrorRate: 0,
+      yongsanOverallTrend: 0,
+      gwangjuOverallTrend: 0,
     });
-    
-    // rows가 비어있거나 null인 경우 처리
-    if (!rows || rows.length === 0) {
-      console.warn(`[BigQuery] No rows returned from query for date: ${queryDate} - returning default stats`);
-      const defaultData = createDefaultStats(queryDate);
-      return {
-        success: true,
-        data: defaultData,
-      };
+
+    if (!rows || rows.length === 0 || !rows[0]) {
+      console.warn(`[BigQuery] No data for week ${weekStart}~${weekEnd}`);
+      return { success: true, data: createDefaultStats() };
     }
-    
+
     const row = rows[0];
-    
-    // row가 null이거나 undefined인 경우 처리
-    if (!row) {
-      console.warn(`[BigQuery] First row is null or undefined - returning default stats`);
-      const defaultData = createDefaultStats(queryDate);
-      return {
-        success: true,
-        data: defaultData,
-      };
+
+    // 이번주 누적 값 추출
+    const totalAgentsYongsan = Number(row.totalAgentsYongsan) || 0;
+    const totalAgentsGwangju = Number(row.totalAgentsGwangju) || 0;
+    const totalEvaluations = Number(row.totalEvaluations) || 0;
+    const watchlistYongsan = Number(row.watchlistYongsan) || 0;
+    const watchlistGwangju = Number(row.watchlistGwangju) || 0;
+    const attitudeErrorRate = Number(row.attitudeErrorRate) || 0;
+    const businessErrorRate = Number(row.businessErrorRate) || 0;
+    const yongsanAttitudeErrorRate = Number(row.yongsanAttitudeErrorRate) || 0;
+    const yongsanBusinessErrorRate = Number(row.yongsanBusinessErrorRate) || 0;
+    const gwangjuAttitudeErrorRate = Number(row.gwangjuAttitudeErrorRate) || 0;
+    const gwangjuBusinessErrorRate = Number(row.gwangjuBusinessErrorRate) || 0;
+    const overallErrorRate = Number((attitudeErrorRate + businessErrorRate).toFixed(2));
+
+    // 전주 누적 오류율 조회 (트렌드 계산용)
+    let prevAttitudeErrorRate = 0;
+    let prevBusinessErrorRate = 0;
+    let prevYongsanOverallRate = 0;
+    let prevGwangjuOverallRate = 0;
+    try {
+      const prevQuery = `
+        WITH prev_stats AS (
+          SELECT
+            center,
+            SUM(COALESCE(attitude_error_count, 0)) as att_errors,
+            SUM(COALESCE(business_error_count, 0)) as biz_errors,
+            COUNT(*) as eval_count
+          FROM ${EVAL_TABLE}
+          WHERE evaluation_date BETWEEN @prevWeekStart AND @prevWeekEnd
+          GROUP BY center
+        ),
+        prev_total AS (
+          SELECT
+            SUM(att_errors) as att_errors,
+            SUM(biz_errors) as biz_errors,
+            SUM(eval_count) as eval_count,
+            -- 센터별
+            SUM(CASE WHEN center = '용산' THEN att_errors ELSE 0 END) as yongsan_att,
+            SUM(CASE WHEN center = '용산' THEN biz_errors ELSE 0 END) as yongsan_biz,
+            SUM(CASE WHEN center = '용산' THEN eval_count ELSE 0 END) as yongsan_cnt,
+            SUM(CASE WHEN center = '광주' THEN att_errors ELSE 0 END) as gwangju_att,
+            SUM(CASE WHEN center = '광주' THEN biz_errors ELSE 0 END) as gwangju_biz,
+            SUM(CASE WHEN center = '광주' THEN eval_count ELSE 0 END) as gwangju_cnt
+          FROM prev_stats
+        )
+        SELECT
+          CASE WHEN eval_count > 0 THEN ROUND(SAFE_DIVIDE(att_errors, eval_count * 5) * 100, 2) ELSE 0 END as prevAttitudeErrorRate,
+          CASE WHEN eval_count > 0 THEN ROUND(SAFE_DIVIDE(biz_errors, eval_count * 11) * 100, 2) ELSE 0 END as prevBusinessErrorRate,
+          ROUND(
+            CASE WHEN yongsan_cnt > 0 THEN SAFE_DIVIDE(yongsan_att, yongsan_cnt * 5) * 100 ELSE 0 END +
+            CASE WHEN yongsan_cnt > 0 THEN SAFE_DIVIDE(yongsan_biz, yongsan_cnt * 11) * 100 ELSE 0 END
+          , 2) as prevYongsanOverallRate,
+          ROUND(
+            CASE WHEN gwangju_cnt > 0 THEN SAFE_DIVIDE(gwangju_att, gwangju_cnt * 5) * 100 ELSE 0 END +
+            CASE WHEN gwangju_cnt > 0 THEN SAFE_DIVIDE(gwangju_biz, gwangju_cnt * 11) * 100 ELSE 0 END
+          , 2) as prevGwangjuOverallRate
+        FROM prev_total
+      `;
+      const [prevRows] = await bigquery.query({
+        query: prevQuery,
+        params: { prevWeekStart, prevWeekEnd },
+        location: GCP_LOCATION,
+      });
+      if (prevRows.length > 0) {
+        prevAttitudeErrorRate = Number(prevRows[0].prevAttitudeErrorRate) || 0;
+        prevBusinessErrorRate = Number(prevRows[0].prevBusinessErrorRate) || 0;
+        prevYongsanOverallRate = Number(prevRows[0].prevYongsanOverallRate) || 0;
+        prevGwangjuOverallRate = Number(prevRows[0].prevGwangjuOverallRate) || 0;
+        console.log(`[BigQuery] 전주(${prevWeekStart}~${prevWeekEnd}): 태도=${prevAttitudeErrorRate}%, 업무=${prevBusinessErrorRate}%, 용산전체=${prevYongsanOverallRate}%, 광주전체=${prevGwangjuOverallRate}%`);
+      }
+    } catch (prevError) {
+      console.warn('[BigQuery] 전주 데이터 조회 실패:', prevError);
     }
-    
-    console.log(`[BigQuery] Raw row values:`, JSON.stringify(row, null, 2));
-    console.log(`[BigQuery] Row keys:`, Object.keys(row));
-    
-    // 값 추출 및 검증
-    const totalAgentsYongsan = row.totalAgentsYongsan != null ? Number(row.totalAgentsYongsan) : 0;
-    const totalAgentsGwangju = row.totalAgentsGwangju != null ? Number(row.totalAgentsGwangju) : 0;
-    const totalEvaluations = row.totalEvaluations != null ? Number(row.totalEvaluations) : 0;
-    const watchlistYongsan = row.watchlistYongsan != null ? Number(row.watchlistYongsan) : 0;
-    const watchlistGwangju = row.watchlistGwangju != null ? Number(row.watchlistGwangju) : 0;
-    const attitudeErrorRate = row.attitudeErrorRate != null ? Number(row.attitudeErrorRate) : 0;
-    const businessErrorRate = row.businessErrorRate != null ? Number(row.businessErrorRate) : 0;
-    
-    console.log(`[BigQuery] Parsed values:`, {
-      totalAgentsYongsan,
-      totalAgentsGwangju,
-      totalEvaluations,
-      watchlistYongsan,
-      watchlistGwangju,
-      attitudeErrorRate,
-      businessErrorRate,
-    });
-    
-    // 결과 데이터 구성
-    const result = {
+
+    const prevOverallErrorRate = Number((prevAttitudeErrorRate + prevBusinessErrorRate).toFixed(2));
+
+    const result: { success: boolean; data: DashboardStats } = {
       success: true,
       data: {
-        totalAgentsYongsan: isNaN(totalAgentsYongsan) ? 0 : totalAgentsYongsan,
-        totalAgentsGwangju: isNaN(totalAgentsGwangju) ? 0 : totalAgentsGwangju,
-        totalEvaluations: isNaN(totalEvaluations) ? 0 : totalEvaluations,
-        watchlistYongsan: isNaN(watchlistYongsan) ? 0 : watchlistYongsan,
-        watchlistGwangju: isNaN(watchlistGwangju) ? 0 : watchlistGwangju,
-        attitudeErrorRate: isNaN(attitudeErrorRate) ? 0 : attitudeErrorRate,
-        businessErrorRate: isNaN(businessErrorRate) ? 0 : businessErrorRate,
-        overallErrorRate: Number((attitudeErrorRate + businessErrorRate).toFixed(2)),
+        totalAgentsYongsan,
+        totalAgentsGwangju,
+        totalEvaluations,
+        watchlistYongsan,
+        watchlistGwangju,
+        attitudeErrorRate,
+        businessErrorRate,
+        overallErrorRate,
         date: queryDate,
+        weekStart, weekEnd, prevWeekStart, prevWeekEnd,
+        // 전주 대비 트렌드
+        attitudeTrend: Number((attitudeErrorRate - prevAttitudeErrorRate).toFixed(2)),
+        businessTrend: Number((businessErrorRate - prevBusinessErrorRate).toFixed(2)),
+        overallTrend: Number((overallErrorRate - prevOverallErrorRate).toFixed(2)),
+        // 센터별 오류율 (이번주 누적)
+        yongsanAttitudeErrorRate,
+        yongsanBusinessErrorRate,
+        yongsanOverallErrorRate: Number((yongsanAttitudeErrorRate + yongsanBusinessErrorRate).toFixed(2)),
+        gwangjuAttitudeErrorRate,
+        gwangjuBusinessErrorRate,
+        gwangjuOverallErrorRate: Number((gwangjuAttitudeErrorRate + gwangjuBusinessErrorRate).toFixed(2)),
+        // 센터별 전주 대비 트렌드
+        yongsanOverallTrend: Number(((yongsanAttitudeErrorRate + yongsanBusinessErrorRate) - prevYongsanOverallRate).toFixed(2)),
+        gwangjuOverallTrend: Number(((gwangjuAttitudeErrorRate + gwangjuBusinessErrorRate) - prevGwangjuOverallRate).toFixed(2)),
       },
     };
-    
-    // 결과 유효성 검사
-    if (!result.data || typeof result.data !== 'object') {
-      console.error(`[BigQuery] Invalid result data structure:`, result);
-      return {
-        success: true,
-        data: createDefaultStats(queryDate),
-      };
-    }
-    
+
     console.log(`[BigQuery] Final result:`, JSON.stringify(result.data, null, 2));
-    
+
     return result;
   } catch (error) {
     console.error('[BigQuery] getDashboardStats error:', error);
@@ -351,7 +578,7 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
           COUNT(*) as evaluations,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         WHERE evaluation_date BETWEEN @startDate AND @endDate
         GROUP BY center
       ),
@@ -361,8 +588,9 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
           service,
           COUNT(DISTINCT agent_id) as agent_count,
           COUNT(*) as evaluations,
-          SUM(attitude_error_count + business_error_count) as total_errors
-        FROM \`${DATASET_ID}.evaluations\`
+          SUM(attitude_error_count) as attitude_errors,
+          SUM(business_error_count) as ops_errors
+        FROM ${EVAL_TABLE}
         WHERE evaluation_date BETWEEN @startDate AND @endDate
         GROUP BY center, service
       )
@@ -375,7 +603,10 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
           STRUCT(
             ss.service as name,
             ss.agent_count as agentCount,
-            ROUND(SAFE_DIVIDE(ss.total_errors, ss.evaluations * 16) * 100, 2) as errorRate
+            ROUND(
+              SAFE_DIVIDE(ss.attitude_errors, ss.evaluations * 5) * 100 +
+              SAFE_DIVIDE(ss.ops_errors, ss.evaluations * 11) * 100
+            , 2) as errorRate
           )
         ) as services
       FROM center_stats cs
@@ -386,7 +617,7 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
     const options = {
       query,
       params: { startDate, endDate },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -429,16 +660,23 @@ export interface TrendData {
   목표: number;
 }
 
-export async function getDailyTrend(days = 14): Promise<{ success: boolean; data?: TrendData[]; error?: string }> {
+export async function getDailyTrend(days = 30, paramStartDate?: string, paramEndDate?: string): Promise<{ success: boolean; data?: TrendData[]; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
 
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    let startDateStr: string;
+    let endDateStr: string;
 
-    const startDateStr = startDate.toISOString().split('T')[0];
-    const endDateStr = endDate.toISOString().split('T')[0];
+    if (paramStartDate && paramEndDate) {
+      startDateStr = paramStartDate;
+      endDateStr = paramEndDate;
+    } else {
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDateStr = startDate.toISOString().split('T')[0];
+      endDateStr = endDate.toISOString().split('T')[0];
+    }
 
     const query = `
       SELECT
@@ -451,7 +689,7 @@ export async function getDailyTrend(days = 14): Promise<{ success: boolean; data
         SUM(CASE WHEN center = '광주' THEN attitude_error_count ELSE 0 END) as gwangju_attitude_errors,
         SUM(CASE WHEN center = '광주' THEN business_error_count ELSE 0 END) as gwangju_business_errors,
         SUM(CASE WHEN center = '광주' THEN 1 ELSE 0 END) as gwangju_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE evaluation_date BETWEEN @startDate AND @endDate
       GROUP BY evaluation_date
       ORDER BY evaluation_date ASC
@@ -460,7 +698,7 @@ export async function getDailyTrend(days = 14): Promise<{ success: boolean; data
     const options = {
       query,
       params: { startDate: startDateStr, endDate: endDateStr },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
 
     const [rows] = await bigquery.query(options);
@@ -513,6 +751,120 @@ export async function getDailyTrend(days = 14): Promise<{ success: boolean; data
 }
 
 // ============================================
+// 주차별 오류율 트렌드 (최근 N주)
+// ============================================
+
+export async function getWeeklyTrend(weeks = 6): Promise<{ success: boolean; data?: TrendData[]; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+
+    // 최근 N주 범위 계산 (목~수 기준)
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0=Sun, 4=Thu
+    // 이번 주 목요일 구하기 (이미 지났거나 오늘이면 이번 주, 아직이면 지난 주)
+    const daysFromThursday = (dayOfWeek - 4 + 7) % 7;
+    const thisThursday = new Date(today);
+    thisThursday.setDate(today.getDate() - daysFromThursday);
+
+    // 시작일: weeks주 전 목요일
+    const startDate = new Date(thisThursday);
+    startDate.setDate(thisThursday.getDate() - (weeks - 1) * 7);
+
+    // 종료일: 이번 주 수요일 (목+6)
+    const endDate = new Date(thisThursday);
+    endDate.setDate(thisThursday.getDate() + 6);
+    // 미래면 오늘로 제한
+    if (endDate > today) {
+      endDate.setTime(today.getTime());
+    }
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    const query = `
+      WITH weekly AS (
+        SELECT
+          -- 목~수 주차 계산: 목요일 기준으로 주 시작 (DAYOFWEEK: 1=Sun..7=Sat, Thu=5)
+          DATE_SUB(evaluation_date, INTERVAL MOD(EXTRACT(DAYOFWEEK FROM evaluation_date) + 2, 7) DAY) as week_start,
+          center,
+          SUM(attitude_error_count) as attitude_errors,
+          SUM(business_error_count) as business_errors,
+          COUNT(*) as eval_count
+        FROM ${EVAL_TABLE}
+        WHERE evaluation_date BETWEEN @startDate AND @endDate
+        GROUP BY week_start, center
+      )
+      SELECT
+        week_start,
+        -- 용산
+        SUM(CASE WHEN center = '용산' THEN attitude_errors ELSE 0 END) as yongsan_attitude_errors,
+        SUM(CASE WHEN center = '용산' THEN business_errors ELSE 0 END) as yongsan_business_errors,
+        SUM(CASE WHEN center = '용산' THEN eval_count ELSE 0 END) as yongsan_count,
+        -- 광주
+        SUM(CASE WHEN center = '광주' THEN attitude_errors ELSE 0 END) as gwangju_attitude_errors,
+        SUM(CASE WHEN center = '광주' THEN business_errors ELSE 0 END) as gwangju_business_errors,
+        SUM(CASE WHEN center = '광주' THEN eval_count ELSE 0 END) as gwangju_count
+      FROM weekly
+      GROUP BY week_start
+      ORDER BY week_start ASC
+    `;
+
+    const options = {
+      query,
+      params: { startDate: startDateStr, endDate: endDateStr },
+      location: GCP_LOCATION,
+    };
+
+    const [rows] = await bigquery.query(options);
+
+    const result: TrendData[] = rows.map((row: any) => {
+      const yongsanCount = Number(row.yongsan_count) || 0;
+      const gwangjuCount = Number(row.gwangju_count) || 0;
+
+      const yongsanAttitude = yongsanCount > 0
+        ? Number((Number(row.yongsan_attitude_errors) / (yongsanCount * 5) * 100).toFixed(2))
+        : 0;
+      const gwangjuAttitude = gwangjuCount > 0
+        ? Number((Number(row.gwangju_attitude_errors) / (gwangjuCount * 5) * 100).toFixed(2))
+        : 0;
+
+      const yongsanBusiness = yongsanCount > 0
+        ? Number((Number(row.yongsan_business_errors) / (yongsanCount * 11) * 100).toFixed(2))
+        : 0;
+      const gwangjuBusiness = gwangjuCount > 0
+        ? Number((Number(row.gwangju_business_errors) / (gwangjuCount * 11) * 100).toFixed(2))
+        : 0;
+
+      // 주차 라벨: "M/D주" (목요일 날짜 기준)
+      const dateValue = row.week_start.value || row.week_start;
+      const dateObj = new Date(dateValue);
+      const weekEndObj = new Date(dateObj);
+      weekEndObj.setDate(dateObj.getDate() + 6);
+      const label = `${dateObj.getMonth() + 1}/${dateObj.getDate()}~${weekEndObj.getMonth() + 1}/${weekEndObj.getDate()}`;
+
+      return {
+        date: label,
+        용산_태도: yongsanAttitude,
+        용산_오상담: yongsanBusiness,
+        용산_합계: Number((yongsanAttitude + yongsanBusiness).toFixed(2)),
+        광주_태도: gwangjuAttitude,
+        광주_오상담: gwangjuBusiness,
+        광주_합계: Number((gwangjuAttitude + gwangjuBusiness).toFixed(2)),
+        목표: 3.0,
+      };
+    });
+
+    return { success: true, data: result };
+  } catch (error) {
+    console.error('[BigQuery] getWeeklyTrend error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// ============================================
 // 상담사 목록 조회
 // ============================================
 
@@ -542,76 +894,74 @@ export async function getAgents(filters?: {
   try {
     const bigquery = getBigQueryClient();
     
-    let whereClause = 'WHERE 1=1';
     const params: any = {};
-    
+
     // date 파라미터가 있으면 특정 날짜로 필터링, 없으면 month 사용
     let evalWhereClause = '';
     if (filters?.date) {
-      evalWhereClause = 'WHERE evaluation_date = @date';
+      evalWhereClause = 'WHERE e.evaluation_date = @date';
       params.date = filters.date;
     } else {
       // 기본값: 이번 달
       const month = filters?.month || new Date().toISOString().slice(0, 7);
-      evalWhereClause = 'WHERE FORMAT_DATE(\'%Y-%m\', evaluation_date) = @month';
+      evalWhereClause = "WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = @month";
       params.month = month;
     }
-    
+
     if (filters?.center && filters.center !== 'all') {
-      evalWhereClause += ' AND center = @center';
+      evalWhereClause += ' AND e.center = @center';
       params.center = filters.center;
     }
     if (filters?.service && filters.service !== 'all') {
-      evalWhereClause += ' AND service = @service';
+      evalWhereClause += ' AND e.service = @service';
       params.service = filters.service;
     }
     if (filters?.channel && filters.channel !== 'all') {
-      evalWhereClause += ' AND channel = @channel';
+      evalWhereClause += ' AND e.channel = @channel';
       params.channel = filters.channel;
     }
-    
+
+    // HR 캐시에서 근속 정보 가져오기 (Google Sheets JOIN 제거 → 성능 개선)
+    const hrMap = await getHrAgentsMap();
+
     const query = `
       SELECT
-        agent_id as id,
-        agent_name as name,
-        center,
-        service,
-        channel,
-        -- 근속기간: evaluations 테이블에 tenure 컬럼이 없으므로 0으로 설정
-        0 as tenureMonths,
-        '' as tenureGroup,
+        e.agent_id as id,
+        e.agent_name as name,
+        e.center,
+        e.service,
+        e.channel,
         COUNT(*) as totalEvaluations,
-        ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
-        ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
-        -- 항목별 오류 개수 계산
-        SUM(CAST(greeting_error AS INT64)) as greeting_errors,
-        SUM(CAST(empathy_error AS INT64)) as empathy_errors,
-        SUM(CAST(apology_error AS INT64)) as apology_errors,
-        SUM(CAST(additional_inquiry_error AS INT64)) as additional_inquiry_errors,
-        SUM(CAST(unkind_error AS INT64)) as unkind_errors,
-        SUM(CAST(consult_type_error AS INT64)) as consult_type_errors,
-        SUM(CAST(guide_error AS INT64)) as guide_errors,
-        SUM(CAST(identity_check_error AS INT64)) as identity_check_errors,
-        SUM(CAST(required_search_error AS INT64)) as required_search_errors,
-        SUM(CAST(wrong_guide_error AS INT64)) as wrong_guide_errors,
-        SUM(CAST(process_missing_error AS INT64)) as process_missing_errors,
-        SUM(CAST(process_incomplete_error AS INT64)) as process_incomplete_errors,
-        SUM(CAST(system_error AS INT64)) as system_errors,
-        SUM(CAST(id_mapping_error AS INT64)) as id_mapping_errors,
-        SUM(CAST(flag_keyword_error AS INT64)) as flag_keyword_errors,
-        SUM(CAST(history_error AS INT64)) as history_errors
-      FROM \`${DATASET_ID}.evaluations\`
+        ROUND(SAFE_DIVIDE(SUM(e.attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
+        ROUND(SAFE_DIVIDE(SUM(e.business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
+        SUM(CAST(e.greeting_error AS INT64)) as greeting_errors,
+        SUM(CAST(e.empathy_error AS INT64)) as empathy_errors,
+        SUM(CAST(e.apology_error AS INT64)) as apology_errors,
+        SUM(CAST(e.additional_inquiry_error AS INT64)) as additional_inquiry_errors,
+        SUM(CAST(e.unkind_error AS INT64)) as unkind_errors,
+        SUM(CAST(e.consult_type_error AS INT64)) as consult_type_errors,
+        SUM(CAST(e.guide_error AS INT64)) as guide_errors,
+        SUM(CAST(e.identity_check_error AS INT64)) as identity_check_errors,
+        SUM(CAST(e.required_search_error AS INT64)) as required_search_errors,
+        SUM(CAST(e.wrong_guide_error AS INT64)) as wrong_guide_errors,
+        SUM(CAST(e.process_missing_error AS INT64)) as process_missing_errors,
+        SUM(CAST(e.process_incomplete_error AS INT64)) as process_incomplete_errors,
+        SUM(CAST(e.system_error AS INT64)) as system_errors,
+        SUM(CAST(e.id_mapping_error AS INT64)) as id_mapping_errors,
+        SUM(CAST(e.flag_keyword_error AS INT64)) as flag_keyword_errors,
+        SUM(CAST(e.history_error AS INT64)) as history_errors
+      FROM ${EVAL_TABLE} e
       ${evalWhereClause}
-      GROUP BY agent_id, agent_name, center, service, channel
+      GROUP BY e.agent_id, e.agent_name, e.center, e.service, e.channel
       ORDER BY attitudeErrorRate + opsErrorRate DESC
     `;
-    
+
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
-    
+
     const [rows] = await bigquery.query(options);
     
     // 항목별 이름 매핑
@@ -634,14 +984,20 @@ export async function getAgents(filters?: {
       history_errors: '상담이력 기재 미흡',
     };
     
-    const result: Agent[] = rows.map((row: any) => {
+    const allAgents: Agent[] = rows.map((row: any) => {
       const attRate = Number(row.attitudeErrorRate) || 0;
       const opsRate = Number(row.opsErrorRate) || 0;
       const totalEvals = Number(row.totalEvaluations) || 0;
-      
+
+      // HR 캐시에서 근속 정보 매핑
+      const agentIdLower = String(row.id || '').trim().toLowerCase();
+      const hireDate = hrMap.get(agentIdLower);
+      const tenureMonths = hireDate ? calcTenureMonths(hireDate) : 0;
+      const tenureGroup = hireDate ? calcTenureGroup(tenureMonths) : '';
+
       // 항목별 오류 개수 수집
       const errorCounts: Array<{ name: string; count: number; rate: number }> = [];
-      
+
       Object.entries(errorItemMap).forEach(([key, name]) => {
         const count = Number(row[key]) || 0;
         if (count > 0) {
@@ -649,7 +1005,7 @@ export async function getAgents(filters?: {
           errorCounts.push({ name, count, rate });
         }
       });
-      
+
       // 오류 개수 기준으로 정렬하여 상위 3개 선택
       const topErrors = errorCounts
         .sort((a, b) => b.count - a.count)
@@ -659,16 +1015,16 @@ export async function getAgents(filters?: {
           count: e.count,
           rate: e.rate,
         }));
-      
+
       return {
         id: row.id,
         name: row.name,
         center: row.center,
         service: row.service,
         channel: row.channel,
-        tenureMonths: Number(row.tenureMonths) || 0,
-        tenureGroup: row.tenureGroup || '',
-        isActive: true, // agents 테이블에 is_active 컬럼이 없으므로 기본값
+        tenureMonths,
+        tenureGroup,
+        isActive: true,
         totalEvaluations: totalEvals,
         attitudeErrorRate: attRate,
         opsErrorRate: opsRate,
@@ -676,7 +1032,12 @@ export async function getAgents(filters?: {
         topErrors: topErrors.length > 0 ? topErrors : undefined,
       };
     });
-    
+
+    // tenure 필터는 JS에서 적용 (CTE JOIN 제거로 HAVING절 사용 불가)
+    const result = filters?.tenure && filters.tenure !== 'all'
+      ? allAgents.filter(a => a.tenureGroup === filters.tenure)
+      : allAgents;
+
     return { success: true, data: result };
   } catch (error) {
     console.error('[BigQuery] getAgents error:', error);
@@ -706,7 +1067,7 @@ export async function getEvaluations(startDate?: string, endDate?: string, limit
     
     const query = `
       SELECT *
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE evaluation_date BETWEEN @startDate AND @endDate
       ORDER BY evaluation_date DESC, agent_id
       LIMIT @limit
@@ -715,7 +1076,7 @@ export async function getEvaluations(startDate?: string, endDate?: string, limit
     const options = {
       query,
       params: { startDate, endDate, limit },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -747,6 +1108,7 @@ export interface WatchListItem {
   evaluationCount: number;
   reason: string;
   topErrors: string[];
+  registeredAt?: string;
 }
 
 export async function getWatchList(filters?: {
@@ -792,6 +1154,7 @@ export async function getWatchList(filters?: {
           service,
           channel,
           COUNT(*) as evaluation_count,
+          MIN(evaluation_date) as first_eval_date,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors,
           ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_rate,
@@ -812,7 +1175,7 @@ export async function getWatchList(filters?: {
           SUM(CAST(id_mapping_error AS INT64)) as id_mapping_errors,
           SUM(CAST(flag_keyword_error AS INT64)) as flag_keyword_errors,
           SUM(CAST(history_error AS INT64)) as history_errors
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @month
           ${filters?.center && filters.center !== 'all' ? 'AND center = @center' : ''}
           ${filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : ''}
@@ -827,7 +1190,7 @@ export async function getWatchList(filters?: {
           channel,
           ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as prev_attitude_rate,
           ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as prev_ops_rate
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @prevMonth
           ${filters?.center && filters.center !== 'all' ? 'AND center = @center' : ''}
           ${filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : ''}
@@ -840,6 +1203,7 @@ export async function getWatchList(filters?: {
         c.service,
         c.channel,
         c.evaluation_count,
+        c.first_eval_date,
         c.attitude_errors,
         c.ops_errors,
         c.attitude_rate,
@@ -875,7 +1239,7 @@ export async function getWatchList(filters?: {
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -937,9 +1301,10 @@ export async function getWatchList(filters?: {
         evaluationCount: Number(row.evaluation_count) || 0,
         reason,
         topErrors,
+        registeredAt: row.first_eval_date ? row.first_eval_date.value || String(row.first_eval_date) : undefined,
       };
     });
-    
+
     return { success: true, data: result };
   } catch (error) {
     console.error('[BigQuery] getWatchList error:', error);
@@ -960,6 +1325,8 @@ export interface Goal {
   center: string | null;
   type: string;
   targetRate: number;
+  attitudeTargetRate?: number | null;
+  businessTargetRate?: number | null;
   periodType: string;
   periodStart: string;
   periodEnd: string;
@@ -970,6 +1337,7 @@ export async function getGoals(filters?: {
   center?: string;
   periodType?: string;
   isActive?: boolean;
+  currentMonth?: boolean;
 }): Promise<{ success: boolean; data?: Goal[]; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
@@ -996,18 +1364,20 @@ export async function getGoals(filters?: {
         CONCAT(COALESCE(center, '전체'), ' ', COALESCE(service, ''), ' ', period_type) as name,
         center,
         service,
-        CASE 
-          WHEN target_attitude_error_rate IS NOT NULL AND target_business_error_rate IS NOT NULL THEN 'total'
-          WHEN target_attitude_error_rate IS NOT NULL THEN 'attitude'
-          WHEN target_business_error_rate IS NOT NULL THEN 'ops'
+        CASE
+          WHEN IFNULL(target_attitude_error_rate, 0) > 0 AND IFNULL(target_business_error_rate, 0) > 0 THEN 'total'
+          WHEN IFNULL(target_attitude_error_rate, 0) > 0 THEN 'attitude'
+          WHEN IFNULL(target_business_error_rate, 0) > 0 THEN 'ops'
           ELSE 'total'
         END as type,
-        COALESCE(target_attitude_error_rate, target_business_error_rate, target_overall_error_rate, 0) as targetRate,
+        target_attitude_error_rate as attitudeTargetRate,
+        target_business_error_rate as businessTargetRate,
+        COALESCE(target_overall_error_rate, target_attitude_error_rate, target_business_error_rate, 0) as targetRate,
         period_type as periodType,
         start_date as periodStart,
         end_date as periodEnd,
         is_active as isActive
-      FROM \`${DATASET_ID}.targets\`
+      FROM ${TARGETS_TABLE}
       ${whereClause}
       ORDER BY start_date DESC, center
     `;
@@ -1015,7 +1385,7 @@ export async function getGoals(filters?: {
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -1026,6 +1396,8 @@ export async function getGoals(filters?: {
       center: row.center,
       type: row.type,
       targetRate: Number(row.targetRate) || 0,
+      attitudeTargetRate: row.attitudeTargetRate != null ? Number(row.attitudeTargetRate) : null,
+      businessTargetRate: row.businessTargetRate != null ? Number(row.businessTargetRate) : null,
       periodType: row.periodType,
       periodStart: row.periodStart.value || row.periodStart,
       periodEnd: row.periodEnd.value || row.periodEnd,
@@ -1058,15 +1430,37 @@ export async function saveEvaluationsToBigQuery(evaluations: any[]): Promise<{ s
       const evaluationId = evalData.consultId
         ? `${evalData.agentId}_${evalData.date}_${evalData.consultId}`
         : `${evalData.agentId}_${evalData.date}_${evalData.evaluationId || Date.now()}`;
-      
+
+      // Group construction (service + channel)
+      const groupValue = `${evalData.service || ''} ${evalData.channel || ''}`.trim();
+
       return {
       evaluation_id: evaluationId,
       evaluation_date: evalData.date,
       center: evalData.center,
       service: evalData.service || '',
       channel: evalData.channel || 'unknown',
+      group: groupValue || 'unknown',
       agent_id: evalData.agentId,
       agent_name: evalData.agentName,
+      consultation_id: evalData.consultId || null,
+      consultation_datetime: evalData.consultDate ? new Date(evalData.consultDate).toISOString() : null,
+      greeting_error: evalData.greetingError || false,
+      empathy_error: evalData.empathyError || false,
+      apology_error: evalData.apologyError || false,
+      additional_inquiry_error: evalData.additionalInquiryError || false,
+      unkind_error: evalData.unkindError || false,
+      consult_type_error: evalData.consultTypeError || false,
+      guide_error: evalData.guideError || false,
+      identity_check_error: evalData.identityCheckError || false,
+      required_search_error: evalData.requiredSearchError || false,
+      wrong_guide_error: evalData.wrongGuideError || false,
+      process_missing_error: evalData.processMissingError || false,
+      process_incomplete_error: evalData.processIncompleteError || false,
+      system_error: evalData.systemError || false,
+      id_mapping_error: evalData.idMappingError || false,
+      flag_keyword_error: evalData.flagKeywordError || false,
+      history_error: evalData.historyError || false,
       attitude_error_count: evalData.attitudeErrors || 0,
       business_error_count: evalData.businessErrors || 0,
       total_error_count: (evalData.attitudeErrors || 0) + (evalData.businessErrors || 0),
@@ -1154,7 +1548,7 @@ export async function getDailyErrors(filters?: {
         'att1' as item_id,
         '첫인사/끝인사 누락' as item_name,
         SUM(CAST(greeting_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1165,7 +1559,7 @@ export async function getDailyErrors(filters?: {
         'att2' as item_id,
         '공감표현 누락' as item_name,
         SUM(CAST(empathy_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1176,7 +1570,7 @@ export async function getDailyErrors(filters?: {
         'att3' as item_id,
         '사과표현 누락' as item_name,
         SUM(CAST(apology_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1187,7 +1581,7 @@ export async function getDailyErrors(filters?: {
         'att4' as item_id,
         '추가문의 누락' as item_name,
         SUM(CAST(additional_inquiry_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1198,7 +1592,7 @@ export async function getDailyErrors(filters?: {
         'att5' as item_id,
         '불친절' as item_name,
         SUM(CAST(unkind_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1209,7 +1603,7 @@ export async function getDailyErrors(filters?: {
         'err1' as item_id,
         '상담유형 오설정' as item_name,
         SUM(CAST(consult_type_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1220,7 +1614,7 @@ export async function getDailyErrors(filters?: {
         'err2' as item_id,
         '가이드 미준수' as item_name,
         SUM(CAST(guide_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1231,7 +1625,7 @@ export async function getDailyErrors(filters?: {
         'err3' as item_id,
         '본인확인 누락' as item_name,
         SUM(CAST(identity_check_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1242,7 +1636,7 @@ export async function getDailyErrors(filters?: {
         'err4' as item_id,
         '필수탐색 누락' as item_name,
         SUM(CAST(required_search_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1253,7 +1647,7 @@ export async function getDailyErrors(filters?: {
         'err5' as item_id,
         '오안내' as item_name,
         SUM(CAST(wrong_guide_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1264,7 +1658,7 @@ export async function getDailyErrors(filters?: {
         'err6' as item_id,
         '전산 처리 누락' as item_name,
         SUM(CAST(process_missing_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1275,7 +1669,7 @@ export async function getDailyErrors(filters?: {
         'err7' as item_id,
         '전산 처리 미완료' as item_name,
         SUM(CAST(process_incomplete_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1286,7 +1680,7 @@ export async function getDailyErrors(filters?: {
         'err8' as item_id,
         '전산 조작 미흡' as item_name,
         SUM(CAST(system_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1297,7 +1691,7 @@ export async function getDailyErrors(filters?: {
         'err9' as item_id,
         '콜픽트림ID 매핑 누락' as item_name,
         SUM(CAST(id_mapping_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1308,7 +1702,7 @@ export async function getDailyErrors(filters?: {
         'err10' as item_id,
         '플래그키워드 누락' as item_name,
         SUM(CAST(flag_keyword_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1319,7 +1713,7 @@ export async function getDailyErrors(filters?: {
         'err11' as item_id,
         '상담이력 기재 미흡' as item_name,
         SUM(CAST(history_error AS INT64)) as error_count
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       GROUP BY evaluation_date
       
@@ -1329,7 +1723,7 @@ export async function getDailyErrors(filters?: {
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     }
     
     const [rows] = await bigquery.query(options)
@@ -1373,6 +1767,7 @@ export async function getDailyErrors(filters?: {
 export interface WeeklyErrorData {
   week: string
   weekLabel: string
+  dateRange?: string
   items: Array<{
     itemId: string
     itemName: string
@@ -1429,7 +1824,7 @@ export async function getWeeklyErrors(filters?: {
           '첫인사/끝인사 누락' as item_name,
           SUM(CAST(greeting_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1443,7 +1838,7 @@ export async function getWeeklyErrors(filters?: {
           '공감표현 누락' as item_name,
           SUM(CAST(empathy_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1457,7 +1852,7 @@ export async function getWeeklyErrors(filters?: {
           '사과표현 누락' as item_name,
           SUM(CAST(apology_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1471,7 +1866,7 @@ export async function getWeeklyErrors(filters?: {
           '추가문의 누락' as item_name,
           SUM(CAST(additional_inquiry_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1485,7 +1880,7 @@ export async function getWeeklyErrors(filters?: {
           '불친절' as item_name,
           SUM(CAST(unkind_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1499,7 +1894,7 @@ export async function getWeeklyErrors(filters?: {
           '상담유형 오설정' as item_name,
           SUM(CAST(consult_type_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1513,7 +1908,7 @@ export async function getWeeklyErrors(filters?: {
           '가이드 미준수' as item_name,
           SUM(CAST(guide_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1527,7 +1922,7 @@ export async function getWeeklyErrors(filters?: {
           '본인확인 누락' as item_name,
           SUM(CAST(identity_check_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1541,7 +1936,7 @@ export async function getWeeklyErrors(filters?: {
           '필수탐색 누락' as item_name,
           SUM(CAST(required_search_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1555,7 +1950,7 @@ export async function getWeeklyErrors(filters?: {
           '오안내' as item_name,
           SUM(CAST(wrong_guide_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1569,7 +1964,7 @@ export async function getWeeklyErrors(filters?: {
           '전산 처리 누락' as item_name,
           SUM(CAST(process_missing_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1583,7 +1978,7 @@ export async function getWeeklyErrors(filters?: {
           '전산 처리 미완료' as item_name,
           SUM(CAST(process_incomplete_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1597,7 +1992,7 @@ export async function getWeeklyErrors(filters?: {
           '전산 조작 미흡' as item_name,
           SUM(CAST(system_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1611,7 +2006,7 @@ export async function getWeeklyErrors(filters?: {
           '콜픽트림ID 매핑 누락' as item_name,
           SUM(CAST(id_mapping_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1625,7 +2020,7 @@ export async function getWeeklyErrors(filters?: {
           '플래그키워드 누락' as item_name,
           SUM(CAST(flag_keyword_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
         
@@ -1639,26 +2034,39 @@ export async function getWeeklyErrors(filters?: {
           '상담이력 기재 미흡' as item_name,
           SUM(CAST(history_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         GROUP BY week, year, week_num
       )
+      ,
+      date_ranges AS (
+        SELECT
+          FORMAT_DATE('%Y-W%V', evaluation_date) as week,
+          MIN(evaluation_date) as min_date,
+          MAX(evaluation_date) as max_date
+        FROM ${EVAL_TABLE}
+        ${whereClause}
+        GROUP BY FORMAT_DATE('%Y-W%V', evaluation_date)
+      )
       SELECT
-        week,
-        year,
-        week_num,
-        item_id,
-        item_name,
-        error_count,
-        ROUND(SAFE_DIVIDE(error_count, total_evaluations) * 100, 1) as error_rate
-      FROM weekly_data
-      ORDER BY year DESC, week_num DESC, item_id
+        w.week,
+        w.year,
+        w.week_num,
+        w.item_id,
+        w.item_name,
+        w.error_count,
+        ROUND(SAFE_DIVIDE(w.error_count, w.total_evaluations) * 100, 1) as error_rate,
+        d.min_date,
+        d.max_date
+      FROM weekly_data w
+      LEFT JOIN date_ranges d ON w.week = d.week
+      ORDER BY w.year DESC, w.week_num DESC, w.item_id
     `
     
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     }
     
     const [rows] = await bigquery.query(options)
@@ -1668,16 +2076,30 @@ export async function getWeeklyErrors(filters?: {
     
     rows.forEach((row: any) => {
       const week = row.week
-      const weekLabel = `${row.year}년 ${row.week_num}주차`
-      
+      const year2 = String(row.year).slice(2)
+      const weekLabel = `${year2}년 ${row.week_num}주차`
+
+      // 날짜 범위 포맷
+      let dateRange = ''
+      if (row.min_date && row.max_date) {
+        try {
+          const minD = row.min_date.value ? new Date(row.min_date.value) : new Date(row.min_date)
+          const maxD = row.max_date.value ? new Date(row.max_date.value) : new Date(row.max_date)
+          dateRange = `${minD.getMonth() + 1}/${minD.getDate()}~${maxD.getMonth() + 1}/${maxD.getDate()}`
+        } catch {
+          dateRange = ''
+        }
+      }
+
       if (!weekMap.has(week)) {
         weekMap.set(week, {
           week,
           weekLabel,
+          dateRange,
           items: [],
         })
       }
-      
+
       weekMap.get(week)!.items.push({
         itemId: row.item_id,
         itemName: row.item_name,
@@ -1766,7 +2188,7 @@ export async function getItemErrorStats(filters?: {
           '상담태도' as category,
           SUM(CAST(greeting_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1777,7 +2199,7 @@ export async function getItemErrorStats(filters?: {
           '상담태도' as category,
           SUM(CAST(empathy_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1788,7 +2210,7 @@ export async function getItemErrorStats(filters?: {
           '상담태도' as category,
           SUM(CAST(apology_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1799,7 +2221,7 @@ export async function getItemErrorStats(filters?: {
           '상담태도' as category,
           SUM(CAST(additional_inquiry_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1810,7 +2232,7 @@ export async function getItemErrorStats(filters?: {
           '상담태도' as category,
           SUM(CAST(unkind_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1821,7 +2243,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(consult_type_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1832,7 +2254,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(guide_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1843,7 +2265,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(identity_check_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1854,7 +2276,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(required_search_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1865,7 +2287,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(wrong_guide_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1876,7 +2298,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(process_missing_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1887,7 +2309,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(process_incomplete_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1898,7 +2320,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(system_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1909,7 +2331,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(id_mapping_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1920,7 +2342,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(flag_keyword_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
         
         UNION ALL
@@ -1931,7 +2353,7 @@ export async function getItemErrorStats(filters?: {
           '오상담/오처리' as category,
           SUM(CAST(history_error AS INT64)) as error_count,
           COUNT(*) as total_evaluations
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         ${whereClause}
       )
       SELECT
@@ -1947,21 +2369,91 @@ export async function getItemErrorStats(filters?: {
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     }
     
     const [rows] = await bigquery.query(options)
-    
-    // 전일 데이터로 trend 계산 (간단히 0으로 설정, 추후 개선 가능)
+
+    // 전영업일 대비 trend 계산: 최근 2 영업일(평가 데이터 있는 날) 조회
+    let trendCenterFilter = ''
+    if (filters?.center && filters.center !== 'all') {
+      trendCenterFilter += ' AND center = @center'
+    }
+    if (filters?.service && filters.service !== 'all') {
+      trendCenterFilter += ' AND service = @service'
+    }
+    if (filters?.channel && filters.channel !== 'all') {
+      trendCenterFilter += ' AND channel = @channel'
+    }
+
+    const trendQuery = `
+      WITH latest_dates AS (
+        SELECT DISTINCT evaluation_date
+        FROM ${EVAL_TABLE}
+        WHERE evaluation_date BETWEEN @startDate AND @endDate
+        ${trendCenterFilter}
+        ORDER BY evaluation_date DESC
+        LIMIT 2
+      )
+      SELECT
+        evaluation_date,
+        SUM(CAST(greeting_error AS INT64)) as att1,
+        SUM(CAST(empathy_error AS INT64)) as att2,
+        SUM(CAST(apology_error AS INT64)) as att3,
+        SUM(CAST(additional_inquiry_error AS INT64)) as att4,
+        SUM(CAST(unkind_error AS INT64)) as att5,
+        SUM(CAST(consult_type_error AS INT64)) as err1,
+        SUM(CAST(guide_error AS INT64)) as err2,
+        SUM(CAST(identity_check_error AS INT64)) as err3,
+        SUM(CAST(required_search_error AS INT64)) as err4,
+        SUM(CAST(wrong_guide_error AS INT64)) as err5,
+        SUM(CAST(process_missing_error AS INT64)) as err6,
+        SUM(CAST(process_incomplete_error AS INT64)) as err7,
+        SUM(CAST(system_error AS INT64)) as err8,
+        SUM(CAST(id_mapping_error AS INT64)) as err9,
+        SUM(CAST(flag_keyword_error AS INT64)) as err10,
+        SUM(CAST(history_error AS INT64)) as err11,
+        COUNT(*) as total_count
+      FROM ${EVAL_TABLE}
+      WHERE evaluation_date IN (SELECT evaluation_date FROM latest_dates)
+      ${trendCenterFilter}
+      GROUP BY evaluation_date
+      ORDER BY evaluation_date DESC
+    `
+
+    const trendMap: Record<string, number> = {}
+    try {
+      const [trendRows] = await bigquery.query({
+        query: trendQuery,
+        params,
+        location: GCP_LOCATION,
+      })
+
+      if (trendRows.length >= 2) {
+        const latest = trendRows[0]
+        const prev = trendRows[1]
+        const itemIds = ['att1','att2','att3','att4','att5','err1','err2','err3','err4','err5','err6','err7','err8','err9','err10','err11']
+        itemIds.forEach(id => {
+          const latestTotal = Number(latest.total_count) || 1
+          const prevTotal = Number(prev.total_count) || 1
+          const latestRate = (Number(latest[id]) / latestTotal) * 100
+          const prevRate = (Number(prev[id]) / prevTotal) * 100
+          trendMap[id] = Number((latestRate - prevRate).toFixed(2))
+        })
+      }
+    } catch (trendErr) {
+      console.warn('[BigQuery] trend calculation failed, using 0:', trendErr)
+    }
+
     const result: ItemErrorStats[] = rows.map((row: any) => ({
       itemId: row.item_id,
       itemName: row.item_name,
       category: row.category as "상담태도" | "오상담/오처리",
       errorCount: Number(row.error_count) || 0,
       errorRate: Number(row.error_rate) || 0,
-      trend: 0, // TODO: 전일 대비 계산
+      trend: trendMap[row.item_id] || 0,
     }))
-    
+
     return { success: true, data: result }
   } catch (error) {
     console.error('[BigQuery] getItemErrorStats error:', error)
@@ -1969,6 +2461,133 @@ export async function getItemErrorStats(filters?: {
       success: false,
       error: error instanceof Error ? error.message : String(error),
     }
+  }
+}
+
+// ============================================
+// 근속기간별 오류 현황 조회
+// ============================================
+
+export interface TenureStatItem {
+  center: string;
+  service: string;
+  channel: string;
+  tenureGroup: string;
+  items: Record<string, number>;
+}
+
+export async function getTenureStats(filters?: {
+  center?: string;
+  service?: string;
+  channel?: string;
+  startDate?: string;
+  endDate?: string;
+}): Promise<{ success: boolean; data?: TenureStatItem[]; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+
+    let startDate = filters?.startDate;
+    let endDate = filters?.endDate;
+    if (!startDate || !endDate) {
+      const now = new Date();
+      endDate = now.toISOString().split('T')[0];
+      const start = new Date(now);
+      start.setDate(start.getDate() - 30);
+      startDate = start.toISOString().split('T')[0];
+    }
+
+    let whereClause = 'WHERE e.evaluation_date BETWEEN @startDate AND @endDate';
+    const params: any = { startDate, endDate };
+
+    if (filters?.center && filters.center !== 'all') {
+      whereClause += ' AND e.center = @center';
+      params.center = filters.center;
+    }
+    if (filters?.service && filters.service !== 'all') {
+      whereClause += ' AND e.service = @service';
+      params.service = filters.service;
+    }
+    if (filters?.channel && filters.channel !== 'all') {
+      whereClause += ' AND e.channel = @channel';
+      params.channel = filters.channel;
+    }
+
+    // HR 캐시에서 근속 정보 가져오기 (Google Sheets JOIN 제거 → 성능 개선)
+    const hrMap = await getHrAgentsMap();
+
+    // agent_id별로 집계 (tenureGroup은 JS에서 매핑)
+    const query = `
+      SELECT
+        e.agent_id,
+        e.center,
+        e.service,
+        e.channel,
+        SUM(CAST(e.greeting_error AS INT64)) as att1,
+        SUM(CAST(e.empathy_error AS INT64)) as att2,
+        SUM(CAST(e.apology_error AS INT64)) as att3,
+        SUM(CAST(e.additional_inquiry_error AS INT64)) as att4,
+        SUM(CAST(e.unkind_error AS INT64)) as att5,
+        SUM(CAST(e.consult_type_error AS INT64)) as err1,
+        SUM(CAST(e.guide_error AS INT64)) as err2,
+        SUM(CAST(e.identity_check_error AS INT64)) as err3,
+        SUM(CAST(e.required_search_error AS INT64)) as err4,
+        SUM(CAST(e.wrong_guide_error AS INT64)) as err5,
+        SUM(CAST(e.process_missing_error AS INT64)) as err6,
+        SUM(CAST(e.process_incomplete_error AS INT64)) as err7,
+        SUM(CAST(e.system_error AS INT64)) as err8,
+        SUM(CAST(e.id_mapping_error AS INT64)) as err9,
+        SUM(CAST(e.flag_keyword_error AS INT64)) as err10,
+        SUM(CAST(e.history_error AS INT64)) as err11
+      FROM ${EVAL_TABLE} e
+      ${whereClause}
+      GROUP BY e.agent_id, e.center, e.service, e.channel
+    `;
+
+    const [rows] = await bigquery.query({ query, params, location: GCP_LOCATION });
+
+    const itemIds = ['att1','att2','att3','att4','att5','err1','err2','err3','err4','err5','err6','err7','err8','err9','err10','err11'];
+
+    // center-service-channel-tenureGroup 키별로 재집계
+    const aggregated = new Map<string, Record<string, number>>();
+
+    for (const row of rows) {
+      const agentIdLower = String(row.agent_id || '').trim().toLowerCase();
+      const hireDate = hrMap.get(agentIdLower);
+      const tenureMonths = hireDate ? calcTenureMonths(hireDate) : 0;
+      const tenureGroup = hireDate ? calcTenureGroup(tenureMonths) : '3개월 미만';
+
+      const key = `${row.center}|${row.service}|${row.channel}|${tenureGroup}`;
+      const existing = aggregated.get(key);
+
+      if (existing) {
+        for (const id of itemIds) {
+          existing[id] = (existing[id] || 0) + (Number(row[id]) || 0);
+        }
+      } else {
+        aggregated.set(key, Object.fromEntries(itemIds.map(id => [id, Number(row[id]) || 0])));
+      }
+    }
+
+    const data: TenureStatItem[] = [];
+    for (const [key, items] of aggregated) {
+      const [center, service, channel, tenureGroup] = key.split('|');
+      data.push({ center, service, channel, tenureGroup, items });
+    }
+    // 정렬: center → service → channel → tenureGroup
+    data.sort((a, b) =>
+      a.center.localeCompare(b.center) ||
+      a.service.localeCompare(b.service) ||
+      a.channel.localeCompare(b.channel) ||
+      a.tenureGroup.localeCompare(b.tenureGroup)
+    );
+
+    return { success: true, data };
+  } catch (error) {
+    console.error('[BigQuery] getTenureStats error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
@@ -2006,7 +2625,7 @@ export async function checkAgentExists(
         center,
         service,
         channel
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
       LIMIT 10
     `;
@@ -2014,7 +2633,7 @@ export async function checkAgentExists(
     const options = {
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     };
     
     const [rows] = await bigquery.query(options);
@@ -2079,7 +2698,7 @@ export async function getAgentDetail(
         SUM(attitude_error_count) as attitude_errors,
         SUM(business_error_count) as business_errors,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count) + SUM(business_error_count), COUNT(*) * 16) * 100, 2) as error_rate
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE agent_id = @agentId
         AND evaluation_date BETWEEN @startDate AND @endDate
       GROUP BY evaluation_date
@@ -2093,7 +2712,7 @@ export async function getAgentDetail(
         startDate: queryStartDate,
         endDate: queryEndDate,
       },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     // 2. 항목별 오류 개수 조회 (단일 쿼리로 모든 항목 집계)
@@ -2115,7 +2734,7 @@ export async function getAgentDetail(
         SUM(CAST(id_mapping_error AS INT64)) as id_mapping_errors,
         SUM(CAST(flag_keyword_error AS INT64)) as flag_keyword_errors,
         SUM(CAST(history_error AS INT64)) as history_errors
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE agent_id = @agentId
         AND evaluation_date BETWEEN @startDate AND @endDate
     `;
@@ -2127,7 +2746,7 @@ export async function getAgentDetail(
         startDate: queryStartDate,
         endDate: queryEndDate,
       },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     // 항목별 매핑
@@ -2162,7 +2781,7 @@ export async function getAgentDetail(
     // 3. 상담사 이름 조회
     const agentNameQuery = `
       SELECT DISTINCT agent_name
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE agent_id = @agentId
       LIMIT 1
     `;
@@ -2170,7 +2789,7 @@ export async function getAgentDetail(
     const [agentNameRows] = await bigquery.query({
       query: agentNameQuery,
       params: { agentId },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     const agentName = agentNameRows[0]?.agent_name || agentId;
@@ -2223,7 +2842,7 @@ export async function getAgentAnalysisData(
         SUM(CAST(empathy_error AS INT64)) as empathy_errors,
         SUM(CAST(consult_type_error AS INT64)) as consult_type_errors,
         SUM(CAST(guide_error AS INT64)) as guide_errors
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE agent_id = @agentId
         AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
       GROUP BY agent_id, agent_name, center, service, channel
@@ -2233,7 +2852,7 @@ export async function getAgentAnalysisData(
     const [rows] = await bigquery.query({
       query,
       params: { agentId, month },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     if (rows.length === 0) {
@@ -2292,7 +2911,7 @@ export async function getGroupAnalysisData(
         COUNT(*) as total_evaluations,
         ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_error_rate,
         ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as ops_error_rate
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE center = @center
         AND service = @service
         AND channel = @channel
@@ -2304,7 +2923,7 @@ export async function getGroupAnalysisData(
     const [rows] = await bigquery.query({
       query,
       params: { center, service, channel, month },
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     if (rows.length === 0) {
@@ -2356,7 +2975,7 @@ export async function getGoalCurrentRate(
     let whereClause = 'WHERE evaluation_date >= @startDate AND evaluation_date <= @endDate';
     const params: any = { startDate, endDate };
     
-    if (center) {
+    if (center && center !== '전체') {
       whereClause += ' AND center = @center';
       params.center = center;
     }
@@ -2373,14 +2992,14 @@ export async function getGoalCurrentRate(
     const query = `
       SELECT
         ${rateColumn} as current_rate
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       ${whereClause}
     `;
     
     const [rows] = await bigquery.query({
       query,
       params,
-      location: 'asia-northeast3',
+      location: GCP_LOCATION,
     });
     
     const currentRate = Number(rows[0]?.current_rate) || 0;
@@ -2399,13 +3018,15 @@ export async function saveGoalToBigQuery(goal: {
   id?: string;
   name: string;
   center: string | null;
+  service?: string | null;
+  channel?: string | null;
   type: string;
   targetRate: number;
   periodType: string;
   periodStart: string;
   periodEnd: string;
   isActive: boolean;
-}): Promise<{ success: boolean; saved?: number; error?: string }> {
+}): Promise<{ success: boolean; saved?: number; data?: any; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
     const dataset = bigquery.dataset(DATASET_ID);
@@ -2438,9 +3059,9 @@ export async function saveGoalToBigQuery(goal: {
       try {
         // 기존 레코드 조회 (기존 값 유지용)
         const [existingRows] = await bigquery.query({
-          query: `SELECT * FROM \`${DATASET_ID}.targets\` WHERE target_id = @targetId LIMIT 1`,
+          query: `SELECT * FROM ${TARGETS_TABLE} WHERE target_id = @targetId LIMIT 1`,
           params: { targetId },
-          location: 'asia-northeast3',
+          location: GCP_LOCATION,
         });
         
         if (existingRows.length === 0) {
@@ -2473,7 +3094,7 @@ export async function saveGoalToBigQuery(goal: {
         const overallRateValue = goal.type === 'total' ? String(finalOverallRate) : 'NULL';
         
         const mergeQuery = `
-          MERGE \`${DATASET_ID}.targets\` T
+          MERGE ${TARGETS_TABLE} T
           USING (
             SELECT
               @targetId as target_id,
@@ -2528,7 +3149,7 @@ export async function saveGoalToBigQuery(goal: {
         const [result] = await bigquery.query({
           query: mergeQuery,
           params: mergeParams,
-          location: 'asia-northeast3',
+          location: GCP_LOCATION,
         });
         
         console.log('[BigQuery] Goal merged successfully:', targetId);
@@ -2704,6 +3325,146 @@ export async function getReportData(
   }
 }
 
+// ============================================
+// 액션 플랜 CRUD
+// ============================================
+
+export async function getActionPlans(filters?: { center?: string; status?: string }): Promise<{ success: boolean; data?: any[]; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    let whereClause = 'WHERE 1=1';
+    const params: any = {};
+
+    if (filters?.center) {
+      whereClause += ' AND center = @center';
+      params.center = filters.center;
+    }
+    if (filters?.status) {
+      whereClause += ' AND status = @status';
+      params.status = filters.status;
+    }
+
+    const query = `
+      SELECT
+        id,
+        agent_id as agentId,
+        agent_name as agentName,
+        center,
+        group_name as groupName,
+        issue,
+        plan,
+        status,
+        FORMAT_TIMESTAMP('%Y-%m-%d', created_at) as createdAt,
+        FORMAT_DATE('%Y-%m-%d', target_date) as targetDate,
+        result,
+        improvement,
+        manager_feedback as managerFeedback,
+        FORMAT_DATE('%Y-%m-%d', feedback_date) as feedbackDate
+      FROM ${ACTION_PLANS_TABLE}
+      ${whereClause}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `;
+
+    const [rows] = await bigquery.query({ query, params, location: GCP_LOCATION });
+    return { success: true, data: rows };
+  } catch (error) {
+    console.error('[BigQuery] getActionPlans error:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function saveActionPlan(data: {
+  id: string;
+  agentId: string;
+  agentName: string;
+  center: string;
+  group: string;
+  issue: string;
+  plan: string;
+  status: string;
+  targetDate: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    const query = `
+      INSERT INTO ${ACTION_PLANS_TABLE} (
+        id, agent_id, agent_name, center, group_name,
+        issue, plan, status, target_date, created_at
+      ) VALUES (
+        @id, @agentId, @agentName, @center, @groupName,
+        @issue, @plan, @status, @targetDate, CURRENT_TIMESTAMP()
+      )
+    `;
+
+    await bigquery.query({
+      query,
+      params: {
+        id: data.id,
+        agentId: data.agentId,
+        agentName: data.agentName,
+        center: data.center,
+        groupName: data.group,
+        issue: data.issue,
+        plan: data.plan,
+        status: data.status,
+        targetDate: data.targetDate,
+      },
+      location: GCP_LOCATION,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error('[BigQuery] saveActionPlan error:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function updateActionPlan(id: string, updates: Record<string, any>): Promise<{ success: boolean; error?: string }> {
+  try {
+    const bigquery = getBigQueryClient();
+    const setClauses: string[] = [];
+    const params: any = { id };
+
+    if (updates.status) {
+      setClauses.push('status = @status');
+      params.status = updates.status;
+    }
+    if (updates.result) {
+      setClauses.push('result = @result');
+      params.result = updates.result;
+    }
+    if (updates.improvement) {
+      setClauses.push('improvement = @improvement');
+      params.improvement = updates.improvement;
+    }
+    if (updates.managerFeedback) {
+      setClauses.push('manager_feedback = @managerFeedback');
+      params.managerFeedback = updates.managerFeedback;
+    }
+    if (updates.feedbackDate) {
+      setClauses.push('feedback_date = @feedbackDate');
+      params.feedbackDate = updates.feedbackDate;
+    }
+
+    if (setClauses.length === 0) {
+      return { success: false, error: 'No fields to update' };
+    }
+
+    const query = `
+      UPDATE ${ACTION_PLANS_TABLE}
+      SET ${setClauses.join(', ')}
+      WHERE id = @id
+    `;
+
+    await bigquery.query({ query, params, location: GCP_LOCATION });
+    return { success: true };
+  } catch (error) {
+    console.error('[BigQuery] updateActionPlan error:', error);
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export default {
   getDashboardStats,
   getCenterStats,
@@ -2715,6 +3476,7 @@ export default {
   getDailyErrors,
   getWeeklyErrors,
   getItemErrorStats,
+  getTenureStats,
   saveEvaluationsToBigQuery,
   checkAgentExists,
   getAgentAnalysisData,
@@ -2722,5 +3484,8 @@ export default {
   getGoalCurrentRate,
   saveGoalToBigQuery,
   getReportData,
+  getActionPlans,
+  saveActionPlan,
+  updateActionPlan,
   getBigQueryClient,
 };

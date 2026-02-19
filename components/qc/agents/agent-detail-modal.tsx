@@ -21,7 +21,7 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts"
-import { evaluationItems } from "@/lib/mock-data"
+import { evaluationItems } from "@/lib/constants"
 import { useAgentDetail } from "@/hooks/use-agent-detail"
 
 interface AgentDetailModalProps {
@@ -90,10 +90,10 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
   const strongItems = [...itemErrorData].sort((a, b) => a.count - b.count).slice(0, 3)
 
   const COLORS = {
-    attitude: "#1e3a5f",
-    consult: "#f59e0b",
-    weak: "#ef4444",
-    strong: "#22c55e",
+    attitude: "#2c6edb",
+    consult: "#ffcd00",
+    weak: "#DD2222",
+    strong: "#34A853",
   }
 
   return (
@@ -207,29 +207,29 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                   <div className="h-[250px]">
                     <ResponsiveContainer width="100%" height="100%">
                       <LineChart data={trendData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                        <XAxis dataKey="date" tick={{ fill: "#6b7280", fontSize: 12 }} />
-                        <YAxis tick={{ fill: "#6b7280", fontSize: 12 }} domain={[0, 6]} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                        <XAxis dataKey="date" tick={{ fill: "#666666", fontSize: 12 }} />
+                        <YAxis tick={{ fill: "#666666", fontSize: 12 }} domain={[0, 6]} />
                         <Tooltip
                           contentStyle={{
                             backgroundColor: "#fff",
-                            border: "1px solid #e5e7eb",
+                            border: "1px solid #D9D9D9",
                             borderRadius: "8px",
                           }}
                         />
                         <ReferenceLine
                           y={3}
-                          stroke="#ef4444"
+                          stroke="#DD2222"
                           strokeDasharray="5 5"
-                          label={{ value: "목표", fill: "#ef4444", fontSize: 11 }}
+                          label={{ value: "목표", fill: "#DD2222", fontSize: 11 }}
                         />
                         <Line
                           type="monotone"
                           dataKey="오류율"
-                          stroke="#3b82f6"
+                          stroke="#2c6edb"
                           strokeWidth={2.5}
                           dot={false}
-                          activeDot={{ r: 5, fill: "#3b82f6" }}
+                          activeDot={{ r: 5, fill: "#2c6edb" }}
                         />
                       </LineChart>
                     </ResponsiveContainer>
@@ -277,8 +277,8 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                                   className={cn(
                                     "text-[10px] px-1.5 py-0.5 font-medium",
                                     item.category === "상담태도" 
-                                      ? "border-[#1e3a5f] text-[#1e3a5f] bg-[#1e3a5f]/5" 
-                                      : "border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5"
+                                      ? "border-[#2c6edb] text-[#2c6edb] bg-[#2c6edb]/5" 
+                                      : "border-[#ffcd00] text-[#ffcd00] bg-[#ffcd00]/5"
                                   )}
                                 >
                                   {item.category === "상담태도" ? "태도" : "업무"}
@@ -289,7 +289,7 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                                   <span 
                                     className={cn(
                                       "h-2 w-2 rounded-full flex-shrink-0",
-                                      item.category === "상담태도" ? "bg-[#1e3a5f]" : "bg-[#f59e0b]"
+                                      item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]"
                                     )}
                                   />
                                   <span className="text-sm text-slate-700">{item.fullName}</span>
@@ -322,11 +322,11 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                   </div>
                   <div className="p-3 border-t border-slate-100 flex items-center justify-center gap-6 text-xs bg-slate-50/50">
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-[#1e3a5f] text-[#1e3a5f] bg-[#1e3a5f]/5">태도</Badge>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-[#2c6edb] text-[#2c6edb] bg-[#2c6edb]/5">태도</Badge>
                       <span className="text-slate-600">상담태도 (5개)</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-[#f59e0b] text-[#f59e0b] bg-[#f59e0b]/5">업무</Badge>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 border-[#ffcd00] text-[#ffcd00] bg-[#ffcd00]/5">업무</Badge>
                       <span className="text-slate-600">오상담/오처리 (11개)</span>
                     </div>
                   </div>

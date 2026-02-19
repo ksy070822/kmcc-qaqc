@@ -41,17 +41,10 @@ GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-service-account.json
 
 서비스 계정 키 파일(`csopp-25f2-service-account.json`)을 프로젝트 루트에 저장합니다.
 
-### Vercel 배포 환경
+### Cloud Run 배포 환경
 
-Vercel 대시보드 > Settings > Environment Variables에 다음 변수 추가:
-
-```bash
-BIGQUERY_PROJECT_ID=csopp-25f2
-BIGQUERY_DATASET_ID=KMCC_QC
-BIGQUERY_CREDENTIALS={"type":"service_account","project_id":"csopp-25f2",...전체 JSON...}
-```
-
-`BIGQUERY_CREDENTIALS`에는 서비스 계정 JSON 파일의 전체 내용을 한 줄로 입력합니다.
+Cloud Run은 GCP 서비스 계정을 통해 BigQuery에 자동 인증됩니다.
+`cloudbuild.yaml`에서 빌드/배포 설정을 관리합니다.
 
 ## 🚀 실행
 

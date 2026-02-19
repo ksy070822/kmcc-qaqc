@@ -321,3 +321,109 @@ ${topErrors
 5. 관리자 체크리스트`;
   }
 }
+
+/**
+ * 예측 분석 프롬프트 생성
+ * 예측 탭의 센터별/그룹별 데이터를 기반으로 AI 분석 코멘트 생성
+ */
+export interface PredictionAnalysisInput {
+  center?: string;
+  predictions: any[];
+  centerSummary: Record<string, {
+    attitude: { current: number; predicted: number; target: number; prob: number };
+    process: { current: number; predicted: number; target: number; prob: number };
+  }>;
+}
+
+export function createPredictionAnalysisPrompt(data: PredictionAnalysisInput): string {
+  const { predictions, centerSummary } = data;
+
+  // 센터별 현황 텍스트
+  const centerLines: string[] = [];
+  for (const [center, summary] of Object.entries(centerSummary)) {
+    centerLines.push(
+      `- ${center}센터: 태도 현재 ${summary.attitude.current}% → 예측 ${summary.attitude.predicted}% (목표 ${summary.attitude.target}%, 달성확률 ${summary.attitude.prob}%)` +
+      ` | 오상담 현재 ${summary.process.current}% → 예측 ${summary.process.predicted}% (목표 ${summary.process.target}%, 달성확률 ${summary.process.prob}%)`
+    );
+  }
+
+  // 그룹별 상세 현황
+  const groupLines = predictions.map((p: any) => {
+    const service = p.serviceChannel?.split('_')[0] || p.service || '';
+    const channel = p.serviceChannel?.split('_')[1] || p.channel || '';
+    const trend = p.attitudeTrend === 'worsening' || p.opsTrend === 'worsening' ? '악화' :
+                  p.attitudeTrend === 'improving' || p.opsTrend === 'improving' ? '개선' : '안정';
+    return `- ${p.center} ${service}/${channel}: 태도 ${p.currentAttitudeRate}%→${p.predictedAttitudeRate}%, 오상담 ${p.currentOpsRate}%→${p.predictedOpsRate}%, 위험도 ${p.overallRiskLevel}, 추세 ${trend}`;
+  });
+
+  // 주차별 추이 텍스트
+  const weeklyLines: string[] = [];
+  if (predictions.length > 0 && predictions[0].weeklyMetrics) {
+    const weeks = ['W1', 'W2', 'W3'];
+    for (const week of weeks) {
+      const weekIndex = weeks.indexOf(week);
+      let yAtt = 0, yOps = 0, gAtt = 0, gOps = 0;
+      let yCount = 0, gCount = 0;
+      for (const p of predictions) {
+        if (p.weeklyMetrics?.[weekIndex]) {
+          const m = p.weeklyMetrics[weekIndex];
+          if (p.center === '용산') { yAtt += m.attitudeRate; yOps += m.opsRate; yCount++; }
+          if (p.center === '광주') { gAtt += m.attitudeRate; gOps += m.opsRate; gCount++; }
+        }
+      }
+      if (yCount > 0 || gCount > 0) {
+        weeklyLines.push(`- ${week}: 용산(태도 ${yCount ? (yAtt / yCount).toFixed(2) : '-'}%, 오상담 ${yCount ? (yOps / yCount).toFixed(2) : '-'}%), 광주(태도 ${gCount ? (gAtt / gCount).toFixed(2) : '-'}%, 오상담 ${gCount ? (gOps / gCount).toFixed(2) : '-'}%)`);
+      }
+    }
+  }
+
+  // 위험 그룹
+  const riskGroups = predictions
+    .filter((p: any) => p.overallRiskLevel === 'critical' || p.overallRiskLevel === 'high')
+    .map((p: any) => {
+      const service = p.serviceChannel?.split('_')[0] || '';
+      const channel = p.serviceChannel?.split('_')[1] || '';
+      return `- [${p.overallRiskLevel.toUpperCase()}] ${p.center} ${service}/${channel}: 태도 ${p.predictedAttitudeRate}%, 오상담 ${p.predictedOpsRate}%`;
+    });
+
+  return `당신은 카카오모빌리티 고객센터 QC 품질관리 예측 분석 전문가입니다.
+아래 예측 데이터를 분석하여 관리자에게 실행 가능한 인사이트를 제공해주세요.
+
+## 센터별 현황
+${centerLines.join('\n')}
+
+## 그룹별 상세 현황
+${groupLines.join('\n')}
+
+## 주차별 추이 (W1→W2→W3)
+${weeklyLines.length > 0 ? weeklyLines.join('\n') : '데이터 없음'}
+
+## 위험 그룹 (critical/high)
+${riskGroups.length > 0 ? riskGroups.join('\n') : '없음'}
+
+## 분석 요청
+다음 5개 항목을 한국어로 작성해주세요:
+
+## 1. 전월 대비 현재 추이
+- 현재 데이터 기반으로 이번 달 방향성 분석
+- 각 센터의 태도/오상담 오류율 변화 해석
+
+## 2. 전주 대비 추이
+- W1→W2→W3 주간 변화 패턴 분석
+- 악화/개선 추세의 원인 추정
+
+## 3. 월말 예측
+- 현재 추세 유지 시 월말 착지 전망
+- 목표 달성 가능성 판단 근거
+
+## 4. 액션플랜
+- 목표 달성을 위한 구체적 TODO 리스트
+- 우선순위와 담당 그룹을 명시
+- 체크리스트 형태(- [ ]) 로 작성
+
+## 5. 집중 관리 대상
+- 긴급/주의 그룹별 개선 방안
+- 즉시 실행 가능한 조치 제안
+
+명확하고 간결하게, 데이터에 기반한 분석을 제공해주세요.`;
+}

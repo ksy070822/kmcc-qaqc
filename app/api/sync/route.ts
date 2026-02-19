@@ -1,12 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { saveEvaluationsToBigQuery } from "@/lib/bigquery"
+import { getCorsHeaders } from "@/lib/cors"
 
 // CORS 헤더 설정
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-}
+const corsHeaders = getCorsHeaders()
 
 // OPTIONS 요청 처리 (CORS preflight)
 export async function OPTIONS() {
@@ -214,6 +211,12 @@ export async function POST(request: NextRequest) {
     }
 
     // BigQuery에 데이터 저장
+    if (!parsedData) {
+      return NextResponse.json(
+        { success: false, error: "Failed to parse data" },
+        { status: 400, headers: corsHeaders }
+      )
+    }
     const batchInfo = (parsedData as any).batchInfo
 
     if (batchInfo) {

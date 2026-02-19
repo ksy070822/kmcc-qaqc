@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getBigQueryClient } from '@/lib/bigquery';
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
 
 export async function GET() {
   try {
@@ -9,12 +10,12 @@ export async function GET() {
 
     const [rows] = await bigquery.query({
       query: `
-        SELECT 
+        SELECT
           MAX(evaluation_date) as max_date,
           MIN(evaluation_date) as min_date,
           COUNT(*) as total,
           COUNT(DISTINCT evaluation_date) as unique_dates
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
       `,
       location: 'asia-northeast3',
     });

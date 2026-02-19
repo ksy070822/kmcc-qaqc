@@ -1,19 +1,12 @@
 "use client"
 
-import { useState, useMemo, useEffect } from "react"
+import { useState, useMemo, Fragment } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { evaluationItems, serviceGroups, channelTypes } from "@/lib/mock-data"
+import { evaluationItems, serviceGroups } from "@/lib/constants"
 import { cn } from "@/lib/utils"
 import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react"
-
-const weeks = [
-  { id: "w1", label: "1주" },
-  { id: "w2", label: "2주" },
-  { id: "w3", label: "3주" },
-  { id: "w4", label: "4주" },
-]
+import { useWeeklyErrors } from "@/hooks/use-weekly-errors"
 
 interface ServiceWeeklyTableProps {
   selectedCenter: string
@@ -21,341 +14,269 @@ interface ServiceWeeklyTableProps {
   selectedChannel: string
 }
 
-// 임시 빈 데이터 생성 함수
-function generateServiceWeeklyData(): Record<string, Record<string, Record<string, { count: number; rate: number }>>> {
-  const data: Record<string, Record<string, Record<string, { count: number; rate: number }>>> = {}
-  
-  // 기본 서비스-채널 조합 생성
-  const centers = ["용산", "광주"]
-  const services = ["택시", "대리", "배송"]
-  const channels = ["유선", "채팅"]
-  
-  centers.forEach(center => {
-    services.forEach(service => {
-      channels.forEach(channel => {
-        const key = `${center}-${service}-${channel}`
-        data[key] = {}
-        
-        evaluationItems.forEach(item => {
-          data[key][item.id] = {}
-          weeks.forEach(week => {
-            data[key][item.id][week.id] = { count: 0, rate: 0 }
-          })
-        })
-      })
-    })
+const attitudeItems = evaluationItems.filter((item) => item.category === "상담태도")
+const businessItems = evaluationItems.filter((item) => item.category === "오상담/오처리")
+
+export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedService: parentService, selectedChannel }: ServiceWeeklyTableProps) {
+  // 자체 필터 상태 (센터/서비스)
+  const [center, setCenter] = useState(parentCenter || "all")
+  const [service, setService] = useState(parentService || "all")
+
+  // 최근 6주 데이터 가져오기
+  const endDate = new Date().toISOString().split("T")[0]
+  const startDate = new Date()
+  startDate.setDate(startDate.getDate() - 42)
+  const startDateStr = startDate.toISOString().split("T")[0]
+
+  const { data: weeklyData, loading, error } = useWeeklyErrors({
+    startDate: startDateStr,
+    endDate,
+    center: center !== "all" ? center : undefined,
+    service: service !== "all" ? service : undefined,
   })
-  
-  return data
-}
 
-export function ServiceWeeklyTable({ selectedCenter, selectedService, selectedChannel }: ServiceWeeklyTableProps) {
-  const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
-  const [serviceData, setServiceData] = useState<Record<string, Record<string, Record<string, { count: number; rate: number }>>>>(generateServiceWeeklyData())
-  const [loading, setLoading] = useState(true)
-
-  // BigQuery에서 실제 데이터 조회
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true)
-      try {
-        const params = new URLSearchParams()
-        params.append("type", "weekly-errors")
-        if (selectedCenter !== "all") params.append("center", selectedCenter)
-        if (selectedService !== "all") params.append("service", selectedService)
-        if (selectedChannel !== "all") params.append("channel", selectedChannel)
-
-        const response = await fetch(`/api/data?${params.toString()}`)
-        const result = await response.json()
-
-        if (result.success && result.data && Array.isArray(result.data)) {
-          // 데이터 변환: API 응답을 컴포넌트 형식으로 변환
-          const newServiceData = generateServiceWeeklyData()
-          const weekMap: Record<string, string> = {}
-
-          // 주차별로 데이터 그룹화
-          result.data.forEach((item: any) => {
-            const weekKey = item.week || ''
-            if (!weekMap[weekKey]) {
-              const weekIdx = Object.keys(weekMap).length
-              if (weekIdx < 4) {
-                weekMap[weekKey] = `w${weekIdx + 1}`
-              }
-            }
-          })
-
-          // 데이터 채우기
-          result.data.forEach((item: any) => {
-            const weekId = weekMap[item.week]
-            if (!weekId) return
-
-            Object.keys(newServiceData).forEach(key => {
-              if (newServiceData[key][item.itemId] && newServiceData[key][item.itemId][weekId]) {
-                newServiceData[key][item.itemId][weekId] = {
-                  count: item.errorCount || 0,
-                  rate: item.errorRate || 0
-                }
-              }
-            })
-          })
-
-          setServiceData(newServiceData)
-        }
-      } catch (err) {
-        console.error('Failed to fetch service weekly data:', err)
-      } finally {
-        setLoading(false)
-      }
+  // 데이터 변환 (과거→최신 정렬)
+  const { weeks, data } = useMemo(() => {
+    if (!weeklyData || weeklyData.length === 0) {
+      return { weeks: [] as { id: string; label: string; dateRange: string }[], data: {} as Record<string, Record<string, { count: number; rate: number }>> }
     }
 
-    fetchData()
-  }, [selectedCenter, selectedService, selectedChannel])
+    // 과거→최신 정렬
+    const sorted = [...weeklyData].sort((a, b) => (a.week || '').localeCompare(b.week || ''))
 
-  // 선택된 서비스-채널 조합
-  const selectedKey =
-    selectedCenter !== "all" && selectedService !== "all" && selectedChannel !== "all"
-      ? `${selectedCenter}-${selectedService}-${selectedChannel}`
-      : null
+    const weeksList = sorted.map((wd, idx) => ({
+      id: `w${idx + 1}`,
+      label: wd.dateRange || wd.weekLabel, // 기간 표시 우선
+      dateRange: wd.dateRange || '',
+    }))
 
-  const displayKeys = selectedKey ? [selectedKey] : Object.keys(serviceData).slice(0, 4) // 전체일 경우 상위 4개만
+    const itemData: Record<string, Record<string, { count: number; rate: number }>> = {}
 
-  const filteredItems =
-    category === "all" ? evaluationItems : evaluationItems.filter((item) => item.category === category)
+    evaluationItems.forEach((item) => {
+      itemData[item.id] = {}
+      weeksList.forEach((week, weekIdx) => {
+        const wd = sorted[weekIdx]
+        const itemError = wd.items.find((i) => i.itemId === item.id)
+        itemData[item.id][week.id] = {
+          count: itemError?.errorCount || 0,
+          rate: itemError?.errorRate || 0,
+        }
+      })
+    })
+
+    return { weeks: weeksList, data: itemData }
+  }, [weeklyData])
+
+  // 전주 비교
+  const getComparison = (itemId: string) => {
+    if (weeks.length < 2 || !data[itemId]) return { countChange: 0, rateChange: 0 }
+    const lastId = weeks[weeks.length - 1].id
+    const prevId = weeks[weeks.length - 2].id
+    const cur = data[itemId][lastId] || { count: 0, rate: 0 }
+    const prev = data[itemId][prevId] || { count: 0, rate: 0 }
+    return {
+      countChange: cur.count - prev.count,
+      rateChange: Number((cur.rate - prev.rate).toFixed(1)),
+    }
+  }
+
+  const getGroupComparison = (items: typeof evaluationItems) => {
+    if (weeks.length < 2) return { countDiff: 0, rateDiff: 0 }
+    const lastId = weeks[weeks.length - 1].id
+    const prevId = weeks[weeks.length - 2].id
+    const lastSum = items.reduce((s, item) => s + (data[item.id]?.[lastId]?.count || 0), 0)
+    const prevSum = items.reduce((s, item) => s + (data[item.id]?.[prevId]?.count || 0), 0)
+    const lastRate = items.reduce((s, item) => s + (data[item.id]?.[lastId]?.rate || 0), 0)
+    const prevRate = items.reduce((s, item) => s + (data[item.id]?.[prevId]?.rate || 0), 0)
+    return { countDiff: lastSum - prevSum, rateDiff: Number((lastRate - prevRate).toFixed(1)) }
+  }
+
+  const trendColor = (val: number) =>
+    val > 0 ? "text-red-600" : val < 0 ? "text-emerald-600" : "text-slate-500"
+
+  // 서비스 목록 (센터 선택에 따라)
+  const serviceOptions = useMemo(() => {
+    if (center === "all") {
+      return [...new Set([...serviceGroups["용산"], ...serviceGroups["광주"]])]
+    }
+    return [...serviceGroups[center as "용산" | "광주"]]
+  }, [center])
+
+  // 항목 행 렌더링
+  const renderItemRow = (item: typeof evaluationItems[0], idx: number) => {
+    const comp = getComparison(item.id)
+    return (
+      <tr key={item.id} className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
+        <td className={cn("sticky left-0 p-2 pl-5 font-medium text-slate-700", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
+          <span className={cn("inline-block w-2 h-2 rounded-full mr-2", item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]")} />
+          {item.shortName}
+        </td>
+        {weeks.map((week) => {
+          const d = data[item.id]?.[week.id] || { count: 0, rate: 0 }
+          return (
+            <Fragment key={`${item.id}-${week.id}`}>
+              <td className="p-2 text-center text-slate-600">{d.count > 0 ? d.count : "-"}</td>
+              <td className="p-2 text-center text-slate-500">{d.rate > 0 ? `${d.rate}%` : "-"}</td>
+            </Fragment>
+          )
+        })}
+        <td className="p-2 text-center font-semibold bg-slate-100">
+          {weeks.reduce((sum, week) => sum + (data[item.id]?.[week.id]?.count || 0), 0)}
+        </td>
+        <td className={cn("p-2 text-center font-semibold bg-blue-50/50 border-l-2 border-blue-200", trendColor(comp.countChange))}>
+          <div className="flex items-center justify-center gap-0.5">
+            {comp.countChange > 0 ? <TrendingUp className="w-3 h-3" /> : comp.countChange < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
+            {comp.countChange > 0 ? "+" : ""}{comp.countChange}
+          </div>
+        </td>
+        <td className={cn("p-2 text-center font-semibold bg-blue-50/50", trendColor(comp.rateChange))}>
+          {comp.rateChange > 0 ? "▲" : comp.rateChange < 0 ? "▼" : "-"}{Math.abs(comp.rateChange)}%
+        </td>
+      </tr>
+    )
+  }
+
+  // 소계 행
+  const renderSubtotalRow = (items: typeof evaluationItems, label: string, bgClass: string, textClass: string) => {
+    const comp = getGroupComparison(items)
+    return (
+      <tr className={cn("border-b-2", bgClass)}>
+        <td className={cn("sticky left-0 p-2 font-bold", bgClass, textClass)}>{label}</td>
+        {weeks.map((week) => {
+          const sum = items.reduce((s, item) => s + (data[item.id]?.[week.id]?.count || 0), 0)
+          const rateSum = items.reduce((s, item) => s + (data[item.id]?.[week.id]?.rate || 0), 0)
+          return (
+            <Fragment key={`sub-${label}-${week.id}`}>
+              <td className={cn("p-2 text-center font-bold", textClass)}>{sum > 0 ? sum : "-"}</td>
+              <td className={cn("p-2 text-center font-bold", textClass)}>{rateSum > 0 ? `${rateSum.toFixed(1)}%` : "-"}</td>
+            </Fragment>
+          )
+        })}
+        <td className={cn("p-2 text-center font-bold", bgClass)}>
+          {weeks.reduce((s, w) => s + items.reduce((s2, item) => s2 + (data[item.id]?.[w.id]?.count || 0), 0), 0)}
+        </td>
+        <td className={cn("p-2 text-center font-bold bg-blue-50/50 border-l-2 border-blue-200", trendColor(comp.countDiff))}>
+          {comp.countDiff > 0 ? "+" : ""}{comp.countDiff}
+        </td>
+        <td className={cn("p-2 text-center font-bold bg-blue-50/50", trendColor(comp.rateDiff))}>
+          {comp.rateDiff > 0 ? "▲" : comp.rateDiff < 0 ? "▼" : "-"}{Math.abs(comp.rateDiff)}%
+        </td>
+      </tr>
+    )
+  }
+
+  if (loading) {
+    return (
+      <Card className="border-slate-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg font-semibold text-slate-800">서비스별 주 단위 태도/오상담 현황</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" />
+            <span className="text-slate-600">데이터 로딩 중...</span>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (error) {
+    return (
+      <Card className="border-slate-200">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg font-semibold text-slate-800">서비스별 주 단위 태도/오상담 현황</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-center py-8 text-red-600">데이터 로딩 실패: {error}</div>
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card className="border-slate-200">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <CardTitle className="text-lg font-semibold text-slate-800">서비스별 주 단위 태도/오상담 현황</CardTitle>
-          <Select value={category} onValueChange={(v) => setCategory(v as typeof category)}>
-            <SelectTrigger className="w-[140px] h-8 text-sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">전체</SelectItem>
-              <SelectItem value="상담태도">상담태도</SelectItem>
-              <SelectItem value="오상담/오처리">오상담/오처리</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex gap-2">
+            <Select value={center} onValueChange={(v) => { setCenter(v); setService("all") }}>
+              <SelectTrigger className="w-[100px] h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체</SelectItem>
+                <SelectItem value="용산">용산</SelectItem>
+                <SelectItem value="광주">광주</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={service} onValueChange={setService}>
+              <SelectTrigger className="w-[130px] h-8 text-sm">
+                <SelectValue placeholder="서비스" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 서비스</SelectItem>
+                {serviceOptions.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue={displayKeys[0]} className="w-full">
-          <TabsList className="mb-4 flex-wrap h-auto gap-1 bg-slate-100">
-            {displayKeys.map((key) => {
-              const [center, service, channel] = key.split("-")
-              return (
-                <TabsTrigger
-                  key={key}
-                  value={key}
-                  className="text-xs px-3 py-1.5 data-[state=active]:bg-[#1e3a5f] data-[state=active]:text-white"
-                >
-                  {service} {channel}
-                </TabsTrigger>
-              )
-            })}
-          </TabsList>
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b border-slate-200 bg-[#2c6edb]/5">
+                <th className="sticky left-0 bg-[#2c6edb]/5 text-left p-2 font-medium text-slate-700 min-w-[140px]">항목 - 기간</th>
+                {weeks.map((week) => (
+                  <th key={week.id} className="p-2 font-medium text-slate-600 text-center" colSpan={2}>
+                    {week.label}
+                  </th>
+                ))}
+                <th className="p-2 font-semibold text-slate-800 text-center bg-slate-100">합계</th>
+                <th className="p-2 font-semibold text-center bg-blue-50 border-l-2 border-blue-200" colSpan={2}>전주비교</th>
+              </tr>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                <th className="sticky left-0 bg-slate-50"></th>
+                {weeks.map((week) => (
+                  <Fragment key={`sub-${week.id}`}>
+                    <th className="p-1 text-[10px] text-slate-500">건수</th>
+                    <th className="p-1 text-[10px] text-slate-500">비중</th>
+                  </Fragment>
+                ))}
+                <th className="p-1 text-[10px] text-slate-500 bg-slate-100">건수</th>
+                <th className="p-1 text-[10px] text-slate-500 bg-blue-50 border-l-2 border-blue-200">증감</th>
+                <th className="p-1 text-[10px] text-slate-500 bg-blue-50">비중</th>
+              </tr>
+            </thead>
+            <tbody>
+              {/* 상담태도 */}
+              <tr className="bg-[#2c6edb]/10 border-b border-[#2c6edb]/20">
+                <td className="sticky left-0 bg-[#2c6edb]/10 p-2 font-bold text-[#2c6edb] text-xs" colSpan={1}>
+                  ■ 상담태도 ({attitudeItems.length}개)
+                </td>
+                <td colSpan={weeks.length * 2 + 3}></td>
+              </tr>
+              {attitudeItems.map((item, idx) => renderItemRow(item, idx))}
+              {renderSubtotalRow(attitudeItems, "태도 합계", "bg-[#2c6edb]/10 border-[#2c6edb]/30", "text-[#2c6edb]")}
 
-          {displayKeys.map((key) => {
-            const itemData = serviceData[key]
-            if (!itemData) return null
+              {/* 오상담/오처리 */}
+              <tr className="bg-[#ffcd00]/10 border-b border-[#ffcd00]/30">
+                <td className="sticky left-0 bg-[#ffcd00]/10 p-2 font-bold text-[#666666] text-xs" colSpan={1}>
+                  ■ 오상담/오처리 ({businessItems.length}개)
+                </td>
+                <td colSpan={weeks.length * 2 + 3}></td>
+              </tr>
+              {businessItems.map((item, idx) => renderItemRow(item, idx))}
+              {renderSubtotalRow(businessItems, "오상담 합계", "bg-[#ffcd00]/15 border-[#d4a017]/30", "text-[#9a7b00]")}
 
-            return (
-              <TabsContent key={key} value={key}>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 bg-[#1e3a5f]/5">
-                        <th className="sticky left-0 bg-[#1e3a5f]/5 text-left p-2 font-medium text-slate-700 min-w-[140px]">
-                          항목
-                        </th>
-                        {weeks.map((week) => (
-                          <th key={week.id} className="p-2 font-medium text-slate-600 text-center" colSpan={2}>
-                            {week.label}
-                          </th>
-                        ))}
-                        <th className="p-2 font-semibold text-slate-800 text-center bg-slate-100">합계</th>
-                        <th
-                          className="p-2 font-semibold text-center bg-[#1e3a5f]/10 border-l-2 border-[#1e3a5f]/20"
-                          colSpan={2}
-                        >
-                          전주비교
-                        </th>
-                      </tr>
-                      <tr className="border-b border-slate-200 bg-slate-50">
-                        <th className="sticky left-0 bg-slate-50"></th>
-                        {weeks.map((week) => (
-                          <>
-                            <th key={`${week.id}-c`} className="p-1 text-[10px] text-slate-500">
-                              건수
-                            </th>
-                            <th key={`${week.id}-r`} className="p-1 text-[10px] text-slate-500">
-                              비중
-                            </th>
-                          </>
-                        ))}
-                        <th className="p-1 text-[10px] text-slate-500 bg-slate-100">건수</th>
-                        <th className="p-1 text-[10px] text-slate-500 bg-[#1e3a5f]/10 border-l-2 border-[#1e3a5f]/20">
-                          증감
-                        </th>
-                        <th className="p-1 text-[10px] text-slate-500 bg-[#1e3a5f]/10">비중</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="border-b border-slate-100 bg-[#1e3a5f]/5">
-                        <td className="sticky left-0 bg-[#1e3a5f]/5 p-2 font-semibold text-slate-700">QC 모니터링건</td>
-                        {weeks.map((week) => {
-                          const total = filteredItems.reduce(
-                            (sum, item) => sum + (itemData[item.id]?.[week.id]?.count || 0),
-                            0,
-                          )
-                          return (
-                            <>
-                              <td key={`total-${week.id}-c`} className="p-2 text-center font-semibold">
-                                {total}
-                              </td>
-                              <td key={`total-${week.id}-r`} className="p-2 text-center">
-                                -
-                              </td>
-                            </>
-                          )
-                        })}
-                        <td className="p-2 text-center font-bold bg-[#1e3a5f]/10">
-                          {weeks.reduce(
-                            (sum, week) =>
-                              sum +
-                              filteredItems.reduce((s, item) => s + (itemData[item.id]?.[week.id]?.count || 0), 0),
-                            0,
-                          )}
-                        </td>
-                        <td className="p-2 text-center bg-[#1e3a5f]/10 border-l-2 border-[#1e3a5f]/20">-</td>
-                        <td className="p-2 text-center bg-[#1e3a5f]/10">-</td>
-                      </tr>
-
-                      {filteredItems.map((item, idx) => {
-                        const weeklyData = itemData[item.id] || {}
-                        const total = weeks.reduce((sum, week) => sum + (weeklyData[week.id]?.count || 0), 0)
-                        const w6 = weeklyData["w6"] || { count: 0, rate: 0 }
-                        const w5 = weeklyData["w5"] || { count: 0, rate: 0 }
-                        const countChange = w6.count - w5.count
-                        const rateChange = Number((w6.rate - w5.rate).toFixed(1))
-
-                        return (
-                          <tr
-                            key={item.id}
-                            className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}
-                          >
-                            <td
-                              className={cn(
-                                "sticky left-0 p-2 font-medium text-slate-700",
-                                idx % 2 === 0 ? "bg-white" : "bg-slate-50/50",
-                              )}
-                            >
-                              <span
-                                className={cn(
-                                  "inline-block w-2 h-2 rounded-full mr-2",
-                                  item.category === "상담태도" ? "bg-[#1e3a5f]" : "bg-[#f9e000]",
-                                )}
-                              />
-                              {item.shortName}
-                            </td>
-                            {weeks.map((week) => {
-                              const d = weeklyData[week.id] || { count: 0, rate: 0 }
-                              return (
-                                <>
-                                  <td key={`${item.id}-${week.id}-c`} className="p-2 text-center text-slate-600">
-                                    {d.count}
-                                  </td>
-                                  <td key={`${item.id}-${week.id}-r`} className="p-2 text-center text-slate-500">
-                                    {d.rate}%
-                                  </td>
-                                </>
-                              )
-                            })}
-                            <td className="p-2 text-center font-semibold bg-slate-100">{total}</td>
-                            <td
-                              className={cn(
-                                "p-2 text-center font-semibold bg-[#1e3a5f]/10 border-l-2 border-[#1e3a5f]/20",
-                                countChange > 0
-                                  ? "text-red-600"
-                                  : countChange < 0
-                                    ? "text-emerald-600"
-                                    : "text-slate-500",
-                              )}
-                            >
-                              <div className="flex items-center justify-center gap-1">
-                                {countChange > 0 ? (
-                                  <TrendingUp className="w-3 h-3" />
-                                ) : countChange < 0 ? (
-                                  <TrendingDown className="w-3 h-3" />
-                                ) : (
-                                  <Minus className="w-3 h-3" />
-                                )}
-                                {countChange > 0 ? "+" : ""}
-                                {countChange}
-                              </div>
-                            </td>
-                            <td
-                              className={cn(
-                                "p-2 text-center font-semibold bg-[#1e3a5f]/10",
-                                rateChange > 0
-                                  ? "text-red-600"
-                                  : rateChange < 0
-                                    ? "text-emerald-600"
-                                    : "text-slate-500",
-                              )}
-                            >
-                              {rateChange > 0 ? "▲" : rateChange < 0 ? "▼" : "-"}
-                              {Math.abs(rateChange)}%
-                            </td>
-                          </tr>
-                        )
-                      })}
-
-                      <tr className="border-t-2 border-slate-300 bg-[#f9e000]/20">
-                        <td className="sticky left-0 bg-[#f9e000]/20 p-2 font-semibold text-slate-800">
-                          태도+업무 미흡 비중
-                        </td>
-                        {weeks.map((week) => {
-                          const totalCount = filteredItems.reduce(
-                            (sum, item) => sum + (itemData[item.id]?.[week.id]?.count || 0),
-                            0,
-                          )
-                          const avgRate = Number(
-                            (
-                              filteredItems.reduce((sum, item) => sum + (itemData[item.id]?.[week.id]?.rate || 0), 0) /
-                              filteredItems.length
-                            ).toFixed(1),
-                          )
-                          return (
-                            <>
-                              <td key={`sum-${week.id}-c`} className="p-2 text-center font-semibold">
-                                {totalCount}
-                              </td>
-                              <td key={`sum-${week.id}-r`} className="p-2 text-center font-semibold">
-                                {avgRate}%
-                              </td>
-                            </>
-                          )
-                        })}
-                        <td className="p-2 text-center font-bold bg-[#f9e000]/30">
-                          {weeks.reduce(
-                            (sum, week) =>
-                              sum +
-                              filteredItems.reduce((s, item) => s + (itemData[item.id]?.[week.id]?.count || 0), 0),
-                            0,
-                          )}
-                        </td>
-                        <td className="p-2 text-center font-bold bg-[#f9e000]/30 border-l-2 border-[#1e3a5f]/20">-</td>
-                        <td className="p-2 text-center font-bold bg-[#f9e000]/30">-</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-              </TabsContent>
-            )
-          })}
-        </Tabs>
+              {/* 전체 합계 */}
+              {renderSubtotalRow(evaluationItems, "태도+오상담 합계", "bg-slate-200 border-slate-400", "text-slate-900")}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   )

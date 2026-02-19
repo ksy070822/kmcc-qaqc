@@ -4,6 +4,7 @@ import { getBigQueryClient } from '@/lib/bigquery';
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || '14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o';
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
 
 /**
  * 동기화 상태 진단 API
@@ -19,7 +20,7 @@ export async function GET() {
   try {
     const bigquery = getBigQueryClient();
     const [rows] = await bigquery.query({
-      query: `SELECT MAX(evaluation_date) as max_date, COUNT(*) as total FROM \`${DATASET_ID}.evaluations\``,
+      query: `SELECT MAX(evaluation_date) as max_date, COUNT(*) as total FROM ${EVAL_TABLE}`,
       location: 'asia-northeast3',
     });
     const r = rows[0];

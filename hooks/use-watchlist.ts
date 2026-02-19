@@ -17,6 +17,7 @@ export interface WatchListAgent {
   evaluationCount: number
   reason: string
   topErrors: string[]
+  registeredAt?: string
 }
 
 interface UseWatchListOptions {

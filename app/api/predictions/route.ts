@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BigQuery } from '@google-cloud/bigquery';
+import { getCorsHeaders } from '@/lib/cors';
 
 // CORS 헤더
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const corsHeaders = getCorsHeaders();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -29,6 +26,8 @@ function getBigQueryClient(): BigQuery {
 }
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
+const TARGETS_TABLE = '`' + DATASET_ID + '.targets`';
 
 // 예측 함수들
 function predictMonthEnd(
@@ -120,7 +119,7 @@ export async function GET(request: NextRequest) {
       // 먼저 period_start, period_end 없이 시도
       const simpleQuery = `
         SELECT center, target_type, target_rate
-        FROM \`${DATASET_ID}.targets\`
+        FROM ${TARGETS_TABLE}
         WHERE period_type = 'monthly'
           AND is_active = TRUE
       `;
@@ -135,7 +134,7 @@ export async function GET(request: NextRequest) {
       try {
         const fullQuery = `
           SELECT center, target_type, target_rate
-          FROM \`${DATASET_ID}.targets\`
+          FROM ${TARGETS_TABLE}
           WHERE period_type = 'monthly'
             AND period_start <= CURRENT_DATE()
             AND period_end >= CURRENT_DATE()
@@ -167,6 +166,9 @@ export async function GET(request: NextRequest) {
     });
     
     // 기본 목표값 (targets 테이블에 없는 경우)
+    // NOTE: 이 값들은 KMCC_QC.targets 테이블에서 가져오는 것이 우선입니다.
+    // targets 테이블이 없거나 쿼리 실패 시에만 아래의 기본값이 사용됩니다.
+    // targets 테이블 구조: center, target_type('attitude'|'ops'), target_rate, period_type, period_start, period_end, is_active
     if (!targets['용산']) targets['용산'] = { attitude: 3.3, ops: 3.9 };
     if (!targets['광주']) targets['광주'] = { attitude: 2.7, ops: 1.7 };
     if (!targets['all']) targets['all'] = { attitude: 3.0, ops: 3.0 };
@@ -186,7 +188,7 @@ export async function GET(request: NextRequest) {
           COUNT(*) as checks,
           ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_rate,
           ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as ops_rate
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @month
         GROUP BY center, service_channel, week
       ),
@@ -197,7 +199,7 @@ export async function GET(request: NextRequest) {
           COUNT(*) as total_checks,
           ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as current_attitude_rate,
           ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as current_ops_rate
-        FROM \`${DATASET_ID}.evaluations\`
+        FROM ${EVAL_TABLE}
         WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @month
         GROUP BY center, service_channel
       )

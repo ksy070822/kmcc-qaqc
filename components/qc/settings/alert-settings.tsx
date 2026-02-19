@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Bell, Save } from "lucide-react"
-import { groups } from "@/lib/mock-data"
+import { groups } from "@/lib/constants"
 
 interface AlertSetting {
   id: string
@@ -76,10 +76,10 @@ export function AlertSettings() {
     <Card className="border-slate-200">
       <CardHeader className="flex flex-row items-center justify-between border-b border-slate-100">
         <div className="flex items-center gap-2">
-          <Bell className="h-5 w-5 text-[#1e3a5f]" />
+          <Bell className="h-5 w-5 text-[#2c6edb]" />
           <CardTitle className="text-lg">그룹별 알림 설정</CardTitle>
         </div>
-        <Button onClick={handleSave} className="bg-[#1e3a5f] hover:bg-[#2d4a6f]">
+        <Button onClick={handleSave} className="bg-[#2c6edb] hover:bg-[#202237]">
           <Save className="mr-2 h-4 w-4" />
           설정 저장
         </Button>
@@ -97,7 +97,7 @@ export function AlertSettings() {
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <Table>
             <TableHeader>
-              <TableRow className="bg-[#1e3a5f]">
+              <TableRow className="bg-[#2c6edb]">
                 <TableHead className="text-white font-medium w-12 text-center">No</TableHead>
                 <TableHead className="text-white font-medium min-w-[140px]">센터-그룹</TableHead>
                 <TableHead className="text-white font-medium text-center w-20">태도(%)</TableHead>
@@ -110,7 +110,7 @@ export function AlertSettings() {
             </TableHeader>
             <TableBody>
               {/* 용산센터 헤더 */}
-              <TableRow className="bg-[#1e3a5f]">
+              <TableRow className="bg-[#2c6edb]">
                 <TableCell colSpan={8} className="py-2">
                   <div className="flex items-center gap-2">
                     <span className="w-3 h-3 rounded-full bg-blue-400"></span>
@@ -176,10 +176,10 @@ export function AlertSettings() {
               ))}
 
               {/* 광주센터 헤더 */}
-              <TableRow className="bg-[#1e3a5f]">
+              <TableRow className="bg-[#2c6edb]">
                 <TableCell colSpan={8} className="py-2">
                   <div className="flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#fee500]"></span>
+                    <span className="w-3 h-3 rounded-full bg-[#ffcd00]"></span>
                     <span className="text-white font-medium">광주 센터</span>
                   </div>
                 </TableCell>

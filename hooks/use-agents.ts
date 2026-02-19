@@ -22,6 +22,9 @@ export interface Agent {
   opsErrorRate: number
   overallErrorRate: number
   topErrors?: AgentErrorInfo[] // 주요 오류 항목 (이름, 개수, 오류율 포함)
+  totalErrors?: number
+  attitudeErrors?: number
+  opsErrors?: number
 }
 
 interface UseAgentsOptions {

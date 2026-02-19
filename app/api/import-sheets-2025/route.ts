@@ -5,16 +5,14 @@ import {
 } from "@/lib/google-sheets";
 import { getBigQueryClient } from "@/lib/bigquery";
 import { startSync, updateProgress, finishSync } from "@/lib/sync-progress";
+import { getCorsHeaders } from "@/lib/cors";
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || "KMCC_QC";
 const SPREADSHEET_ID =
   process.env.GOOGLE_SHEETS_ID || "14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o";
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const corsHeaders = getCorsHeaders();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -84,7 +82,7 @@ export async function POST(request: NextRequest) {
         const [rows] = await bigquery.query({
           query: `
             SELECT DISTINCT evaluation_id
-            FROM \`${DATASET_ID}.evaluations\`
+            FROM ${EVAL_TABLE}
             WHERE evaluation_id IN (${idsList})
           `,
           location: "asia-northeast3",
@@ -116,44 +114,45 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const bigqueryRows = newEvaluations.map((evalData) => ({
-      evaluation_id: evalData.evaluationId,
-      evaluation_date: evalData.date,
-      consult_date: null,
-      consult_id: evalData.consultId || null,
-      evaluation_round: null,
-      center: evalData.center,
-      service: evalData.service || "",
-      channel: evalData.channel || "unknown",
-      agent_id: evalData.agentId,
-      agent_name: evalData.agentName,
-      hire_date: evalData.hireDate || null,
-      tenure_months: evalData.tenureMonths || null,
-      tenure_group: evalData.tenureMonths
-        ? getTenureGroup(evalData.tenureMonths)
-        : null,
-      greeting_error: false,
-      empathy_error: false,
-      apology_error: false,
-      additional_inquiry_error: false,
-      unkind_error: false,
-      consult_type_error: false,
-      guide_error: false,
-      identity_check_error: false,
-      required_search_error: false,
-      wrong_guide_error: false,
-      process_missing_error: false,
-      process_incomplete_error: false,
-      system_error: false,
-      id_mapping_error: false,
-      flag_keyword_error: false,
-      history_error: false,
-      attitude_error_count: evalData.attitudeErrors,
-      business_error_count: evalData.businessErrors,
-      total_error_count: evalData.totalErrors,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    }));
+    const bigqueryRows = newEvaluations.map((evalData) => {
+      // Group construction (service + channel) needed for required 'group' field
+      const groupValue = `${evalData.service || ''} ${evalData.channel || ''}`.trim();
+
+      return {
+        evaluation_id: evalData.evaluationId,
+        evaluation_date: evalData.date,
+        consultation_datetime: null,
+        consultation_id: evalData.consultId || null,
+        evaluation_round: null,
+        center: evalData.center,
+        service: evalData.service || "",
+        channel: evalData.channel || "unknown",
+        group: groupValue || 'unknown',
+        agent_id: evalData.agentId,
+        agent_name: evalData.agentName,
+        greeting_error: evalData.greetingError || false,
+        empathy_error: evalData.empathyError || false,
+        apology_error: evalData.apologyError || false,
+        additional_inquiry_error: evalData.additionalInquiryError || false,
+        unkind_error: evalData.unkindError || false,
+        consult_type_error: evalData.consultTypeError || false,
+        guide_error: evalData.guideError || false,
+        identity_check_error: evalData.identityCheckError || false,
+        required_search_error: evalData.requiredSearchError || false,
+        wrong_guide_error: evalData.wrongGuideError || false,
+        process_missing_error: evalData.processMissingError || false,
+        process_incomplete_error: evalData.processIncompleteError || false,
+        system_error: evalData.systemError || false,
+        id_mapping_error: evalData.idMappingError || false,
+        flag_keyword_error: evalData.flagKeywordError || false,
+        history_error: evalData.historyError || false,
+        attitude_error_count: evalData.attitudeErrors,
+        business_error_count: evalData.businessErrors,
+        total_error_count: evalData.totalErrors,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+    });
 
     updateProgress('BigQuery 저장', 0, bigqueryRows.length);
     const dataset = bigquery.dataset(DATASET_ID);

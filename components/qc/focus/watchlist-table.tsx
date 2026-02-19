@@ -20,7 +20,7 @@ export interface WatchlistAgent {
   trend: number
   daysOnList: number
   mainIssue: string
-  actionPlanStatus: "none" | "pending" | "in-progress" | "completed"
+  actionPlanStatus: "none" | "pending" | "in-progress" | "completed" | "delayed"
   lastActionDate?: string
 }
 
@@ -124,14 +124,14 @@ export function WatchlistTable({
               <TableCell className="text-slate-600">{agent.tenure}</TableCell>
               <TableCell className="text-right">
                 <span className={cn("font-mono", agent.attitudeRate > 3 ? "text-red-600 font-bold" : "text-slate-600")}>
-                  {agent.attitudeRate.toFixed(2)}%
+                  {agent.attitudeRate.toFixed(1)}%
                 </span>
               </TableCell>
               <TableCell className="text-right">
                 <span
                   className={cn("font-mono", agent.counselingRate > 4 ? "text-red-600 font-bold" : "text-slate-600")}
                 >
-                  {agent.counselingRate.toFixed(2)}%
+                  {agent.counselingRate.toFixed(1)}%
                 </span>
               </TableCell>
               <TableCell className="text-right">
@@ -141,7 +141,7 @@ export function WatchlistTable({
                     agent.errorRate > 7 ? "text-red-600" : agent.errorRate > 5 ? "text-amber-600" : "text-orange-500",
                   )}
                 >
-                  {agent.errorRate.toFixed(2)}%
+                  {agent.errorRate.toFixed(1)}%
                 </span>
               </TableCell>
               <TableCell className="text-right">
@@ -153,7 +153,7 @@ export function WatchlistTable({
                 >
                   {agent.trend > 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   {agent.trend > 0 ? "+" : ""}
-                  {agent.trend.toFixed(2)}%
+                  {agent.trend.toFixed(1)}%
                 </span>
               </TableCell>
               <TableCell className="text-center">

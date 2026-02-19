@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Calendar, FileText, Loader2 } from "lucide-react"
-import { tenureCategories, serviceGroups, channelTypes } from "@/lib/mock-data"
+import { tenureCategories, serviceGroups, channelTypes } from "@/lib/constants"
 
 interface ReportGeneratorProps {
   onGenerate: (config: ReportConfig) => void
@@ -110,7 +110,7 @@ export function ReportGenerator({ onGenerate, isGenerating }: ReportGeneratorPro
     <Card className="border-slate-200">
       <CardHeader className="border-b border-slate-100">
         <CardTitle className="flex items-center gap-2 text-base">
-          <FileText className="h-5 w-5 text-[#1e3a5f]" />
+          <FileText className="h-5 w-5 text-[#2c6edb]" />
           리포트 생성
         </CardTitle>
       </CardHeader>

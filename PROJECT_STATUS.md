@@ -11,8 +11,8 @@
 - **프로젝트명**: KM 고객센터 QC 대시보드
 - **담당자**: 메이 (CX Synergy팀, 카카오모빌리티 고객센터)
 - **목적**: 고객센터 상담 품질 실시간 모니터링 및 월말 목표 달성 예측
-- **GitHub**: https://github.com/ksy070822/kmcc_QC_dashbord
-- **배포 URL**: kmcc-qc-dashbord-iota.vercel.app
+- **GitHub**: https://github.com/may070822/kmcc-qc-dashbord
+- **배포 URL**: https://qc-dashboard-wlof52lhea-du.a.run.app
 
 ### 비즈니스 컨텍스트
 - **센터**: 용산센터 (약 200명), 광주센터 (약 100명)
@@ -44,7 +44,8 @@
 - **인증**: Google Cloud 서비스 계정 (JSON 키)
 
 ### 배포
-- **호스팅**: Vercel
+- **호스팅**: GCP Cloud Run (asia-northeast3)
+- **CI/CD**: Cloud Build (GitHub push → 자동 배포)
 - **빌드 도구**: Next.js 빌드 시스템
 
 ---
@@ -238,12 +239,9 @@ BIGQUERY_DATASET_ID=KMCC_QC
 GOOGLE_APPLICATION_CREDENTIALS=./csopp-25f2-c7fc16583892.json
 ```
 
-#### Vercel 배포
-```bash
-BIGQUERY_PROJECT_ID=csopp-25f2
-BIGQUERY_DATASET_ID=KMCC_QC
-BIGQUERY_CREDENTIALS={"type":"service_account",...전체 JSON...}
-```
+#### Cloud Run 배포
+Cloud Run은 서비스 계정을 통해 자동으로 BigQuery에 접근합니다.
+`cloudbuild.yaml`에서 빌드 및 배포 설정을 관리합니다.
 
 ### 서비스 계정 권한
 - BigQuery Data Editor
@@ -386,7 +384,7 @@ kmcc_qc_dashbord/
 
 ### 민감한 파일
 - `csopp-25f2-c7fc16583892.json`: 서비스 계정 키 (`.gitignore`에 추가됨)
-- 환경 변수: Vercel에만 저장, 로컬 `.env.local`은 Git 제외
+- 환경 변수: Cloud Run 환경변수로 설정, 로컬 `.env.local`은 Git 제외
 
 ### 권한 관리
 - BigQuery: 읽기/쓰기 권한만 부여

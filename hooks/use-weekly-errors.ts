@@ -5,6 +5,8 @@ import { useState, useEffect, useCallback } from "react"
 interface WeeklyErrorData {
   week: string
   weekLabel: string
+  dateRange?: string
+  totalEvaluations?: number
   items: Array<{
     itemId: string
     itemName: string

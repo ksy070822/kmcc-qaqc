@@ -248,7 +248,7 @@ kmcc_QC_dashbord/
 ### 인프라
 | 항목 | 현재 | 목표 |
 |:---|:---|:---|
-| **호스팅** | Vercel | GCP Cloud Run |
+| **호스팅** | GCP Cloud Run | GCP Cloud Run |
 | **데이터베이스** | (없음) | BigQuery |
 | **프로젝트** | - | csopp-25f2 |
 | **데이터셋** | - | KMCC_QC |

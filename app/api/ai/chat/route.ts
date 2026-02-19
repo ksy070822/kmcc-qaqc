@@ -10,13 +10,10 @@ import {
 } from '@/lib/ai-prompts';
 import { AIChatRequest } from '@/lib/types';
 import { checkCostProtection, logAIRequest } from '@/lib/ai-cost-protection';
+import { getCorsHeaders } from '@/lib/cors';
 
 // CORS 헤더
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type',
-};
+const corsHeaders = getCorsHeaders();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -188,9 +185,9 @@ QC 평가 체계, 상담 품질 관리, 코칭 방법 등에 대해 전문적인
     console.error('[AI Chat] Error:', error);
     
     // 비용 보호 관련 오류는 로깅
-    if (error instanceof Error && error.message.includes('비용') || error.message.includes('제한')) {
+    if (error instanceof Error && (error.message.includes('비용') || error.message.includes('제한'))) {
       console.warn('[AI Chat] Cost protection triggered:', {
-        error: error.message,
+        error: (error as Error).message,
         promptLength: prompt?.length || 0,
         ip: request.headers.get('x-forwarded-for')?.split(',')[0] || 'unknown',
       });

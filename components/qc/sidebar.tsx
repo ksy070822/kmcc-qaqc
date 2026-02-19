@@ -1,9 +1,12 @@
 "use client"
 
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Users, AlertTriangle, FileText, Settings, Building2, ChevronLeft, Bell, TrendingUp, Bot } from "lucide-react"
+import { LayoutDashboard, Users, AlertTriangle, FileText, Settings, ChevronLeft, TrendingUp, Bot, LogOut } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { clearAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
 
 interface SidebarProps {
   currentTab: string
@@ -24,6 +27,15 @@ const navItems = [
 ]
 
 export function Sidebar({ currentTab, onTabChange, collapsed, onCollapsedChange, alertCount = 0 }: SidebarProps) {
+  const router = useRouter()
+
+  const handleLogout = () => {
+    if (confirm("로그아웃 하시겠습니까?")) {
+      clearAuth()
+      router.push("/login")
+    }
+  }
+
   return (
     <aside
       className={cn(
@@ -36,16 +48,12 @@ export function Sidebar({ currentTab, onTabChange, collapsed, onCollapsedChange,
         <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-kakao">
-                <Building2 className="h-5 w-5 text-navy" />
-              </div>
-              <span className="font-semibold text-sidebar-foreground">QC Management</span>
+              <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg" />
+              <span className="font-bold text-sidebar-foreground text-base whitespace-nowrap">상담품질 관리 시스템</span>
             </div>
           )}
           {collapsed && (
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-kakao">
-              <Building2 className="h-5 w-5 text-navy" />
-            </div>
+            <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg" />
           )}
           {!collapsed && (
             <Button
@@ -87,11 +95,11 @@ export function Sidebar({ currentTab, onTabChange, collapsed, onCollapsedChange,
                 className={cn(
                   "relative flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
                   isActive
-                    ? "bg-kakao text-navy"
+                    ? "bg-[#2c6edb] text-white"
                     : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
                 )}
               >
-                <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-navy")} />
+                <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-white")} />
                 {!collapsed && (
                   <>
                     <span className="flex-1 text-left">{item.label}</span>
@@ -111,13 +119,14 @@ export function Sidebar({ currentTab, onTabChange, collapsed, onCollapsedChange,
         </nav>
 
         {/* Footer */}
-        <div className="border-t border-sidebar-border p-4">
-          {!collapsed && (
-            <div className="flex items-center gap-2 text-xs text-sidebar-foreground/70">
-              <Bell className="h-4 w-4" />
-              <span>알림 {alertCount}건</span>
-            </div>
-          )}
+        <div className="border-t border-sidebar-border p-2">
+          <button
+            onClick={handleLogout}
+            className="flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+          >
+            <LogOut className="h-5 w-5 shrink-0" />
+            {!collapsed && <span>로그아웃</span>}
+          </button>
         </div>
       </div>
     </aside>

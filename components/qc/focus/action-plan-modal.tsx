@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -65,14 +65,17 @@ export function ActionPlanModal({ open, onOpenChange, agent, onSave }: ActionPla
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             액션플랜 등록
           </DialogTitle>
+          <DialogDescription className="text-slate-500">
+            상담사의 문제점과 개선 계획을 등록합니다.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           <Card className="bg-slate-50 border-slate-200">
             <CardContent className="p-4">
               <div className="flex items-center gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#1e3a5f]/10">
-                  <User className="h-6 w-6 text-[#1e3a5f]" />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#2c6edb]/10">
+                  <User className="h-6 w-6 text-[#2c6edb]" />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -185,7 +188,7 @@ export function ActionPlanModal({ open, onOpenChange, agent, onSave }: ActionPla
           <Button
             onClick={handleSave}
             disabled={!issue || !plan || !targetDate}
-            className="bg-[#1e3a5f] hover:bg-[#2d4a6f]"
+            className="bg-[#2c6edb] hover:bg-[#202237]"
           >
             저장
           </Button>

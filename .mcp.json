@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "bigquery": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@ergut/mcp-bigquery-server"
+      ],
+      "env": {
+        "BIGQUERY_PROJECT_ID": "csopp-25f2",
+        "BIGQUERY_DATASET_ID": "KMCC_QC",
+        "BIGQUERY_LOCATION": "asia-northeast3"
+      }
+    }
+  }
+}

@@ -2,16 +2,14 @@ import { type NextRequest, NextResponse } from "next/server";
 import { readYonsanGwangjuSheets, parseSheetRowsToEvaluations } from "@/lib/google-sheets";
 import { getBigQueryClient } from "@/lib/bigquery";
 import { startSync, updateProgress, finishSync } from "@/lib/sync-progress";
+import { getCorsHeaders } from "@/lib/cors";
 
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
 const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_ID || '14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o';
+const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
 
 // CORS 헤더
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization",
-};
+const corsHeaders = getCorsHeaders();
 
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
@@ -65,7 +63,7 @@ export async function POST(request: NextRequest) {
     const bigquery = getBigQueryClient();
     const existingIdsQuery = `
       SELECT DISTINCT evaluation_id
-      FROM \`${DATASET_ID}.evaluations\`
+      FROM ${EVAL_TABLE}
       WHERE evaluation_id IN UNNEST(@evaluation_ids)
     `;
 
@@ -79,7 +77,7 @@ export async function POST(request: NextRequest) {
         const idsList = evaluationIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',');
         const query = `
           SELECT DISTINCT evaluation_id
-          FROM \`${DATASET_ID}.evaluations\`
+          FROM ${EVAL_TABLE}
           WHERE evaluation_id IN (${idsList})
         `;
 

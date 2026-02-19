@@ -3,7 +3,7 @@
 import { Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { tenureCategories, serviceGroups, channelTypes } from "@/lib/mock-data"
+import { tenureCategories, serviceGroups, channelTypes } from "@/lib/constants"
 
 interface AgentFiltersProps {
   search: string
