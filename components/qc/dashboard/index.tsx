@@ -12,8 +12,8 @@ import { WeeklyErrorTable } from "./weekly-error-table"
 import { TenureErrorTable } from "./tenure-error-table"
 import { ServiceWeeklyTable } from "./service-weekly-table"
 import { useDashboardData, defaultStats } from "@/lib/use-dashboard-data"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Loader2 } from "lucide-react"
+import { cn } from "@/lib/utils"
 
 interface DashboardProps {
   onNavigateToFocus: () => void
@@ -26,6 +26,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
+  const [activeTab, setActiveTab] = useState("item")
   // 필터 날짜 범위
   const [filterStartDate, setFilterStartDate] = useState<string | undefined>(undefined)
   const [filterEndDate, setFilterEndDate] = useState<string | undefined>(undefined)
@@ -76,13 +77,16 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
   const yongsanTrend = dashboardStats.yongsanOverallTrend ?? 0
   const gwangjuTrend = dashboardStats.gwangjuOverallTrend ?? 0
 
-  // 센터 데이터 변환 (CenterComparison 컴포넌트용)
-  const centerData = centerStats.length > 0
+  // 센터별 목표율
+  const centerTargetRates: Record<string, number> = { "용산": 4.7, "광주": 2.0 }
+
+  // 센터 데이터 변환 (CenterComparison 컴포넌트용) — 항상 용산→광주 순서 고정
+  const centerDataUnsorted = centerStats.length > 0
     ? centerStats.map(center => ({
       name: center.name,
       errorRate: center.errorRate,
       trend: center.name === '용산' ? yongsanTrend : center.name === '광주' ? gwangjuTrend : 0,
-      targetRate: 3.0,
+      targetRate: centerTargetRates[center.name] ?? 2.5,
       groups: center.services.map(svc => ({
         name: svc.name,
         errorRate: svc.errorRate,
@@ -95,17 +99,24 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
         name: "용산",
         errorRate: 0,
         trend: yongsanTrend,
-        targetRate: 3.0,
+        targetRate: 4.7,
         groups: [],
       },
       {
         name: "광주",
         errorRate: 0,
         trend: gwangjuTrend,
-        targetRate: 3.0,
+        targetRate: 2.0,
         groups: [],
       },
     ]
+
+  // 용산 → 광주 순서 고정
+  const CENTER_ORDER = ["용산", "광주"]
+  const centerData = [...centerDataUnsorted].sort(
+    (a, b) => (CENTER_ORDER.indexOf(a.name) === -1 ? 99 : CENTER_ORDER.indexOf(a.name))
+            - (CENTER_ORDER.indexOf(b.name) === -1 ? 99 : CENTER_ORDER.indexOf(b.name))
+  )
 
   const filteredCenters = selectedCenter === "all"
     ? centerData
@@ -161,7 +172,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
       <ErrorTrendChart
         data={chartTrendData}
         weeklyData={weeklyTrendData}
-        targetRate={3.0}
+        targetRate={2.5}
         dateRange={filterStartDate && filterEndDate ? { startDate: filterStartDate, endDate: filterEndDate } : undefined}
       />
 
@@ -188,26 +199,31 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
       <CenterComparison centers={filteredCenters} />
 
       {/* 상세 분석 탭 */}
-      <Tabs defaultValue="item" className="w-full">
-        <TabsList className="grid w-full grid-cols-5 h-auto">
-          <TabsTrigger value="item" className="text-xs py-2">
-            항목별 현황
-          </TabsTrigger>
-          <TabsTrigger value="daily" className="text-xs py-2">
-            일자별 현황
-          </TabsTrigger>
-          <TabsTrigger value="weekly" className="text-xs py-2">
-            주차별 현황
-          </TabsTrigger>
-          <TabsTrigger value="tenure" className="text-xs py-2">
-            근속기간별
-          </TabsTrigger>
-          <TabsTrigger value="service" className="text-xs py-2">
-            서비스별 주간
-          </TabsTrigger>
-        </TabsList>
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex gap-1 mb-4 border-b pb-2">
+          {[
+            { value: "item", label: "항목별 현황" },
+            { value: "daily", label: "일자별 현황" },
+            { value: "weekly", label: "주차별 현황" },
+            { value: "tenure", label: "근속기간별" },
+            { value: "service", label: "서비스별 주간" },
+          ].map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setActiveTab(tab.value)}
+              className={cn(
+                "px-4 py-2 text-xs border rounded-md cursor-pointer transition-colors",
+                activeTab === tab.value
+                  ? "bg-[#2c6edb] text-white border-[#2c6edb]"
+                  : "bg-white text-gray-600 border-slate-200 hover:bg-gray-50",
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
 
-        <TabsContent value="item" className="mt-4">
+        {activeTab === "item" && (
           <ItemAnalysis
             selectedCenter={selectedCenter}
             selectedService={selectedService}
@@ -215,28 +231,22 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
             selectedTenure={selectedTenure}
             selectedDate={selectedDate}
           />
-        </TabsContent>
+        )}
 
-        <TabsContent value="daily" className="mt-4">
-          <DailyErrorTable />
-        </TabsContent>
+        {activeTab === "daily" && <DailyErrorTable />}
 
-        <TabsContent value="weekly" className="mt-4">
-          <WeeklyErrorTable />
-        </TabsContent>
+        {activeTab === "weekly" && <WeeklyErrorTable />}
 
-        <TabsContent value="tenure" className="mt-4">
-          <TenureErrorTable />
-        </TabsContent>
+        {activeTab === "tenure" && <TenureErrorTable />}
 
-        <TabsContent value="service" className="mt-4">
+        {activeTab === "service" && (
           <ServiceWeeklyTable
             selectedCenter={selectedCenter}
             selectedService={selectedService}
             selectedChannel={selectedChannel}
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   )
 }

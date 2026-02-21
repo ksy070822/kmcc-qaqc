@@ -38,8 +38,8 @@ interface ErrorTrendChartProps {
 }
 
 const COLORS = {
-  yongsan: "#2c6edb",
-  gwangju: "#ffcd00",
+  yongsan: "#6B93D6",
+  gwangju: "#9E9E9E",
   target: "#DD2222",
 }
 
@@ -123,8 +123,8 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
             type="monotone"
             dataKey={gwangjuKey}
             stroke={COLORS.gwangju}
-            strokeWidth={2.5}
-            dot={{ fill: COLORS.gwangju, r: 4, stroke: "#333", strokeWidth: 1 }}
+            strokeWidth={3}
+            dot={{ fill: COLORS.gwangju, r: 4 }}
             activeDot={{ r: 6, fill: COLORS.gwangju }}
             name={`광주_${title}`}
           />
@@ -194,7 +194,7 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
               </div>
               <div className="flex items-center gap-2">
                 <div
-                  className="h-3 w-3 rounded-full border border-gray-400"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: COLORS.gwangju }}
                 />
                 <span className="font-medium">
@@ -215,7 +215,7 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
               </div>
               <div className="flex items-center gap-2">
                 <div
-                  className="h-3 w-3 rounded-full border border-gray-400"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: COLORS.gwangju }}
                 />
                 <span className="font-medium">
@@ -243,7 +243,7 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
               </div>
               <div className="flex items-center gap-2">
                 <div
-                  className="h-3 w-3 rounded-full border border-gray-400"
+                  className="h-3 w-3 rounded-full"
                   style={{ backgroundColor: COLORS.gwangju }}
                 />
                 <span className="font-medium">

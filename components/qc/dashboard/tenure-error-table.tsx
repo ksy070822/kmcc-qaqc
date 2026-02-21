@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useMemo, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { evaluationItems, serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
 import { cn } from "@/lib/utils"
@@ -144,77 +143,73 @@ export function TenureErrorTable() {
   const colCount = evaluationItems.length + 3 // 구분(2) + items(16) + 합계(1)
 
   return (
-    <Card className="border-slate-200">
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <CardTitle className="text-lg font-semibold text-slate-800">근속기간별 오류 현황</CardTitle>
-          <div className="flex gap-2">
-            <Select
-              value={selectedCenter}
-              onValueChange={(v) => {
-                setSelectedCenter(v as typeof selectedCenter)
-                setSelectedService("all")
-              }}
-            >
-              <SelectTrigger className="w-[100px] h-8 text-sm">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                <SelectItem value="용산">용산</SelectItem>
-                <SelectItem value="광주">광주</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={selectedService} onValueChange={setSelectedService}>
-              <SelectTrigger className="w-[120px] h-8 text-sm">
-                <SelectValue placeholder="서비스" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">전체</SelectItem>
-                {services.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <div>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h3 className="text-sm font-bold text-gray-800">근속기간별 오류 현황</h3>
+        <div className="flex gap-2">
+          <Select
+            value={selectedCenter}
+            onValueChange={(v) => {
+              setSelectedCenter(v as typeof selectedCenter)
+              setSelectedService("all")
+            }}
+          >
+            <SelectTrigger className="w-[100px] h-8 text-sm">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="용산">용산</SelectItem>
+              <SelectItem value="광주">광주</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={selectedService} onValueChange={setSelectedService}>
+            <SelectTrigger className="w-[120px] h-8 text-sm">
+              <SelectValue placeholder="서비스" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              {services.map((s) => (
+                <SelectItem key={s} value={s}>
+                  {s}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
-      </CardHeader>
-      <CardContent>
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin mr-2" />
-            <span>데이터 로딩 중...</span>
-          </div>
-        )}
+      </div>
 
-        {error && (
-          <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm mb-4">
-            <strong>데이터 로드 오류:</strong> {error}
-          </div>
-        )}
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="h-5 w-5 animate-spin mr-2" />
+          <span>데이터 로딩 중...</span>
+        </div>
+      )}
 
-        {!loading && !error && (
+      {error && (
+        <div className="bg-destructive/10 text-destructive px-4 py-2 rounded-md text-sm mb-4">
+          <strong>데이터 로드 오류:</strong> {error}
+        </div>
+      )}
+
+      {!loading && !error && (
         <div className="overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="data-table">
             <thead>
-              <tr className="border-b border-slate-200 bg-[#2c6edb]/5">
-                <th className="sticky left-0 bg-[#2c6edb]/5 text-left p-2 font-medium text-slate-700" colSpan={2}>
-                  구분
-                </th>
+              <tr>
+                <th className="text-left" colSpan={2}>구분</th>
                 {evaluationItems.map((item) => (
-                  <th key={item.id} className="p-2 font-medium text-slate-600 text-center whitespace-nowrap">
+                  <th key={item.id}>
                     <span
                       className={cn(
                         "inline-block w-2 h-2 rounded-full mr-1",
-                        item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]",
+                        item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#9E9E9E]",
                       )}
                     />
                     {item.shortName}
                   </th>
                 ))}
-                <th className="p-2 font-semibold text-slate-800 text-center bg-[#2c6edb]/10">합계</th>
+                <th>합계</th>
               </tr>
             </thead>
             <tbody>
@@ -225,7 +220,7 @@ export function TenureErrorTable() {
                     "border-b-2",
                     group.center === "용산"
                       ? "bg-[#2c6edb]/20 border-[#2c6edb]/30"
-                      : "bg-[#ffcd00]/20 border-[#ffcd00]/30",
+                      : "bg-[#9E9E9E]/20 border-[#9E9E9E]/30",
                   )}>
                     <td
                       colSpan={colCount}
@@ -233,7 +228,7 @@ export function TenureErrorTable() {
                         "sticky left-0 p-2 font-bold text-sm",
                         group.center === "용산"
                           ? "bg-[#2c6edb]/20 text-[#2c6edb]"
-                          : "bg-[#ffcd00]/20 text-[#666666]",
+                          : "bg-[#9E9E9E]/20 text-[#666666]",
                       )}
                     >
                       {group.center}센터
@@ -259,7 +254,7 @@ export function TenureErrorTable() {
                               rowSpan={tenureCategories.length + 1}
                               className={cn(
                                 "sticky left-0 p-2 font-semibold text-slate-700 border-r border-slate-200",
-                                group.center === "용산" ? "bg-[#2c6edb]/10" : "bg-[#ffcd00]/10",
+                                group.center === "용산" ? "bg-[#2c6edb]/10" : "bg-[#9E9E9E]/10",
                               )}
                             >
                               {label}
@@ -318,7 +313,6 @@ export function TenureErrorTable() {
           </table>
         </div>
         )}
-      </CardContent>
-    </Card>
+    </div>
   )
 }

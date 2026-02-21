@@ -5,7 +5,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { CalendarIcon, Search } from "lucide-react"
+import { CalendarIcon, Search, ChevronLeft, ChevronRight } from "lucide-react"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
 import { cn } from "@/lib/utils"
@@ -64,7 +64,7 @@ export function DashboardFilters({
   )
   const [startDateOpen, setStartDateOpen] = useState(false)
   const [endDateOpen, setEndDateOpen] = useState(false)
-  
+
   // 센터에 따른 서비스 목록
   const getServices = () => {
     if (selectedCenter === "all") {
@@ -78,7 +78,7 @@ export function DashboardFilters({
     setSelectedCenter(value)
     setSelectedService("all")
   }
-  
+
   // 날짜 변경 핸들러
   const handleStartDateSelect = (date: Date | undefined) => {
     setStartDate(date)
@@ -89,7 +89,7 @@ export function DashboardFilters({
       onDateChange(startStr, endStr)
     }
   }
-  
+
   const handleEndDateSelect = (date: Date | undefined) => {
     setEndDate(date)
     setEndDateOpen(false)
@@ -99,7 +99,45 @@ export function DashboardFilters({
       onDateChange(startStr, endStr)
     }
   }
-  
+
+  // 월 단위 날짜 설정 (1일~말일)
+  const setMonthRange = (year: number, month: number) => {
+    const monthStart = new Date(year, month, 1)
+    const monthEnd = new Date(year, month + 1, 0)
+    setStartDate(monthStart)
+    setEndDate(monthEnd)
+    if (onDateChange) {
+      onDateChange(
+        monthStart.toISOString().split('T')[0],
+        monthEnd.toISOString().split('T')[0]
+      )
+    }
+  }
+
+  // 전월 버튼
+  const handlePrevMonth = () => {
+    const base = startDate || new Date()
+    setMonthRange(base.getFullYear(), base.getMonth() - 1)
+  }
+
+  // 다음월 버튼
+  const handleNextMonth = () => {
+    const base = startDate || new Date()
+    setMonthRange(base.getFullYear(), base.getMonth() + 1)
+  }
+
+  // 당월 버튼
+  const handleCurrentMonth = () => {
+    const now = new Date()
+    setMonthRange(now.getFullYear(), now.getMonth())
+  }
+
+  // 전월 버튼 (직전 월 전체)
+  const handleLastMonth = () => {
+    const now = new Date()
+    setMonthRange(now.getFullYear(), now.getMonth() - 1)
+  }
+
   // 조회 버튼 클릭 - 날짜 범위 업데이트 후 데이터 갱신
   const handleSearch = () => {
     const startStr = startDate ? startDate.toISOString().split('T')[0] : defaultDate
@@ -119,19 +157,58 @@ export function DashboardFilters({
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 rounded-lg border">
-      {/* 날짜 선택기 */}
+      {/* 기간 선택 */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">기간</span>
+        {/* 월 네비게이션 */}
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 bg-white"
+            onClick={handlePrevMonth}
+            title="이전 월"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs bg-white"
+            onClick={handleLastMonth}
+          >
+            전월
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs bg-white"
+            onClick={handleCurrentMonth}
+          >
+            당월
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8 bg-white"
+            onClick={handleNextMonth}
+            title="다음 월"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+
+        {/* 캘린더 직접 선택 */}
         <Popover open={startDateOpen} onOpenChange={setStartDateOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="outline"
               className={cn(
-                "w-[140px] justify-start text-left font-normal bg-white",
+                "w-[130px] h-8 justify-start text-left font-normal bg-white text-xs",
                 !startDate && "text-muted-foreground"
               )}
             >
-              <CalendarIcon className="mr-2 h-4 w-4" />
+              <CalendarIcon className="mr-1 h-3 w-3" />
               {startDate ? format(startDate, "yyyy-MM-dd", { locale: ko }) : "시작일"}
             </Button>
           </PopoverTrigger>
@@ -150,11 +227,11 @@ export function DashboardFilters({
             <Button
               variant="outline"
               className={cn(
-                "w-[140px] justify-start text-left font-normal bg-white",
+                "w-[130px] h-8 justify-start text-left font-normal bg-white text-xs",
                 !endDate && "text-muted-foreground"
               )}
             >
-              <CalendarIcon className="mr-2 h-4 w-4" />
+              <CalendarIcon className="mr-1 h-3 w-3" />
               {endDate ? format(endDate, "yyyy-MM-dd", { locale: ko }) : "종료일"}
             </Button>
           </PopoverTrigger>
@@ -168,7 +245,7 @@ export function DashboardFilters({
           </PopoverContent>
         </Popover>
       </div>
-      
+
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">센터</span>
         <Select value={selectedCenter} onValueChange={handleCenterChange}>
@@ -236,9 +313,9 @@ export function DashboardFilters({
 
       {/* 조회 버튼 - 가장 우측에 배치 */}
       <div className="ml-auto">
-        <Button 
-          onClick={handleSearch} 
-          size="sm" 
+        <Button
+          onClick={handleSearch}
+          size="sm"
           className="bg-[#2c6edb] text-white hover:bg-[#202237] min-w-[100px]"
         >
           <Search className="mr-2 h-4 w-4" />

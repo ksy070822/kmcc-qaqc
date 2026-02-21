@@ -1,9 +1,6 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { Building2, TrendingDown, TrendingUp } from "lucide-react"
 
 interface CenterData {
   name: string
@@ -22,96 +19,142 @@ interface CenterComparisonProps {
   centers: CenterData[]
 }
 
-function ColoredProgress({ value, errorRate }: { value: number; errorRate: number }) {
-  const getColor = () => {
-    if (errorRate > 5) return "bg-red-500"
-    if (errorRate > 3) return "bg-amber-500"
-    return "bg-emerald-500"
+/** 그룹명 "서비스/채널" → { service, channel } 파싱 */
+function parseGroupName(name: string): { service: string; channel: string | null } {
+  const parts = name.split("/")
+  const last = parts[parts.length - 1]
+  if ((last === "유선" || last === "채팅") && parts.length >= 2) {
+    return { service: parts.slice(0, -1).join("/"), channel: last }
+  }
+  return { service: name, channel: null }
+}
+
+/** 그룹 목록 → 서비스별 묶음 (순서 유지) */
+function groupByService(
+  groups: CenterData["groups"],
+): Array<{ service: string; rows: Array<{ channel: string | null; group: CenterData["groups"][number] }> }> {
+  const serviceMap = new Map<
+    string,
+    Array<{ channel: string | null; group: CenterData["groups"][number] }>
+  >()
+  const order: string[] = []
+
+  for (const g of groups) {
+    if (!g.name || !g.name.trim()) continue
+    const { service, channel } = parseGroupName(g.name)
+    if (!serviceMap.has(service)) {
+      serviceMap.set(service, [])
+      order.push(service)
+    }
+    serviceMap.get(service)!.push({ channel, group: g })
   }
 
-  return (
-    <div className="h-2 w-full overflow-hidden rounded-full bg-gray-200">
-      <div className={cn("h-full transition-all", getColor())} style={{ width: `${Math.min(value, 100)}%` }} />
-    </div>
-  )
+  return order.map((service) => ({ service, rows: serviceMap.get(service)! }))
 }
 
 export function CenterComparison({ centers }: CenterComparisonProps) {
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      {centers.map((center) => (
-        <Card key={center.name} className="border shadow-sm">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
+      {centers.map((center) => {
+        const rateColor =
+          center.errorRate > 5
+            ? "bg-red-100 text-red-700"
+            : center.errorRate > 3
+              ? "bg-amber-100 text-amber-700"
+              : "bg-emerald-100 text-emerald-700"
+        const trendColor =
+          center.trend < 0
+            ? "text-emerald-600"
+            : center.trend > 0
+              ? "text-red-600"
+              : "text-gray-400"
+        const trendIcon = center.trend < 0 ? "▼" : center.trend > 0 ? "▲" : "-"
+
+        const serviceGroups = groupByService(center.groups)
+
+        return (
+          <div
+            key={center.name}
+            className="bg-white border border-slate-200 rounded-xl p-5"
+          >
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                <div
+                <span className="text-sm font-bold text-gray-900">
+                  {center.name}
+                </span>
+                <span
                   className={cn(
-                    "flex h-8 w-8 items-center justify-center rounded-lg",
-                    center.name === "용산" ? "bg-primary" : "bg-accent",
+                    "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold",
+                    rateColor,
                   )}
                 >
-                  <Building2
-                    className={cn(
-                      "h-4 w-4",
-                      center.name === "용산" ? "text-primary-foreground" : "text-accent-foreground",
-                    )}
-                  />
-                </div>
-                <CardTitle className="text-lg text-foreground">{center.name}센터</CardTitle>
+                  {center.errorRate.toFixed(2)}%
+                </span>
               </div>
-              <Badge
-                className={cn(
-                  "font-mono",
-                  center.errorRate <= center.targetRate
-                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200"
-                    : "bg-red-100 text-red-700 hover:bg-red-200",
-                )}
-              >
-                {center.errorRate.toFixed(2)}%
-              </Badge>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>목표: {center.targetRate}%</span>
-              <span
-                className={cn(
-                  "flex items-center gap-1 font-medium",
-                  center.trend < 0 ? "text-emerald-600" : center.trend > 0 ? "text-red-600" : "text-slate-500",
-                )}
-              >
-                {center.trend < 0 ? <TrendingDown className="h-3 w-3" /> : <TrendingUp className="h-3 w-3" />}
-                {Math.abs(center.trend).toFixed(2)}%
-              </span>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {center.groups
-              .filter((group) => group.name && group.name.trim() !== '') // 빈 이름 필터링
-              .map((group) => (
-              <div key={group.name} className="space-y-1.5">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-foreground">{group.name || '미분류'}</span>
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">{group.agentCount}명</span>
-                    <span
-                      className={cn(
-                        "font-mono font-semibold",
-                        group.errorRate > 5
-                          ? "text-red-600"
-                          : group.errorRate > 3
-                            ? "text-amber-600"
-                            : "text-emerald-600",
-                      )}
-                    >
-                      {group.errorRate.toFixed(2)}%
-                    </span>
-                  </div>
-                </div>
-                <ColoredProgress value={(group.errorRate / 10) * 100} errorRate={group.errorRate} />
+              <div className={cn("text-xs font-medium", trendColor)}>
+                {trendIcon} {Math.abs(center.trend).toFixed(2)}%p
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      ))}
+            </div>
+            <div className="text-xs text-gray-500 mb-3">
+              목표: {center.targetRate}%
+            </div>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th className="text-left">서비스</th>
+                  <th className="text-left">채널</th>
+                  <th>상담사</th>
+                  <th>오류율</th>
+                  <th className="w-[100px]"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {serviceGroups.map((sg) =>
+                  sg.rows.map((row, i) => {
+                    const gc =
+                      row.group.errorRate > 5
+                        ? "bg-red-500"
+                        : row.group.errorRate > 3
+                          ? "bg-amber-500"
+                          : "bg-emerald-500"
+                    const barW = Math.min(100, (row.group.errorRate / 8) * 100)
+                    return (
+                      <tr
+                        key={row.group.name}
+                        className={i === 0 && sg.rows.length > 1 ? "border-t border-slate-200" : ""}
+                      >
+                        {i === 0 && (
+                          <td
+                            className="text-left font-medium align-middle"
+                            rowSpan={sg.rows.length}
+                          >
+                            {sg.service}
+                          </td>
+                        )}
+                        <td className="text-left text-gray-600">
+                          {row.channel || "-"}
+                        </td>
+                        <td>{row.group.agentCount}명</td>
+                        <td className="font-medium">
+                          {row.group.errorRate.toFixed(2)}%
+                        </td>
+                        <td>
+                          <div className="h-1.5 rounded-sm bg-slate-200 overflow-hidden">
+                            <div
+                              className={cn("h-full rounded-sm transition-all", gc)}
+                              style={{ width: `${barW}%` }}
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  }),
+                )}
+              </tbody>
+            </table>
+          </div>
+        )
+      })}
     </div>
   )
 }

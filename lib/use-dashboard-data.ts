@@ -115,10 +115,10 @@ export function useDashboardData(
 
       // 병렬로 데이터 fetch (선택한 날짜 기준)
       const [statsRes, centersRes, trendRes, weeklyTrendRes] = await Promise.all([
-        fetch(`${API_BASE}?type=dashboard${selectedDate ? `&date=${selectedDate}` : ""}`),
+        fetch(`${API_BASE}?type=dashboard${selectedDate ? `&date=${selectedDate}` : ""}${startDate ? `&startDate=${startDate}` : ""}${endDate ? `&endDate=${endDate}` : ""}`),
         fetch(`${API_BASE}?type=centers&startDate=${centersStartDate}&endDate=${centersEndDate}`),
         fetch(trendUrl),
-        fetch(`${API_BASE}?type=weekly-trend&weeks=6`),
+        fetch(`${API_BASE}?type=weekly-trend&weeks=7`),
       ])
 
       const [statsData, centersData, trendDataRes, weeklyTrendDataRes] = await Promise.all([

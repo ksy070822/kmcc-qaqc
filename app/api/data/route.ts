@@ -62,7 +62,7 @@ export async function GET(request: Request) {
         // HR 캐시 사전 빌드 (근속기간별 탭 속도 개선)
         warmupHrCache()
         try {
-          result = await getDashboardStats(date)
+          result = await getDashboardStats(date, startDate, endDate)
           console.log(`[API] Dashboard stats result:`, result)
         } catch (dashboardError) {
           console.error("[API] Dashboard stats error:", dashboardError)

@@ -1,4 +1,5 @@
 import { google } from 'googleapis';
+import { SERVICE_NORMALIZE_MAP, INVALID_SERVICE_NAMES } from './constants';
 
 /**
  * Google Sheets API 클라이언트 초기화
@@ -143,7 +144,10 @@ export function parseSheetRowsToEvaluations(
       const evalDateIdx = getColumnIndex(['평가일', '날짜', 'date', 'evaluation_date']);
       const consultIdIdx = getColumnIndex(['상담id', 'consult_id', 'consultid']);
       const serviceIdx = getColumnIndex(['서비스', 'service']);
-      const channelIdx = getColumnIndex(['채널', 'channel', '유선/채팅']);
+      const serviceGroupIdx = getColumnIndex(['서비스 그룹', '서비스그룹']);
+      const depth1Idx = getColumnIndex(['상담유형 1depth', '상담유형1', '상담유형', 'consult_type']);
+      const channelTypeIdx = getColumnIndex(['유선/채팅', '유선채팅']); // 실제 채널
+      const channelIdx = channelTypeIdx ?? getColumnIndex(['채널', 'channel']); // 폴백
       const hireDateIdx = getColumnIndex(['입사일', 'hire_date', 'hiredate']);
       const tenureIdx = getColumnIndex(['근속개월', 'tenure', 'tenure_months']);
 
@@ -171,9 +175,45 @@ export function parseSheetRowsToEvaluations(
       // 상담 ID (중복 방지용)
       const consultId = consultIdIdx !== null ? row[consultIdIdx]?.toString().trim() : '';
       
-      // 서비스 및 채널
-      const service = serviceIdx !== null ? row[serviceIdx]?.toString().trim() : '';
+      // 채널: "유선/채팅" 컬럼 우선 사용
       const channel = channelIdx !== null ? row[channelIdx]?.toString().trim() : '';
+
+      // 서비스 결정 우선순위:
+      // 1) 상담유형 1depth → 언더바 앞 추출 (예: "택시_승객" → "택시")
+      // 2) 서비스 그룹 (주차/카오너, 바이크/마스 교차매핑)
+      // 3) 서비스 컬럼 직접 사용
+      let service = '';
+
+      // 1차: 1depth에서 서비스 추출
+      if (depth1Idx !== null) {
+        const depth1 = row[depth1Idx]?.toString().trim() || '';
+        if (depth1) {
+          const beforeUnderscore = depth1.split('_')[0].trim();
+          const normalized1 = SERVICE_NORMALIZE_MAP[beforeUnderscore] || beforeUnderscore;
+          if (normalized1 && !INVALID_SERVICE_NAMES.includes(normalized1)) {
+            service = normalized1;
+          }
+        }
+      }
+
+      // 2차: 서비스 그룹 (주차/카오너, 바이크/마스 등)
+      if (!service && serviceGroupIdx !== null) {
+        const svcGroup = row[serviceGroupIdx]?.toString().trim() || '';
+        if (svcGroup) {
+          const normalizedGroup = SERVICE_NORMALIZE_MAP[svcGroup] || svcGroup;
+          if (normalizedGroup && !INVALID_SERVICE_NAMES.includes(normalizedGroup)) {
+            service = normalizedGroup;
+          }
+        }
+      }
+
+      // 3차: 서비스 컬럼
+      if (!service && serviceIdx !== null) {
+        service = row[serviceIdx]?.toString().trim() || '';
+      }
+
+      // 서비스명 정규화
+      service = SERVICE_NORMALIZE_MAP[service] || service;
 
       // 입사일 및 근속개월
       const hireDate = hireDateIdx !== null ? row[hireDateIdx]?.toString().trim() : '';

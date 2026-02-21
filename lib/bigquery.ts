@@ -1,5 +1,6 @@
 import { BigQuery } from '@google-cloud/bigquery';
 import { AgentAnalysisContext, GroupAnalysisContext } from './types';
+import { SERVICE_NORMALIZE_MAP, INVALID_SERVICE_NAMES, SERVICE_ORDER, SERVICE_CHANNEL_EXTRACT, VALID_CHANNELS, groups as GROUP_ORDER } from './constants';
 
 /**
  * BigQuery 클라이언트 초기화
@@ -72,6 +73,36 @@ export function getBigQueryClient(): BigQuery {
 // 데이터셋 ID
 const DATASET_ID = process.env.BIGQUERY_DATASET_ID || 'KMCC_QC';
 const HR_DATASET_ID = 'kMCC_HR';
+
+// 서비스명 정규화 (변형→표준명, 잘못된 값→null)
+function mapServiceName(raw: string, _center?: string): string | null {
+  if (!raw || INVALID_SERVICE_NAMES.includes(raw)) return null;
+  return SERVICE_NORMALIZE_MAP[raw] || raw;
+}
+
+// 역매핑: 화면 표시명 → BQ 원본명 배열 (필터 쿼리용)
+function unmapServiceName(display: string): string[] {
+  if (!display) return [display];
+  const rawNames = Object.entries(SERVICE_NORMALIZE_MAP)
+    .filter(([, normalized]) => normalized === display)
+    .map(([raw]) => raw);
+  if (!rawNames.includes(display)) rawNames.push(display);
+  return rawNames;
+}
+
+// service 필터 SQL 조건절 생성 (역매핑 포함)
+function addServiceFilter(whereClause: string, params: any, service: string, alias = ''): string {
+  const prefix = alias ? `${alias}.` : '';
+  const rawNames = unmapServiceName(service);
+  if (rawNames.length === 1) {
+    whereClause += ` AND ${prefix}service = @service`;
+    params.service = rawNames[0];
+  } else {
+    whereClause += ` AND ${prefix}service IN UNNEST(@serviceNames)`;
+    params.serviceNames = rawNames;
+  }
+  return whereClause;
+}
 
 // BigQuery 테이블 참조 (Turbopack SWC 파서 호환을 위해 문자열 상수 사용)
 const EVAL_TABLE = '`' + DATASET_ID + '.evaluations`';
@@ -248,7 +279,7 @@ export interface DashboardStats {
   gwangjuOverallTrend?: number;
 }
 
-export async function getDashboardStats(targetDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
+export async function getDashboardStats(targetDate?: string, filterStartDate?: string, filterEndDate?: string): Promise<{ success: boolean; data?: DashboardStats; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
 
@@ -264,49 +295,78 @@ export async function getDashboardStats(targetDate?: string): Promise<{ success:
       queryDate = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, '0')}-${String(yesterday.getUTCDate()).padStart(2, '0')}`;
     }
 
-    // 데이터가 있는 최근 날짜 찾기 (fallback)
-    try {
-      const [checkRows] = await bigquery.query({
-        query: `SELECT COUNT(*) as cnt FROM ${EVAL_TABLE} WHERE evaluation_date = @checkDate`,
-        params: { checkDate: queryDate },
-        location: GCP_LOCATION,
-      });
-      if (!(checkRows.length > 0 && checkRows[0].cnt > 0)) {
-        const [recentRows] = await bigquery.query({
-          query: `SELECT FORMAT_DATE('%Y-%m-%d', evaluation_date) as date_str FROM ${EVAL_TABLE} WHERE evaluation_date <= @checkDate ORDER BY evaluation_date DESC LIMIT 1`,
+    const fmtDate = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+    // 필터 날짜가 있으면 해당 기간 사용, 없으면 기존 목~수 주간 로직
+    const useFilterRange = !!(filterStartDate && filterEndDate);
+    let weekStart: string;
+    let weekEnd: string;
+    let prevWeekStart: string;
+    let prevWeekEnd: string;
+
+    if (useFilterRange) {
+      // 필터 날짜 범위 사용
+      weekStart = filterStartDate!;
+      weekEnd = filterEndDate!;
+
+      // 이전 기간 계산: 동일 일수만큼 이전으로 (예: 1월 → 12월)
+      const rangeStartDate = new Date(filterStartDate! + 'T00:00:00Z');
+      const rangeEndDate = new Date(filterEndDate! + 'T00:00:00Z');
+      const rangeDays = Math.round((rangeEndDate.getTime() - rangeStartDate.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+
+      const prevEnd = new Date(rangeStartDate);
+      prevEnd.setUTCDate(prevEnd.getUTCDate() - 1); // 시작일 하루 전
+      const prevStart = new Date(prevEnd);
+      prevStart.setUTCDate(prevStart.getUTCDate() - rangeDays + 1); // 동일 기간만큼 이전
+
+      prevWeekStart = fmtDate(prevStart);
+      prevWeekEnd = fmtDate(prevEnd);
+
+      console.log(`[BigQuery] getDashboardStats: 필터기간 ${weekStart}~${weekEnd} (${rangeDays}일), 이전기간 ${prevWeekStart}~${prevWeekEnd}`);
+    } else {
+      // 데이터가 있는 최근 날짜 찾기 (fallback)
+      try {
+        const [checkRows] = await bigquery.query({
+          query: `SELECT COUNT(*) as cnt FROM ${EVAL_TABLE} WHERE evaluation_date = @checkDate`,
           params: { checkDate: queryDate },
           location: GCP_LOCATION,
         });
-        if (recentRows.length > 0 && recentRows[0].date_str) {
-          queryDate = recentRows[0].date_str;
+        if (!(checkRows.length > 0 && checkRows[0].cnt > 0)) {
+          const [recentRows] = await bigquery.query({
+            query: `SELECT FORMAT_DATE('%Y-%m-%d', evaluation_date) as date_str FROM ${EVAL_TABLE} WHERE evaluation_date <= @checkDate ORDER BY evaluation_date DESC LIMIT 1`,
+            params: { checkDate: queryDate },
+            location: GCP_LOCATION,
+          });
+          if (recentRows.length > 0 && recentRows[0].date_str) {
+            queryDate = recentRows[0].date_str;
+          }
         }
+      } catch (checkError) {
+        console.warn(`[BigQuery] 날짜 확인 중 오류:`, checkError);
       }
-    } catch (checkError) {
-      console.warn(`[BigQuery] 날짜 확인 중 오류:`, checkError);
+
+      // 이번주 목~수 범위 계산 (목요일 시작, 수요일 종료)
+      const qd = new Date(queryDate + 'T00:00:00Z');
+      const dayOfWeek = qd.getUTCDay(); // 0=일, 1=월, ..., 4=목, 6=토
+      const daysBackToThursday = (dayOfWeek - 4 + 7) % 7;
+      const thursday = new Date(qd);
+      thursday.setUTCDate(thursday.getUTCDate() - daysBackToThursday);
+      const wednesday = new Date(thursday);
+      wednesday.setUTCDate(thursday.getUTCDate() + 6);
+      weekStart = fmtDate(thursday);
+      // weekEnd는 수요일 또는 queryDate 중 이른 날짜 (아직 수요일이 안 된 경우)
+      weekEnd = fmtDate(wednesday) <= queryDate ? fmtDate(wednesday) : queryDate;
+
+      // 전주 목~수 범위 계산
+      const prevThursday = new Date(thursday);
+      prevThursday.setUTCDate(prevThursday.getUTCDate() - 7);
+      const prevWednesday = new Date(prevThursday);
+      prevWednesday.setUTCDate(prevThursday.getUTCDate() + 6);
+      prevWeekStart = fmtDate(prevThursday);
+      prevWeekEnd = fmtDate(prevWednesday);
+
+      console.log(`[BigQuery] getDashboardStats: 이번주(목~수) ${weekStart}~${weekEnd}, 전주 ${prevWeekStart}~${prevWeekEnd}`);
     }
-
-    // 이번주 목~수 범위 계산 (목요일 시작, 수요일 종료)
-    const qd = new Date(queryDate + 'T00:00:00Z');
-    const dayOfWeek = qd.getUTCDay(); // 0=일, 1=월, ..., 4=목, 6=토
-    const daysBackToThursday = (dayOfWeek - 4 + 7) % 7;
-    const thursday = new Date(qd);
-    thursday.setUTCDate(thursday.getUTCDate() - daysBackToThursday);
-    const wednesday = new Date(thursday);
-    wednesday.setUTCDate(thursday.getUTCDate() + 6);
-    const fmtDate = (d: Date) => `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-    const weekStart = fmtDate(thursday);
-    // weekEnd는 수요일 또는 queryDate 중 이른 날짜 (아직 수요일이 안 된 경우)
-    const weekEnd = fmtDate(wednesday) <= queryDate ? fmtDate(wednesday) : queryDate;
-
-    // 전주 목~수 범위 계산
-    const prevThursday = new Date(thursday);
-    prevThursday.setUTCDate(prevThursday.getUTCDate() - 7);
-    const prevWednesday = new Date(prevThursday);
-    prevWednesday.setUTCDate(prevThursday.getUTCDate() + 6);
-    const prevWeekStart = fmtDate(prevThursday);
-    const prevWeekEnd = fmtDate(prevWednesday);
-
-    console.log(`[BigQuery] getDashboardStats: 이번주(목~수) ${weekStart}~${weekEnd}, 전주 ${prevWeekStart}~${prevWeekEnd}`);
 
     const dateFilter = 'WHERE evaluation_date BETWEEN @weekStart AND @weekEnd';
     const params: any = { weekStart, weekEnd };
@@ -586,13 +646,14 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
         SELECT
           center,
           service,
+          channel,
           COUNT(DISTINCT agent_id) as agent_count,
           COUNT(*) as evaluations,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors
         FROM ${EVAL_TABLE}
         WHERE evaluation_date BETWEEN @startDate AND @endDate
-        GROUP BY center, service
+        GROUP BY center, service, channel
       )
       SELECT
         cs.center,
@@ -602,7 +663,9 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
         ARRAY_AGG(
           STRUCT(
             ss.service as name,
+            ss.channel as channel,
             ss.agent_count as agentCount,
+            ss.evaluations as evaluations,
             ROUND(
               SAFE_DIVIDE(ss.attitude_errors, ss.evaluations * 5) * 100 +
               SAFE_DIVIDE(ss.ops_errors, ss.evaluations * 11) * 100
@@ -622,18 +685,88 @@ export async function getCenterStats(startDate?: string, endDate?: string): Prom
     
     const [rows] = await bigquery.query(options);
     
-    const result: CenterStats[] = rows.map((row: any) => ({
-      name: row.center,
-      evaluations: Number(row.evaluations) || 0,
-      attitudeErrorRate: Number(row.attitudeErrorRate) || 0,
-      businessErrorRate: Number(row.businessErrorRate) || 0,
-      errorRate: Number((Number(row.attitudeErrorRate) + Number(row.businessErrorRate)).toFixed(2)),
-      services: (row.services || []).map((svc: any) => ({
-        name: svc.name,
-        agentCount: Number(svc.agentCount) || 0,
-        errorRate: Number(svc.errorRate) || 0,
-      })),
-    }));
+    const result: CenterStats[] = rows.map((row: any) => {
+      const centerName = row.center as string;
+      const orderList = GROUP_ORDER[centerName as keyof typeof GROUP_ORDER] || [];
+
+      // 1. 서비스명 정규화 + 채널 추출 + 그룹명 생성
+      const rawGroups = (row.services || []).map((svc: any) => {
+        const rawService = (svc.name || '').trim();
+        const rawChannel = (svc.channel || '').trim();
+
+        // combined service+channel 분리 (예: "택시 / 유선" → service=택시, channel=유선)
+        const extractedChannel = SERVICE_CHANNEL_EXTRACT[rawService];
+        const normalized = mapServiceName(rawService, centerName);
+        const channel = extractedChannel || rawChannel;
+
+        // 유효 채널만 그룹명에 포함 (게시판/보드, 팀장, 모니터링, unknown 등 제외)
+        const isValidChannel = (VALID_CHANNELS as readonly string[]).includes(channel);
+        // 심야: 채널 구분 없는 서비스
+        const isNoChannelService = normalized === '심야';
+
+        let groupName: string | null = null;
+        if (!normalized) {
+          groupName = null;
+        } else if (isNoChannelService) {
+          groupName = normalized;
+        } else if (isValidChannel) {
+          groupName = `${normalized}/${channel}`;
+        } else {
+          groupName = null; // 유효하지 않은 채널 → 센터비교에서 제외
+        }
+
+        return {
+          name: groupName,
+          agentCount: Number(svc.agentCount) || 0,
+          evaluations: Number(svc.evaluations) || 0,
+          errorRate: Number(svc.errorRate) || 0,
+        };
+      });
+
+      // 2. null 제거 + 용산 대리 필터링
+      const validGroups = rawGroups.filter((g: any) =>
+        g.name !== null &&
+        !(centerName === '용산' && g.name?.startsWith('대리'))
+      );
+
+      // 3. 같은 그룹명 합산 (agentCount 합산, errorRate 가중평균)
+      const mergedMap = new Map<string, { agentCount: number; evaluations: number; errorRate: number }>();
+      for (const g of validGroups) {
+        const existing = mergedMap.get(g.name);
+        if (existing) {
+          const totalEval = existing.evaluations + g.evaluations;
+          existing.errorRate = totalEval > 0
+            ? Number(((existing.errorRate * existing.evaluations + g.errorRate * g.evaluations) / totalEval).toFixed(2))
+            : 0;
+          existing.agentCount += g.agentCount;
+          existing.evaluations = totalEval;
+        } else {
+          mergedMap.set(g.name, { agentCount: g.agentCount, evaluations: g.evaluations, errorRate: g.errorRate });
+        }
+      }
+
+      // 4. groups 상수 기준 정렬 (센터별 고정 순서)
+      const services = Array.from(mergedMap.entries())
+        .sort(([a], [b]) => {
+          const aIdx = orderList.indexOf(a);
+          const bIdx = orderList.indexOf(b);
+          return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+        })
+        .map(([name, data]) => ({
+          name,
+          agentCount: data.agentCount,
+          errorRate: data.errorRate,
+        }));
+
+      return {
+        name: centerName,
+        evaluations: Number(row.evaluations) || 0,
+        attitudeErrorRate: Number(row.attitudeErrorRate) || 0,
+        businessErrorRate: Number(row.businessErrorRate) || 0,
+        errorRate: Number((Number(row.attitudeErrorRate) + Number(row.businessErrorRate)).toFixed(2)),
+        services,
+      };
+    });
     
     return { success: true, data: result };
   } catch (error) {
@@ -913,8 +1046,7 @@ export async function getAgents(filters?: {
       params.center = filters.center;
     }
     if (filters?.service && filters.service !== 'all') {
-      evalWhereClause += ' AND e.service = @service';
-      params.service = filters.service;
+      evalWhereClause = addServiceFilter(evalWhereClause, params, filters.service, 'e');
     }
     if (filters?.channel && filters.channel !== 'all') {
       evalWhereClause += ' AND e.channel = @channel';
@@ -1020,7 +1152,7 @@ export async function getAgents(filters?: {
         id: row.id,
         name: row.name,
         center: row.center,
-        service: row.service,
+        service: mapServiceName(row.service, row.center),
         channel: row.channel,
         tenureMonths,
         tenureGroup,
@@ -1292,7 +1424,7 @@ export async function getWatchList(filters?: {
         agentId: row.agent_id,
         agentName: row.agent_name,
         center: row.center,
-        service: row.service,
+        service: mapServiceName(row.service, row.center),
         channel: row.channel,
         attitudeRate: attRate,
         opsRate: opsRate,
@@ -1533,8 +1665,7 @@ export async function getDailyErrors(filters?: {
       params.center = filters.center
     }
     if (filters?.service && filters.service !== 'all') {
-      whereClause += ' AND service = @service'
-      params.service = filters.service
+      whereClause = addServiceFilter(whereClause, params, filters.service)
     }
     if (filters?.channel && filters.channel !== 'all') {
       whereClause += ' AND channel = @channel'
@@ -1805,8 +1936,7 @@ export async function getWeeklyErrors(filters?: {
       params.center = filters.center
     }
     if (filters?.service && filters.service !== 'all') {
-      whereClause += ' AND service = @service'
-      params.service = filters.service
+      whereClause = addServiceFilter(whereClause, params, filters.service)
     }
     if (filters?.channel && filters.channel !== 'all') {
       whereClause += ' AND channel = @channel'
@@ -2164,8 +2294,7 @@ export async function getItemErrorStats(filters?: {
       params.center = filters.center
     }
     if (filters?.service && filters.service !== 'all') {
-      whereClause += ' AND service = @service'
-      params.service = filters.service
+      whereClause = addServiceFilter(whereClause, params, filters.service)
     }
     if (filters?.channel && filters.channel !== 'all') {
       whereClause += ' AND channel = @channel'
@@ -2380,7 +2509,15 @@ export async function getItemErrorStats(filters?: {
       trendCenterFilter += ' AND center = @center'
     }
     if (filters?.service && filters.service !== 'all') {
-      trendCenterFilter += ' AND service = @service'
+      const rawNames = unmapServiceName(filters.service);
+      if (rawNames.length === 1) {
+        trendCenterFilter += ' AND service = @service';
+        // params.service는 이미 위에서 설정됐을 수 있음
+        if (!params.service) params.service = rawNames[0];
+      } else {
+        trendCenterFilter += ' AND service IN UNNEST(@serviceNames)';
+        params.serviceNames = rawNames;
+      }
     }
     if (filters?.channel && filters.channel !== 'all') {
       trendCenterFilter += ' AND channel = @channel'
@@ -2504,8 +2641,7 @@ export async function getTenureStats(filters?: {
       params.center = filters.center;
     }
     if (filters?.service && filters.service !== 'all') {
-      whereClause += ' AND e.service = @service';
-      params.service = filters.service;
+      whereClause = addServiceFilter(whereClause, params, filters.service, 'e');
     }
     if (filters?.channel && filters.channel !== 'all') {
       whereClause += ' AND e.channel = @channel';
@@ -2556,7 +2692,7 @@ export async function getTenureStats(filters?: {
       const tenureMonths = hireDate ? calcTenureMonths(hireDate) : 0;
       const tenureGroup = hireDate ? calcTenureGroup(tenureMonths) : '3개월 미만';
 
-      const key = `${row.center}|${row.service}|${row.channel}|${tenureGroup}`;
+      const key = `${row.center}|${mapServiceName(row.service, row.center)}|${row.channel}|${tenureGroup}`;
       const existing = aggregated.get(key);
 
       if (existing) {
@@ -2867,7 +3003,7 @@ export async function getAgentAnalysisData(
       agentId: row.agent_id,
       agentName: row.agent_name,
       center: row.center,
-      service: row.service,
+      service: mapServiceName(row.service, row.center),
       channel: row.channel,
       tenureMonths: 0, // TODO: 실제 tenure 데이터 조회
       tenureGroup: '',
@@ -2913,16 +3049,17 @@ export async function getGroupAnalysisData(
         ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as ops_error_rate
       FROM ${EVAL_TABLE}
       WHERE center = @center
-        AND service = @service
+        AND service IN UNNEST(@serviceNames)
         AND channel = @channel
         AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
       GROUP BY center, service, channel
       LIMIT 1
     `;
-    
+
+    const serviceNames = unmapServiceName(service);
     const [rows] = await bigquery.query({
       query,
-      params: { center, service, channel, month },
+      params: { center, serviceNames, channel, month },
       location: GCP_LOCATION,
     });
     
@@ -2936,7 +3073,7 @@ export async function getGroupAnalysisData(
     
     const context: GroupAnalysisContext = {
       center: row.center,
-      service: row.service,
+      service: mapServiceName(row.service, row.center),
       channel: row.channel,
       totalAgents: Number(row.total_agents) || 0,
       totalEvaluations: Number(row.total_evaluations) || 0,

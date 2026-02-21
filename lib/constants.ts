@@ -93,27 +93,87 @@ export const evaluationItems: EvaluationItem[] = [
   },
 ]
 
+// 서비스 정렬 순서 (센터비교 표에서 항상 이 순서)
+export const SERVICE_ORDER = ["택시", "대리", "배송", "바이크/마스", "주차/카오너", "화물", "심야"] as const
+
+// 서비스명 정규화 맵 (BQ 원본 / 변형 → 표준 표시명)
+export const SERVICE_NORMALIZE_MAP: Record<string, string> = {
+  // 배송 변형
+  "퀵": "배송",
+  "퀵배송": "배송",
+  "퀵·배송": "배송",
+  "도보배송": "배송",
+  "한차배송": "배송",
+  // 택시 변형
+  "심사": "택시",
+  // 바이크/마스 변형 (1depth 언더바 앞 추출 결과)
+  "바이크": "바이크/마스",
+  "마스": "바이크/마스",
+  "MaaS": "바이크/마스",
+  "바이크&MaaS": "바이크/마스",
+  // 주차/카오너 변형
+  "주차": "주차/카오너",
+  "카오너": "주차/카오너",
+  "주차/카오너 채팅": "주차/카오너",
+  "주차&카오너": "주차/카오너",
+  // combined service+channel 폴백 (BQ 미마이그레이션분)
+  "택시 / 유선": "택시",
+  "택시 / 채팅": "택시",
+  "대리 / 유선": "대리",
+  "대리 / 채팅": "대리",
+  "주차&카오너 / 채팅": "주차/카오너",
+  "주차&카오너 / 유선": "주차/카오너",
+  "바이크&MaaS / 채팅": "바이크/마스",
+  "바이크&MaaS / 유선": "바이크/마스",
+}
+
+// combined service+channel → 채널 추출 (service 필드에 채널이 포함된 경우)
+export const SERVICE_CHANNEL_EXTRACT: Record<string, string> = {
+  "택시 / 유선": "유선",
+  "택시 / 채팅": "채팅",
+  "대리 / 유선": "유선",
+  "대리 / 채팅": "채팅",
+  "주차&카오너 / 채팅": "채팅",
+  "주차&카오너 / 유선": "유선",
+  "바이크&MaaS / 채팅": "채팅",
+  "바이크&MaaS / 유선": "유선",
+}
+
+// 유효 채널 (이 외의 값은 센터비교에서 제외: 게시판/보드, 팀장, 모니터링, QC 등)
+export const VALID_CHANNELS = ["유선", "채팅"] as const
+
+// 잘못된 서비스명 (필터링/폴백 대상)
+export const INVALID_SERVICE_NAMES = ["파트너가이드", "카카오 T", "카카오T", "#VALUE!", "", "지금여기", "Staff"]
+
+// 서비스명 표시 매핑 (BQ 원본 → 화면 표시명)
+export function displayServiceName(rawName: string, center?: string): string {
+  if (!rawName) return rawName
+  return SERVICE_NORMALIZE_MAP[rawName] || rawName
+}
+
 // 그룹 = 서비스 + 채널 조합
 export const groups = {
-  용산: ["택시/유선", "택시/채팅", "퀵/유선", "퀵/채팅"],
+  용산: ["택시/유선", "택시/채팅", "배송/유선", "배송/채팅"],
   광주: [
     "택시/유선",
     "택시/채팅",
     "대리/유선",
     "대리/채팅",
-    "퀵/유선",
-    "퀵/채팅",
+    "배송/유선",
+    "배송/채팅",
     "바이크/마스/유선",
     "바이크/마스/채팅",
     "주차/카오너/유선",
     "주차/카오너/채팅",
+    "화물/유선",
+    "화물/채팅",
     "심야",
   ],
 }
 
 export const serviceGroups = {
-  용산: ["택시", "퀵"] as const,
-  광주: ["택시", "대리", "퀵", "바이크/마스", "주차/카오너", "심야"] as const,
+  용산: ["택시", "배송"] as const,
+  광주: ["택시", "대리", "배송", "바이크/마스", "주차/카오너", "화물", "심야"] as const,
 } as const
 
 export const channelTypes = ["유선", "채팅"] as const

@@ -108,7 +108,7 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
     return (
       <tr key={item.id} className={cn("border-b border-slate-100", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
         <td className={cn("sticky left-0 p-2 pl-5 font-medium text-slate-700", idx % 2 === 0 ? "bg-white" : "bg-slate-50/50")}>
-          <span className={cn("inline-block w-2 h-2 rounded-full mr-2", item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#ffcd00]")} />
+          <span className={cn("inline-block w-2 h-2 rounded-full mr-2", item.category === "상담태도" ? "bg-[#2c6edb]" : "bg-[#9E9E9E]")} />
           {item.shortName}
         </td>
         {weeks.map((week) => {
@@ -263,14 +263,14 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
               {renderSubtotalRow(attitudeItems, "태도 합계", "bg-[#2c6edb]/10 border-[#2c6edb]/30", "text-[#2c6edb]")}
 
               {/* 오상담/오처리 */}
-              <tr className="bg-[#ffcd00]/10 border-b border-[#ffcd00]/30">
-                <td className="sticky left-0 bg-[#ffcd00]/10 p-2 font-bold text-[#666666] text-xs" colSpan={1}>
+              <tr className="bg-[#9E9E9E]/10 border-b border-[#9E9E9E]/30">
+                <td className="sticky left-0 bg-[#9E9E9E]/10 p-2 font-bold text-[#666666] text-xs" colSpan={1}>
                   ■ 오상담/오처리 ({businessItems.length}개)
                 </td>
                 <td colSpan={weeks.length * 2 + 3}></td>
               </tr>
               {businessItems.map((item, idx) => renderItemRow(item, idx))}
-              {renderSubtotalRow(businessItems, "오상담 합계", "bg-[#ffcd00]/15 border-[#d4a017]/30", "text-[#9a7b00]")}
+              {renderSubtotalRow(businessItems, "오상담 합계", "bg-[#9E9E9E]/15 border-[#9E9E9E]/30", "text-[#9E9E9E]")}
 
               {/* 전체 합계 */}
               {renderSubtotalRow(evaluationItems, "태도+오상담 합계", "bg-slate-200 border-slate-400", "text-slate-900")}

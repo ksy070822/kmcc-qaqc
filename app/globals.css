@@ -234,6 +234,30 @@
   }
 }
 
+/* data-table: HTML 샘플과 동일한 깔끔한 테이블 스타일 */
+table.data-table {
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  width: 100%;
+}
+table.data-table th,
+table.data-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.375rem 0.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+table.data-table th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+table.data-table .sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 10;
+  background: white;
+}
+
 /* MODI Shadow utilities */
 .shadow-modi {
   box-shadow: var(--shadow-weak-below);
