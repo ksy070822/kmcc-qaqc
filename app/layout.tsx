@@ -3,25 +3,11 @@ import type { Metadata } from "next"
 import "./globals.css"
 
 export const metadata: Metadata = {
-  title: "QC Management | 상담 품질 관리 시스템",
-  description: "콜센터 상담 품질 평가 및 관리 대시보드",
-  generator: "v0.app",
+  title: "T 상담품질 통합관리 시스템",
+  description: "카카오모빌리티 고객센터 상담 품질 통합 관리 대시보드",
   icons: {
-    icon: [
-      {
-        url: "/icon-light-32x32.png",
-        media: "(prefers-color-scheme: light)",
-      },
-      {
-        url: "/icon-dark-32x32.png",
-        media: "(prefers-color-scheme: dark)",
-      },
-      {
-        url: "/icon.svg",
-        type: "image/svg+xml",
-      },
-    ],
-    apple: "/apple-icon.png",
+    icon: "/kakaot_logo1.png",
+    apple: "/kakaot_logo1.png",
   },
 }
 

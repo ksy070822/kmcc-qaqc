@@ -111,6 +111,7 @@ export const SERVICE_NORMALIZE_MAP: Record<string, string> = {
   "마스": "바이크/마스",
   "MaaS": "바이크/마스",
   "바이크&MaaS": "바이크/마스",
+  "바이크/MaaS": "바이크/마스",
   // 주차/카오너 변형
   "주차": "주차/카오너",
   "카오너": "주차/카오너",
@@ -188,3 +189,113 @@ export const getTenureCategory = (months: number): string => {
   if (months < 12) return "6개월 이상"
   return "12개월 이상"
 }
+
+// ============================================================
+// QA(품질보증) 평가항목 상수
+// ============================================================
+
+import type { QAEvaluationItem } from "./types"
+
+// QA 평가항목 (유선+채팅 통합, channelScope로 구분)
+export const QA_EVALUATION_ITEMS: QAEvaluationItem[] = [
+  // 공통 항목
+  { id: "qa_greeting", category: "공통", name: "인사예절", shortName: "인사", columnKey: "greetingScore", maxScore: 6, channelScope: "all" },
+  { id: "qa_response", category: "공통", name: "화답표현", shortName: "화답", columnKey: "responseExpression", maxScore: 5, channelScope: "all" },
+  { id: "qa_inquiry", category: "공통", name: "문의내용파악", shortName: "문의파악", columnKey: "inquiryComprehension", maxScore: 5, channelScope: "all" },
+  { id: "qa_identity", category: "공통", name: "본인확인", shortName: "본인확인", columnKey: "identityCheck", maxScore: 5, channelScope: "all" },
+  { id: "qa_search", category: "공통", name: "필수탐색", shortName: "필수탐색", columnKey: "requiredSearch", maxScore: 5, channelScope: "all" },
+  { id: "qa_knowledge", category: "공통", name: "업무지식", shortName: "업무지식", columnKey: "businessKnowledge", maxScore: 15, channelScope: "all" },
+  { id: "qa_promptness", category: "공통", name: "신속성", shortName: "신속성", columnKey: "promptness", maxScore: 3, channelScope: "all" },
+  { id: "qa_system", category: "공통", name: "전산처리", shortName: "전산처리", columnKey: "systemProcessing", maxScore: 6, channelScope: "all" },
+  { id: "qa_history", category: "공통", name: "상담이력", shortName: "상담이력", columnKey: "consultationHistory", maxScore: 5, channelScope: "all" },
+  { id: "qa_empathy", category: "공통", name: "감성케어", shortName: "감성케어", columnKey: "empathyCare", maxScore: 17, channelScope: "all" },
+  { id: "qa_language", category: "공통", name: "언어표현", shortName: "언어표현", columnKey: "languageExpression", maxScore: 5, channelScope: "all" },
+  { id: "qa_listening", category: "공통", name: "경청/집중태도", shortName: "경청", columnKey: "listeningFocus", maxScore: 5, channelScope: "all" },
+  { id: "qa_explain", category: "공통", name: "설명능력", shortName: "설명능력", columnKey: "explanationAbility", maxScore: 5, channelScope: "all" },
+  { id: "qa_satisfaction", category: "공통", name: "체감만족", shortName: "체감만족", columnKey: "perceivedSatisfaction", maxScore: 3, channelScope: "all" },
+  { id: "qa_praise", category: "공통", name: "칭찬접수", shortName: "칭찬", columnKey: "praiseBonus", maxScore: 10, channelScope: "all" },
+  // 유선 전용
+  { id: "qa_voice", category: "유선전용", name: "음성연출", shortName: "음성연출", columnKey: "voicePerformance", maxScore: 8, channelScope: "voice" },
+  { id: "qa_speech", category: "유선전용", name: "말속도/발음", shortName: "말속도", columnKey: "speechSpeed", maxScore: 2, channelScope: "voice" },
+  { id: "qa_honorific", category: "유선전용", name: "호칭오류", shortName: "호칭오류", columnKey: "honorificError", maxScore: -1, channelScope: "voice" },
+  // 채팅 전용
+  { id: "qa_spelling", category: "채팅전용", name: "맞춤법", shortName: "맞춤법", columnKey: "spelling", maxScore: 5, channelScope: "chat" },
+  { id: "qa_close", category: "채팅전용", name: "종료요청", shortName: "종료요청", columnKey: "closeRequest", maxScore: 3, channelScope: "chat" },
+  { id: "qa_copy_err", category: "채팅전용", name: "복사오류", shortName: "복사오류", columnKey: "copyError", maxScore: -1, channelScope: "chat" },
+  { id: "qa_op_err", category: "채팅전용", name: "조작오류", shortName: "조작오류", columnKey: "operationError", maxScore: -1, channelScope: "chat" },
+]
+
+// 채널별 필터링 헬퍼
+export const QA_COMMON_ITEMS = QA_EVALUATION_ITEMS.filter(i => i.channelScope === "all")
+export const QA_VOICE_ONLY_ITEMS = QA_EVALUATION_ITEMS.filter(i => i.channelScope === "voice")
+export const QA_CHAT_ONLY_ITEMS = QA_EVALUATION_ITEMS.filter(i => i.channelScope === "chat")
+
+// QA 채널별 만점 기준
+export const QA_VOICE_TOTAL = 100 // 유선 만점
+export const QA_CHAT_TOTAL = 100  // 채팅 만점
+
+// QA 점수 등급 구간
+export const QA_SCORE_GRADES = [
+  { label: "우수", min: 92, color: "#22c55e" },
+  { label: "양호", min: 90, color: "#3b82f6" },
+  { label: "보통", min: 88, color: "#f59e0b" },
+  { label: "미흡", min: 85, color: "#f97316" },
+  { label: "부진", min: 0, color: "#ef4444" },
+] as const
+
+export function getQAScoreGrade(score: number): typeof QA_SCORE_GRADES[number] {
+  return QA_SCORE_GRADES.find(g => score >= g.min) || QA_SCORE_GRADES[QA_SCORE_GRADES.length - 1]
+}
+
+// ============================================================
+// CSAT(상담평점) 상수
+// ============================================================
+
+// CSAT 점수 분포 색상
+export const CSAT_SCORE_COLORS: Record<number, string> = {
+  5: "#22c55e",
+  4: "#3b82f6",
+  3: "#f59e0b",
+  2: "#f97316",
+  1: "#ef4444",
+}
+
+// CSAT 목표 평점
+export const CSAT_TARGET_SCORE = 4.5
+
+// ============================================================
+// 통합 리스크 가중치
+// ============================================================
+
+export const RISK_WEIGHTS = {
+  qa: 0.30,     // QA 점수 (30%)
+  qc: 0.30,     // QC 오류율 (30%)
+  csat: 0.25,   // CSAT 평점 (25%)
+  knowledge: 0.15, // 직무테스트 (15%)
+} as const
+
+export const RISK_THRESHOLDS = {
+  low: 30,
+  medium: 50,
+  high: 70,
+  critical: 85,
+} as const
+
+// 리스크 레벨 UI 설정
+export const RISK_LEVEL_CONFIG = {
+  low:      { label: "양호", color: "#22c55e" },
+  medium:   { label: "주의", color: "#f59e0b" },
+  high:     { label: "위험", color: "#f97316" },
+  critical: { label: "심각", color: "#ef4444" },
+} as const
+
+// 도메인 라벨
+export const DOMAIN_LABELS: Record<string, string> = {
+  qa: "QA (SLA)",
+  qc: "QC",
+  csat: "상담평점",
+  quiz: "직무테스트",
+}
+
+// QC 오류율 정규화 상한 (20% → 100점 환산)
+export const QC_RATE_CAP = 20

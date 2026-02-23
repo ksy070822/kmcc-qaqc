@@ -348,3 +348,323 @@ export interface UnderperformingAgent {
   createdAt: string
   updatedAt: string
 }
+
+// ============================================================
+// QA(품질보증) 평가 관련 타입
+// ============================================================
+
+export interface QAEvaluation {
+  qaEvalId: string          // "{agent_id}_{month}_{round}"
+  evaluationDate: string    // YYYY-MM-DD (평가월 1일)
+  evaluationMonth: string   // "2026-01"
+  round: number             // 차시 1~5
+  consultationId?: string
+
+  // 상담사 정보
+  center: "용산" | "광주"
+  team?: string
+  service: string
+  channel: "유선" | "채팅"
+  agentName: string
+  agentId?: string
+  tenureMonths?: number
+  workType?: string         // 주간/야간
+
+  // 총점
+  totalScore: number        // 0~100
+
+  // 공통 항목 (유선+채팅)
+  greetingScore?: number          // 인사예절
+  responseExpression?: number     // 화답표현
+  inquiryComprehension?: number   // 문의내용파악
+  identityCheck?: number          // 본인확인
+  requiredSearch?: number         // 필수탐색
+  businessKnowledge?: number      // 업무지식
+  promptness?: number             // 신속성
+  systemProcessing?: number       // 전산처리
+  consultationHistory?: number    // 상담이력
+  empathyCare?: number            // 감성케어
+  languageExpression?: number     // 언어표현
+  listeningFocus?: number         // 경청/집중태도
+  explanationAbility?: number     // 설명능력
+  perceivedSatisfaction?: number  // 체감만족
+  praiseBonus?: number            // 칭찬접수(+10)
+
+  // 유선 전용
+  voicePerformance?: number       // 음성연출
+  speechSpeed?: number            // 말속도/발음
+  honorificError?: number         // 호칭오류(-1)
+
+  // 채팅 전용
+  spelling?: number               // 맞춤법
+  closeRequest?: number           // 종료요청
+  copyError?: number              // 복사오류(-1)
+  operationError?: number         // 조작오류(-1)
+
+  // 상담유형
+  consultTypeDepth1?: string
+  consultTypeDepth2?: string
+  consultTypeDepth3?: string
+  consultTypeDepth4?: string
+
+  // 피드백
+  knowledgeFeedback?: string
+  satisfactionComment?: string
+}
+
+export interface QAEvaluationItem {
+  id: string
+  category: "공통" | "유선전용" | "채팅전용"
+  name: string
+  shortName: string
+  columnKey: string       // QAEvaluation 필드명
+  maxScore: number        // 배점
+  channelScope: "all" | "voice" | "chat"
+}
+
+export interface QADashboardStats {
+  avgScore: number            // 전체 평균 점수
+  totalEvaluations: number    // 총 평가 건수
+  evaluatedAgents: number     // 평가 대상 상담사 수
+  yongsanAvgScore: number
+  gwangjuAvgScore: number
+  yongsanEvaluations: number
+  gwangjuEvaluations: number
+  voiceAvgScore: number       // 유선 평균
+  chatAvgScore: number        // 채팅 평균
+  monthLabel: string          // "2026-02"
+  // 전월 대비
+  prevMonthAvgScore?: number
+  scoreTrend?: number         // 전월 대비 증감
+}
+
+export interface QACenterStats {
+  center: string
+  avgScore: number
+  evaluations: number
+  services: Array<{
+    name: string
+    channel: "유선" | "채팅"
+    avgScore: number
+    evaluations: number
+  }>
+}
+
+export interface QAItemStats {
+  itemName: string
+  shortName: string
+  maxScore: number
+  avgScore: number
+  avgRate: number    // avgScore / maxScore * 100
+  category: string
+}
+
+export interface QATrendData {
+  month: string       // "2026-01"
+  용산: number
+  광주: number
+  전체: number
+}
+
+export interface QAMonthlyRow {
+  month: string
+  center: string
+  service: string
+  channel: string
+  evaluations: number
+  avgScore: number
+  minScore: number
+  maxScore: number
+}
+
+export interface QAConsultTypeStats {
+  depth1: string
+  depth2?: string
+  count: number
+  avgScore: number
+}
+
+// ============================================================
+// CSAT(상담평점) 관련 타입
+// ============================================================
+
+export interface CSATDashboardStats {
+  avgScore: number            // 평균 평점 (5점 만점)
+  totalReviews: number        // 총 리뷰 수
+  score5Rate: number          // 5점 비율 (%)
+  score4Rate: number
+  score3Rate: number
+  score2Rate: number
+  score1Rate: number
+  yongsanAvgScore: number
+  gwangjuAvgScore: number
+  // 전일/전주 대비
+  prevAvgScore?: number
+  scoreTrend?: number
+}
+
+export interface CSATTrendData {
+  date: string          // YYYY-MM-DD
+  용산: number
+  광주: number
+  전체: number
+}
+
+export interface CSATDailyRow {
+  date: string
+  center: string
+  reviewCount: number
+  avgScore: number
+  score5Count: number
+  score4Count: number
+  score3Count: number
+  score2Count: number
+  score1Count: number
+}
+
+export interface CSATServiceStats {
+  service: string
+  center: string
+  avgScore: number
+  reviewCount: number
+  trend?: number
+}
+
+export interface CSATTagRow {
+  tag: string
+  optionType: "POSITIVE" | "NEGATIVE"
+  count: number
+  avgScore: number
+}
+
+// ============================================================
+// 직무테스트(Quiz) 관련 타입
+// ============================================================
+
+export interface QuizDashboardStats {
+  avgScore: number            // 평균 점수 (100점)
+  totalSubmissions: number    // 총 응시 건수
+  uniqueAgents: number        // 응시 상담사 수
+  passRate: number            // 합격률 (80점 이상, %)
+  yongsanAvgScore: number
+  gwangjuAvgScore: number
+  prevAvgScore?: number
+  scoreTrend?: number
+}
+
+export interface QuizTrendData {
+  month: string         // "2026-02"
+  용산: number
+  광주: number
+  전체: number
+  submissions: number
+  passRate: number
+}
+
+export interface QuizAgentRow {
+  userId: string
+  userName?: string
+  center: string
+  month: string
+  avgScore: number
+  maxScore: number
+  attemptCount: number
+  passCount: number
+}
+
+// ============================================================
+// 통합 월간 요약 타입
+// ============================================================
+
+export interface AgentMonthlySummary {
+  summaryId: string         // "{agent_id}_{month}"
+  summaryMonth: string
+  agentId: string
+  agentName?: string
+  center: string
+  service?: string
+  channel?: string
+  workType?: string
+
+  // QA 지표
+  qaScore?: number          // QA 평균 점수 (100점)
+  qaEvalCount?: number
+
+  // QC 지표
+  qcAttitudeRate?: number   // 태도 오류율 (%)
+  qcOpsRate?: number        // 오상담 오류율 (%)
+  qcTotalRate?: number
+  qcEvalCount?: number
+
+  // CSAT 지표
+  csatAvgScore?: number     // 평균 평점 (5점)
+  csatReviewCount?: number
+
+  // 직무테스트
+  knowledgeScore?: number
+  knowledgeTestCount?: number
+
+  // 종합 리스크
+  compositeRiskScore?: number
+  riskLevel?: "low" | "medium" | "high" | "critical"
+  aiComment?: string
+}
+
+// ============================================================
+// 통합분석 대시보드 타입
+// ============================================================
+
+// 통합 대시보드 KPI
+export interface IntegratedDashboardStats {
+  month: string
+  totalAgents: number
+  agentsWithData: number
+  avgRiskScore: number
+  riskDistribution: { low: number; medium: number; high: number; critical: number }
+  domainAverages: { qa: number; qcRate: number; csat: number; quiz: number }
+  centerComparison: Array<{
+    center: string
+    avgRisk: number
+    agents: number
+    qa: number
+    qcRate: number
+    csat: number
+    quiz: number
+  }>
+}
+
+// 상담사 통합 프로파일 (모달용)
+export interface AgentIntegratedProfile {
+  agentId: string
+  agentName: string
+  center: string
+  service?: string
+  channel?: string
+  current: AgentMonthlySummary
+  monthlyTrend: Array<{
+    month: string
+    qaScore?: number
+    qcRate?: number
+    csatScore?: number
+    quizScore?: number
+    riskScore?: number
+  }>
+  domainCoverage: { qa: boolean; qc: boolean; csat: boolean; quiz: boolean }
+  strengthWeakness: Array<{
+    domain: string
+    level: "strong" | "normal" | "weak" | "nodata"
+    note: string
+  }>
+}
+
+// 교차분석 결과
+export interface CrossAnalysisResult {
+  correlations: Array<{
+    domainA: string
+    domainB: string
+    correlation: number
+    sampleSize: number
+  }>
+  weakInOnlyOne: Array<AgentMonthlySummary & { weakDomain: string }>
+  riskDistribution: Record<string, number>
+}
