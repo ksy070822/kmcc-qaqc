@@ -5,6 +5,7 @@ import { QAOverviewSection } from "./qa-overview-section"
 import { QAScoreTrendChart } from "./qa-score-trend-chart"
 import { QACenterComparison } from "./qa-center-comparison"
 import { QAItemAnalysis } from "./qa-item-analysis"
+import { QAItemAnalysisV2 } from "./qa-item-analysis-v2"
 import { QAMonthlyTable } from "./qa-monthly-table"
 import { QAAgentAnalysis } from "./qa-agent-analysis"
 import { DashboardFilters } from "@/components/qc/dashboard/dashboard-filters"
@@ -23,6 +24,7 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("item")
+  const [itemViewV2, setItemViewV2] = useState(false)
   // 기본: externalMonth 또는 이전 달 (현재 월에는 데이터가 없을 수 있음)
   const defaultMonth = externalMonth || (() => {
     const d = new Date()
@@ -115,7 +117,27 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
           ))}
         </div>
 
-        {activeTab === "item" && <QAItemAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
+        {activeTab === "item" && (
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <button
+                onClick={() => setItemViewV2(v => !v)}
+                className={cn(
+                  "px-2.5 py-1 text-[11px] rounded-md border transition-colors cursor-pointer",
+                  itemViewV2
+                    ? "bg-slate-700 text-white border-slate-700"
+                    : "bg-white text-slate-500 border-slate-300 hover:bg-slate-50"
+                )}
+              >
+                {itemViewV2 ? "V2 통합테이블" : "V1 가로차트"} 보기 중 · 전환
+              </button>
+            </div>
+            {itemViewV2
+              ? <QAItemAnalysisV2 center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+              : <QAItemAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+            }
+          </div>
+        )}
         {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
         {activeTab === "agent" && <QAAgentAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
       </div>
