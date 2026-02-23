@@ -698,3 +698,104 @@ export interface CrossAnalysisResult {
   weakInOnlyOne: Array<AgentMonthlySummary & { weakDomain: string }>
   riskDistribution: Record<string, number>
 }
+
+// ============================================================
+// Mypage 상담사 상세 타입
+// ============================================================
+
+export interface MypageProfile {
+  qcRate: number
+  qcPrevRate: number
+  qcGroupAvg: number
+  csatScore: number
+  csatPrevScore: number
+  csatGroupAvg: number
+  qaScore: number
+  qaPrevScore: number
+  qaGroupAvg: number
+  quizScore: number
+  quizPrevScore: number
+  quizGroupAvg: number
+  trendData: Array<{
+    month: string
+    qcRate: number
+    csatScore: number
+    qaScore: number
+    quizScore: number
+  }>
+}
+
+export interface MypageQCDetail {
+  evaluationCount: number
+  attitudeErrorRate: number
+  opsErrorRate: number
+  totalErrorRate: number
+  attitudeTarget: number
+  opsTarget: number
+  prevAttRate: number
+  prevOpsRate: number
+  centerAvgAttRate: number
+  centerAvgOpsRate: number
+  monthlyTrend: Array<{ month: string; attRate: number; opsRate: number }>
+  topErrors: Array<{ item: string; count: number }>
+  radarData: Array<{ label: string; value: number; groupAvg: number; fullMark: number }>
+  recentEvaluations: Array<{
+    evaluationDate: string
+    consultId: string
+    service: string
+    errorItems: string[]
+    result: string
+  }>
+}
+
+export interface MypageCSATDetail {
+  totalReviews: number
+  avgScore: number
+  score5Rate: number
+  lowScoreRate: number
+  prevMonthAvg: number
+  centerAvg: number
+  monthlyTrend: Array<{ month: string; agentAvg: number; centerAvg: number }>
+  recentReviews: Array<{
+    date: string
+    consultId: string
+    service: string
+    score: number
+    comment: string
+  }>
+}
+
+export interface MypageQADetail {
+  empathyCareAvg: number
+  businessSystemAvg: number
+  totalScore: number
+  evalCount: number
+  prevMonthScore: number
+  centerAvg: number
+  monthlyTrend: Array<{ month: string; agentScore: number; centerAvg: number }>
+  radarData: Array<{ label: string; value: number; groupAvg: number; fullMark: number }>
+  itemComparison: Array<{
+    itemName: string
+    currentScore: number
+    prevScore: number
+    gap: number
+  }>
+}
+
+export interface MypageQuizDetail {
+  attemptCount: number
+  avgScore: number
+  prevMonthScore: number
+  centerAvg: number
+  groupPercentile: number
+  passed: boolean
+  monthlyTrend: Array<{ month: string; agentScore: number; centerAvg: number }>
+  radarData: Array<{ label: string; value: number; groupAvg: number; fullMark: number }>
+  attempts: Array<{
+    date: string
+    service: string
+    score: number
+    passed: boolean
+    centerAvg: number
+  }>
+}
