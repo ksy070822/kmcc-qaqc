@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { MypageBackButton } from "@/components/mypage/mypage-back-button"
 import { MypageKpiCard } from "@/components/mypage/mypage-kpi-card"
-import { MypageRadarChart } from "@/components/mypage/mypage-radar-chart"
 import { useMypageQuizDetail } from "@/hooks/use-mypage-quiz-detail"
 import {
-  LineChart,
+  ComposedChart,
+  Bar,
   Line,
   XAxis,
   YAxis,
@@ -16,6 +16,7 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts"
 import { Loader2 } from "lucide-react"
 
@@ -78,42 +79,37 @@ export function MypageQuizDetail({ agentId, onBack }: MypageQuizDetailProps) {
         />
       </div>
 
-      {/* Score Trend + Radar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-xl p-5">
-          <p className="text-sm font-medium text-slate-700 mb-4">점수 추이 (6개월)</p>
-          {(data?.monthlyTrend ?? []).length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
-                <XAxis
-                  dataKey="month"
-                  tick={{ fontSize: 11, fill: "#666666" }}
-                  axisLine={{ stroke: "#D9D9D9" }}
-                  tickFormatter={(v: string) => {
-                    const parts = v.split("-")
-                    return `${parts[0].slice(2)}.${parts[1]}`
-                  }}
-                />
-                <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
-                <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
-                  labelStyle={{ color: "#000000", fontWeight: 600 }}
-                  formatter={(v: number, name: string) => [`${v}점`, name]}
-                />
-                <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
-                <Line type="monotone" dataKey="agentScore" name="본인 점수" stroke="#6B93D6" strokeWidth={2.5} dot={{ r: 3, fill: "#6B93D6" }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex items-center justify-center h-40 text-sm text-slate-400">추이 데이터가 없습니다</div>
-          )}
-        </div>
-
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <MypageRadarChart data={data?.radarData ?? []} title="서비스별 역량" height={280} />
-        </div>
+      {/* Score Trend — 본인 점수(바) + 센터 평균(라인) */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <p className="text-sm font-medium text-slate-700 mb-4">최근 6개월 점수 추이</p>
+        {(data?.monthlyTrend ?? []).length > 0 ? (
+          <ResponsiveContainer width="100%" height={300}>
+            <ComposedChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+              <XAxis
+                dataKey="month"
+                tick={{ fontSize: 11, fill: "#666666" }}
+                axisLine={{ stroke: "#D9D9D9" }}
+                tickFormatter={(v: string) => {
+                  const parts = v.split("-")
+                  return `${parts[0].slice(2)}.${parts[1]}`
+                }}
+              />
+              <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
+              <Tooltip
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                labelStyle={{ color: "#000000", fontWeight: 600 }}
+                formatter={(v: number, name: string) => [`${v}점`, name]}
+              />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+              <ReferenceLine y={90} stroke="#DD2222" strokeDasharray="6 3" strokeOpacity={0.5} label={{ value: "합격 90", fontSize: 10, fill: "#DD2222" }} />
+              <Bar dataKey="agentScore" name="본인 점수" fill="#2c6edb" barSize={28} radius={[4, 4, 0, 0]} />
+              <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={2} strokeDasharray="5 5" dot={{ r: 3, fill: "#9E9E9E" }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="flex items-center justify-center h-40 text-sm text-slate-400">추이 데이터가 없습니다</div>
+        )}
       </div>
 
       {/* Test History Table */}
