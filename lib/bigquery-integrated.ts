@@ -193,11 +193,11 @@ export async function getAgentMonthlySummaries(
           s.user_id AS agent_id,
           ANY_VALUE(s.user_name) AS user_name,
           ANY_VALUE(${QUIZ_CENTER_SQL}) AS center,
-          AVG(s.score) AS avg_score,
+          AVG(COALESCE(s.score, s.percentage)) AS avg_score,
           COUNT(*) AS test_count
         FROM ${SUBMISSIONS} s
         WHERE s.exam_mode = 'exam'
-          AND s.score IS NOT NULL
+          AND COALESCE(s.score, s.percentage) IS NOT NULL
           AND s.month = @month
         GROUP BY s.user_id
       ),
@@ -431,12 +431,12 @@ export async function getAgentIntegratedProfile(
       quiz_trend AS (
         SELECT
           s.month,
-          AVG(s.score) AS avg_score,
+          AVG(COALESCE(s.score, s.percentage)) AS avg_score,
           COUNT(*) AS test_count
         FROM ${SUBMISSIONS} s
         WHERE s.user_id = @agentId
           AND s.exam_mode = 'exam'
-          AND s.score IS NOT NULL
+          AND COALESCE(s.score, s.percentage) IS NOT NULL
           AND s.month IN (SELECT month FROM months)
         GROUP BY s.month
       )
