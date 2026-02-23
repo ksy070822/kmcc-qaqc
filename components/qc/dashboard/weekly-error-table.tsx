@@ -10,7 +10,11 @@ import { useWeeklyErrors } from "@/hooks/use-weekly-errors"
 const attitudeItems = evaluationItems.filter((item) => item.category === "상담태도")
 const businessItems = evaluationItems.filter((item) => item.category === "오상담/오처리")
 
-export function WeeklyErrorTable() {
+interface WeeklyErrorTableProps {
+  selectedCenter?: string
+}
+
+export function WeeklyErrorTable({ selectedCenter }: WeeklyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
 
   // 최근 6주 데이터 가져오기
@@ -22,6 +26,7 @@ export function WeeklyErrorTable() {
   const { data: weeklyErrorsData, loading, error } = useWeeklyErrors({
     startDate: startDateStr,
     endDate,
+    center: selectedCenter && selectedCenter !== "all" ? selectedCenter : undefined,
   })
 
   // 데이터 변환 (과거→최신 정렬)

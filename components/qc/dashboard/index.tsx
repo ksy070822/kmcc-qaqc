@@ -18,23 +18,33 @@ import { cn } from "@/lib/utils"
 interface DashboardProps {
   onNavigateToFocus: () => void
   selectedDate?: string
+  externalStartDate?: string
+  externalEndDate?: string
 }
 
-export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
+export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, externalEndDate }: DashboardProps) {
   const [selectedCenter, setSelectedCenter] = useState("all")
   const [selectedService, setSelectedService] = useState("all")
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("item")
-  // 필터 날짜 범위
-  const [filterStartDate, setFilterStartDate] = useState<string | undefined>(undefined)
-  const [filterEndDate, setFilterEndDate] = useState<string | undefined>(undefined)
+  // 필터 날짜 범위 (외부 날짜 우선)
+  const [filterStartDate, setFilterStartDate] = useState<string | undefined>(externalStartDate)
+  const [filterEndDate, setFilterEndDate] = useState<string | undefined>(externalEndDate)
 
   // 클라이언트 마운트 확인 (hydration 안전)
   useEffect(() => {
     setIsMounted(true)
   }, [])
+
+  // 외부 날짜 범위 → 필터 동기화
+  useEffect(() => {
+    if (externalStartDate && externalEndDate) {
+      setFilterStartDate(externalStartDate)
+      setFilterEndDate(externalEndDate)
+    }
+  }, [externalStartDate, externalEndDate])
 
   // BigQuery에서 실제 데이터 가져오기 (selectedDate + 필터 날짜 범위 전달)
   const { stats, centerStats, trendData, weeklyTrendData, loading, error, refresh } = useDashboardData(
@@ -233,9 +243,9 @@ export function Dashboard({ onNavigateToFocus, selectedDate }: DashboardProps) {
           />
         )}
 
-        {activeTab === "daily" && <DailyErrorTable />}
+        {activeTab === "daily" && <DailyErrorTable selectedCenter={selectedCenter} />}
 
-        {activeTab === "weekly" && <WeeklyErrorTable />}
+        {activeTab === "weekly" && <WeeklyErrorTable selectedCenter={selectedCenter} />}
 
         {activeTab === "tenure" && <TenureErrorTable />}
 

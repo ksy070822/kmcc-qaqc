@@ -401,23 +401,14 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                 </tr>
               </thead>
               <tbody>
-                {(selectedCategory === "all" ? itemData : itemData.filter((i) => i.category === selectedCategory)).map((item) => (
+                {/* 상담태도 항목 */}
+                {(selectedCategory === "all" || selectedCategory === "상담태도") && attitudeItems.map((item) => (
                   <tr key={item.id}>
                     <td>
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "text-xs",
-                          item.category === "상담태도"
-                            ? "border-[#6B93D6] text-[#6B93D6] bg-slate-50"
-                            : "border-[#9E9E9E] text-[#9E9E9E] bg-orange-50",
-                        )}
-                      >
-                        {item.category === "상담태도" ? "태도" : "업무"}
-                      </Badge>
+                      <Badge variant="outline" className="text-xs border-[#6B93D6] text-[#6B93D6] bg-slate-50">태도</Badge>
                     </td>
                     <td className="text-left font-medium">
-                      <span className={cn("mr-1", item.category === "상담태도" ? "text-[#6B93D6]" : "text-[#9E9E9E]")}>&#9679;</span>
+                      <span className="text-[#6B93D6] mr-1">&#9679;</span>
                       {item.name}
                     </td>
                     <td>{item.errorCount}건</td>
@@ -427,6 +418,76 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                     </td>
                   </tr>
                 ))}
+                {/* 태도 합계 */}
+                {(selectedCategory === "all" || selectedCategory === "상담태도") && (() => {
+                  const attCount = attitudeItems.reduce((s, i) => s + i.errorCount, 0)
+                  const attRate = attitudeItems.reduce((s, i) => s + i.errorRate, 0)
+                  const attTrend = attitudeItems.reduce((s, i) => s + i.trend, 0)
+                  return (
+                    <tr className="bg-blue-50 font-bold">
+                      <td />
+                      <td className="text-left text-[#6B93D6]">태도 합계</td>
+                      <td className="text-[#6B93D6]">{attCount}건</td>
+                      <td className="text-[#6B93D6]">{attRate.toFixed(2)}%</td>
+                      <td className={cn("font-semibold", trendColor(attTrend))}>
+                        {attTrend > 0 ? "+" : ""}{attTrend.toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })()}
+
+                {/* 오상담/오처리 항목 */}
+                {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && processItems.map((item) => (
+                  <tr key={item.id}>
+                    <td>
+                      <Badge variant="outline" className="text-xs border-[#9E9E9E] text-[#9E9E9E] bg-orange-50">업무</Badge>
+                    </td>
+                    <td className="text-left font-medium">
+                      <span className="text-[#9E9E9E] mr-1">&#9679;</span>
+                      {item.name}
+                    </td>
+                    <td>{item.errorCount}건</td>
+                    <td className="font-semibold">{item.errorRate.toFixed(2)}%</td>
+                    <td className={cn("font-medium", trendColor(item.trend))}>
+                      {item.trend > 0 ? "+" : ""}{item.trend.toFixed(2)}%
+                    </td>
+                  </tr>
+                ))}
+                {/* 업무 합계 */}
+                {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && (() => {
+                  const procCount = processItems.reduce((s, i) => s + i.errorCount, 0)
+                  const procRate = processItems.reduce((s, i) => s + i.errorRate, 0)
+                  const procTrend = processItems.reduce((s, i) => s + i.trend, 0)
+                  return (
+                    <tr className="bg-orange-50 font-bold">
+                      <td />
+                      <td className="text-left text-[#9E9E9E]">업무 합계</td>
+                      <td className="text-[#9E9E9E]">{procCount}건</td>
+                      <td className="text-[#9E9E9E]">{procRate.toFixed(2)}%</td>
+                      <td className={cn("font-semibold", trendColor(procTrend))}>
+                        {procTrend > 0 ? "+" : ""}{procTrend.toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })()}
+
+                {/* 전체 합계 */}
+                {selectedCategory === "all" && (() => {
+                  const allCount = itemData.reduce((s, i) => s + i.errorCount, 0)
+                  const allRate = itemData.reduce((s, i) => s + i.errorRate, 0)
+                  const allTrend = itemData.reduce((s, i) => s + i.trend, 0)
+                  return (
+                    <tr className="bg-gray-100 font-bold">
+                      <td />
+                      <td className="text-left">전체 합계</td>
+                      <td>{allCount}건</td>
+                      <td>{allRate.toFixed(2)}%</td>
+                      <td className={cn("font-semibold", trendColor(allTrend))}>
+                        {allTrend > 0 ? "+" : ""}{allTrend.toFixed(2)}%
+                      </td>
+                    </tr>
+                  )
+                })()}
               </tbody>
             </table>
           </div>

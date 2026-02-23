@@ -10,18 +10,23 @@ import { Loader2 } from "lucide-react"
 const NAVY = "#6B93D6"
 const KAKAO = "#9E9E9E"
 
-export function DailyErrorTable() {
+interface DailyErrorTableProps {
+  selectedCenter?: string
+}
+
+export function DailyErrorTable({ selectedCenter }: DailyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
-  
-  // 최근 30일 데이터 가져오기
+
+  // 최근 14일 데이터 가져오기
   const endDate = new Date().toISOString().split("T")[0]
   const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 30)
+  startDate.setDate(startDate.getDate() - 14)
   const startDateStr = startDate.toISOString().split("T")[0]
-  
+
   const { data: dailyErrorsData, loading, error } = useDailyErrors({
     startDate: startDateStr,
     endDate,
+    center: selectedCenter && selectedCenter !== "all" ? selectedCenter : undefined,
   })
 
   // 데이터 변환: API 데이터를 테이블 형식으로 변환

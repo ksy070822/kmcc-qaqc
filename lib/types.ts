@@ -436,6 +436,15 @@ export interface QADashboardStats {
   // 전월 대비
   prevMonthAvgScore?: number
   scoreTrend?: number         // 전월 대비 증감
+  prevVoiceAvgScore?: number
+  prevChatAvgScore?: number
+  voiceTrend?: number
+  chatTrend?: number
+  // 센터+채널 교차
+  yongsanVoiceAvg?: number
+  yongsanChatAvg?: number
+  gwangjuVoiceAvg?: number
+  gwangjuChatAvg?: number
 }
 
 export interface QACenterStats {
@@ -482,6 +491,20 @@ export interface QAConsultTypeStats {
   depth2?: string
   count: number
   avgScore: number
+}
+
+export interface QAAgentPerformance {
+  agentName: string
+  agentId?: string
+  center: string
+  service: string
+  channel: string
+  evaluations: number
+  avgScore: number
+  groupAvg: number
+  diff: number           // avgScore - groupAvg
+  groupTotal: number     // 그룹 전체 인원 (5회+ 평가 기준)
+  weakItems: string[]    // 그룹 평균 대비 취약 항목명
 }
 
 // ============================================================
@@ -545,7 +568,7 @@ export interface QuizDashboardStats {
   avgScore: number            // 평균 점수 (100점)
   totalSubmissions: number    // 총 응시 건수
   uniqueAgents: number        // 응시 상담사 수
-  passRate: number            // 합격률 (80점 이상, %)
+  passRate: number            // 합격률 (90점 이상, %)
   yongsanAvgScore: number
   gwangjuAvgScore: number
   prevAvgScore?: number
@@ -570,6 +593,13 @@ export interface QuizAgentRow {
   maxScore: number
   attemptCount: number
   passCount: number
+}
+
+export interface QuizServiceTrendRow {
+  month: string
+  service: string
+  avgScore: number
+  submissions: number
 }
 
 // ============================================================

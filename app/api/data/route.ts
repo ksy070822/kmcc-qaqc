@@ -14,6 +14,10 @@ import {
   getAgentDetail,
   warmupHrCache,
 } from "@/lib/bigquery"
+import { getQADashboardStats, getQACenterStats, getQAScoreTrend, getQAItemStats, getQAMonthlyTable, getQAConsultTypeStats, getQAAgentPerformance, getQAUnderperformerCount } from "@/lib/bigquery-qa"
+import { getCSATDashboardStats, getCSATScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats } from "@/lib/bigquery-csat"
+import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizServiceTrend } from "@/lib/bigquery-quiz"
+import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
 import { getCorsHeaders } from "@/lib/cors"
 
 const bq = new BigQuery({
@@ -446,6 +450,176 @@ export async function GET(request: Request) {
         }, { headers: corsHeaders })
       }
 
+      // ── QA(품질보증) 평가 ──
+      case "qa-dashboard":
+        result = await getQADashboardStats(
+          searchParams.get("startMonth"),
+          searchParams.get("endMonth")
+        )
+        break
+
+      case "qa-centers":
+        result = await getQACenterStats(
+          searchParams.get("startMonth"),
+          searchParams.get("endMonth")
+        )
+        break
+
+      case "qa-trend": {
+        const qaMonths = parseInt(searchParams.get("months") || "6")
+        result = await getQAScoreTrend(qaMonths)
+        break
+      }
+
+      case "qa-item-stats":
+        result = await getQAItemStats({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          tenure: searchParams.get("tenure") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
+        break
+
+      case "qa-monthly":
+        result = await getQAMonthlyTable({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          tenure: searchParams.get("tenure") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
+        break
+
+      case "qa-consult-type":
+        result = await getQAConsultTypeStats({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          tenure: searchParams.get("tenure") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
+        break
+
+      case "qa-agent-performance":
+        result = await getQAAgentPerformance({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          tenure: searchParams.get("tenure") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
+        break
+
+      case "qa-underperformer-count":
+        result = await getQAUnderperformerCount(
+          searchParams.get("startMonth"),
+          searchParams.get("endMonth")
+        )
+        break
+
+      // ── CSAT(상담평점) ──
+      case "csat-dashboard":
+        result = await getCSATDashboardStats(
+          searchParams.get("startDate"),
+          searchParams.get("endDate")
+        )
+        break
+
+      case "csat-trend": {
+        const csatDays = parseInt(searchParams.get("days") || "30")
+        result = await getCSATScoreTrend(csatDays)
+        break
+      }
+
+      case "csat-service":
+        result = await getCSATServiceStats({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          startDate: searchParams.get("startDate") || undefined,
+          endDate: searchParams.get("endDate") || undefined,
+        })
+        break
+
+      case "csat-daily":
+        result = await getCSATDailyTable({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          startDate: searchParams.get("startDate") || undefined,
+          endDate: searchParams.get("endDate") || undefined,
+        })
+        break
+
+      case "csat-tags":
+        result = await getCSATTagStats({
+          center: searchParams.get("center") || undefined,
+          startDate: searchParams.get("startDate") || undefined,
+          endDate: searchParams.get("endDate") || undefined,
+        })
+        break
+
+      // ── 직무테스트(Quiz) ──
+      case "quiz-dashboard":
+        result = await getQuizDashboardStats(
+          searchParams.get("startMonth"),
+          searchParams.get("endMonth")
+        )
+        break
+
+      case "quiz-trend": {
+        const quizMonths = parseInt(searchParams.get("months") || "6")
+        result = await getQuizScoreTrend(quizMonths)
+        break
+      }
+
+      case "quiz-agents":
+        result = await getQuizAgentStats({
+          center: searchParams.get("center") || undefined,
+          month: searchParams.get("month") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
+        break
+
+      case "quiz-service-trend":
+        result = await getQuizServiceTrend({
+          center: searchParams.get("center") || undefined,
+          months: parseInt(searchParams.get("months") || "6"),
+        })
+        break
+
+      // ── 통합분석 ──
+      case "agent-summary":
+        result = await getAgentMonthlySummaries({
+          month: searchParams.get("month") || new Date().toISOString().slice(0, 7),
+          center: searchParams.get("center") || undefined,
+        })
+        break
+
+      case "agent-profile": {
+        const profileAgentId = searchParams.get("agentId")
+        if (!profileAgentId) {
+          return NextResponse.json(
+            { success: false, error: "agentId is required" },
+            { status: 400, headers: corsHeaders }
+          )
+        }
+        const profileMonths = parseInt(searchParams.get("months") || "6")
+        result = await getAgentIntegratedProfile(profileAgentId, profileMonths)
+        break
+      }
+
+      case "cross-analysis":
+        result = await getCrossAnalysis({
+          month: searchParams.get("month") || new Date().toISOString().slice(0, 7),
+          center: searchParams.get("center") || undefined,
+        })
+        break
+
       default:
         return NextResponse.json(
           { success: false, error: `Unknown type: ${type}` },
@@ -483,7 +657,7 @@ export async function GET(request: Request) {
     }
 
     return NextResponse.json(
-      { success: true, data: result.data, type },
+      { success: true, data: result.data, type, ...("specialItems" in result && { specialItems: result.specialItems }) },
       { headers: corsHeaders }
     )
   } catch (error) {
