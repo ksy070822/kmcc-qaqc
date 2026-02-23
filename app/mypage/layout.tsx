@@ -15,12 +15,17 @@ import {
   LogOut,
   Loader2,
   User,
+  Users,
 } from "lucide-react"
 
 const mypageNavItems = [
   { id: "/mypage", label: "통합 현황", icon: LayoutDashboard, exact: true },
   { id: "/mypage/weekly", label: "주간 리포트", icon: CalendarDays },
   { id: "/mypage/monthly", label: "월간 리포트", icon: CalendarRange },
+]
+
+const adminNavItems = [
+  { id: "/mypage/agents", label: "상담사 관리", icon: Users },
 ]
 
 export default function MypageLayout({ children }: { children: React.ReactNode }) {
@@ -92,7 +97,7 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
                   <User className="h-4 w-4 text-sidebar-foreground" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-sidebar-foreground truncate">{user.userName}</div>
+                  <div className="text-sm font-medium text-sidebar-foreground truncate">{user.userId}</div>
                   <div className="text-xs text-sidebar-foreground/60 truncate">
                     {user.center} {user.service && `/ ${user.service}`}
                   </div>
@@ -125,6 +130,37 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
                 </button>
               )
             })}
+
+            {/* 관리자용 메뉴 */}
+            {user && (user.role === "hq_admin" || user.role === "manager") && (
+              <>
+                {!collapsed && (
+                  <div className="pt-3 pb-1 px-3">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">관리</span>
+                  </div>
+                )}
+                {adminNavItems.map((item) => {
+                  const Icon = item.icon
+                  const isActive = pathname.startsWith(item.id)
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => router.push(item.id)}
+                      className={cn(
+                        "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-[#2c6edb] text-white"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
+                        collapsed && "justify-center px-2",
+                      )}
+                    >
+                      <Icon className={cn("h-5 w-5 shrink-0", isActive && "text-white")} />
+                      {!collapsed && <span>{item.label}</span>}
+                    </button>
+                  )
+                })}
+              </>
+            )}
           </nav>
 
           {/* 하단: 로그아웃 */}

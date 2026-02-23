@@ -197,6 +197,76 @@ export function warmupHrCache(): void {
   });
 }
 
+// ── HR 상담사 목록 (센터/이름 포함) ──
+
+interface HrAgentRaw {
+  agentId: string
+  name: string | null
+  center: string
+  hireDate: string | null
+  tenureMonths: number
+}
+
+let hrAgentsListCache: HrAgentRaw[] | null = null;
+let hrListCacheTimestamp = 0;
+
+export async function getHrAgentsList(centerFilter?: string): Promise<HrAgentRaw[]> {
+  if (hrAgentsListCache && Date.now() - hrListCacheTimestamp < HR_CACHE_TTL) {
+    return centerFilter
+      ? hrAgentsListCache.filter(a => a.center === centerFilter)
+      : hrAgentsListCache;
+  }
+
+  console.log('[BigQuery] Building HR agents list cache...');
+  const bigquery = getBigQueryClient();
+
+  const query = `
+    SELECT DISTINCT
+      TRIM(LOWER(id)) as agent_id,
+      name,
+      hire_date,
+      '용산' AS center
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+    WHERE type = '상담사' AND id IS NOT NULL
+    UNION ALL
+    SELECT DISTINCT
+      TRIM(LOWER(id)) as agent_id,
+      name,
+      hire_date,
+      '광주' AS center
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+    WHERE type = '상담사' AND id IS NOT NULL
+  `;
+
+  const [rows] = await bigquery.query({ query, location: GCP_LOCATION });
+
+  const seen = new Set<string>();
+  const list: HrAgentRaw[] = [];
+  for (const row of rows) {
+    const agentId = String(row.agent_id || '').trim();
+    if (!agentId || seen.has(agentId)) continue;
+    seen.add(agentId);
+
+    const hireDate = row.hire_date
+      ? (typeof row.hire_date === 'string' ? row.hire_date : row.hire_date.value ? row.hire_date.value : String(row.hire_date))
+      : null;
+
+    list.push({
+      agentId,
+      name: row.name ? String(row.name).trim() : null,
+      center: String(row.center),
+      hireDate,
+      tenureMonths: hireDate ? calcTenureMonths(hireDate) : 0,
+    });
+  }
+
+  hrAgentsListCache = list;
+  hrListCacheTimestamp = Date.now();
+  console.log(`[BigQuery] HR agents list cache built: ${list.length} agents`);
+
+  return centerFilter ? list.filter(a => a.center === centerFilter) : list;
+}
+
 /**
  * hire_date에서 근속 개월 수 계산
  */

@@ -51,7 +51,7 @@ export function MypageQuizDetail({ agentId, onBack }: MypageQuizDetailProps) {
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500"
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -59,13 +59,13 @@ export function MypageQuizDetail({ agentId, onBack }: MypageQuizDetailProps) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MypageKpiCard label="당월 응시횟수" value={String(data?.attemptCount ?? 0)} suffix="회" bgColor="bg-amber-50" />
+        <MypageKpiCard label="당월 응시횟수" value={String(data?.attemptCount ?? 0)} suffix="회" bgColor="bg-blue-50" />
         <MypageKpiCard label="평균 점수" value={avgScore.toFixed(1)} suffix="점" bgColor="bg-slate-800" textColor="text-white" />
         <MypageKpiCard
           label="그룹 내 위치"
           value={`상위 ${pctile.toFixed(0)}`}
           suffix="%"
-          bgColor="bg-yellow-50"
+          bgColor="bg-slate-50"
           badge={pctile <= 20 ? "우수" : pctile <= 50 ? "양호" : "노력"}
           badgeColor={pctile <= 20 ? "bg-emerald-50 text-emerald-700 border-emerald-200" : pctile <= 50 ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"}
         />
@@ -85,23 +85,25 @@ export function MypageQuizDetail({ agentId, onBack }: MypageQuizDetailProps) {
           {(data?.monthlyTrend ?? []).length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
                 <XAxis
                   dataKey="month"
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  tick={{ fontSize: 11, fill: "#666666" }}
+                  axisLine={{ stroke: "#D9D9D9" }}
                   tickFormatter={(v: string) => {
                     const parts = v.split("-")
                     return `${parts[0].slice(2)}.${parts[1]}`
                   }}
                 />
-                <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#64748b" }} />
+                <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
                 <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                  labelStyle={{ color: "#000000", fontWeight: 600 }}
                   formatter={(v: number, name: string) => [`${v}점`, name]}
                 />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-                <Line type="monotone" dataKey="agentScore" name="본인 점수" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3, fill: "#f59e0b" }} />
-                <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 2 }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+                <Line type="monotone" dataKey="agentScore" name="본인 점수" stroke="#6B93D6" strokeWidth={2.5} dot={{ r: 3, fill: "#6B93D6" }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

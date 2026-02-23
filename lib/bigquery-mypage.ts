@@ -1,10 +1,11 @@
-import { getBigQueryClient } from "@/lib/bigquery"
+import { getBigQueryClient, getHrAgentsList } from "@/lib/bigquery"
 import type {
   MypageProfile,
   MypageQCDetail,
   MypageCSATDetail,
   MypageQADetail,
   MypageQuizDetail,
+  AgentSummaryRow,
 } from "@/lib/types"
 
 // ── Cross-project 테이블 참조 ──
@@ -193,26 +194,40 @@ export async function getAgentProfile(
     quizScore: Math.round((Number(row.quiz_score) || 0) * 10) / 10,
   }))
 
-  // Current + prev month values
-  const current = trendData[trendData.length - 1] || { qcRate: 0, csatScore: 0, qaScore: 0, quizScore: 0 }
-  const prev = trendData.length >= 2 ? trendData[trendData.length - 2] : { qcRate: 0, csatScore: 0, qaScore: 0, quizScore: 0 }
+  // Latest available (non-zero) value for each metric
+  // 당월에 데이터가 없으면 직전 월 데이터를 사용
+  function latestNonZero(key: keyof typeof trendData[0]): { current: number; prev: number } {
+    const reversed = [...trendData].reverse()
+    let currentVal = 0, prevVal = 0, found = false
+    for (const item of reversed) {
+      const v = item[key] as number
+      if (!found && v > 0) { currentVal = v; found = true; continue }
+      if (found && v > 0) { prevVal = v; break }
+    }
+    return { current: currentVal, prev: prevVal }
+  }
+
+  const qc = latestNonZero("qcRate")
+  const csat = latestNonZero("csatScore")
+  const qa = latestNonZero("qaScore")
+  const quiz = latestNonZero("quizScore")
 
   const qcGroupAvg = Number(rows[rows.length - 1]?.qc_group_avg) || 0
   const qaGroupAvg = Number(rows[rows.length - 1]?.qa_group_avg) || 0
   const quizGroupAvg = Number(rows[rows.length - 1]?.quiz_group_avg) || 0
 
   return {
-    qcRate: current.qcRate,
-    qcPrevRate: prev.qcRate,
+    qcRate: qc.current,
+    qcPrevRate: qc.prev,
     qcGroupAvg: Math.round(qcGroupAvg * 100) / 100,
-    csatScore: current.csatScore,
-    csatPrevScore: prev.csatScore,
+    csatScore: csat.current,
+    csatPrevScore: csat.prev,
     csatGroupAvg: Math.round(csatGroupAvg * 100) / 100,
-    qaScore: current.qaScore,
-    qaPrevScore: prev.qaScore,
+    qaScore: qa.current,
+    qaPrevScore: qa.prev,
     qaGroupAvg: Math.round(qaGroupAvg * 10) / 10,
-    quizScore: current.quizScore,
-    quizPrevScore: prev.quizScore,
+    quizScore: quiz.current,
+    quizPrevScore: quiz.prev,
     quizGroupAvg: Math.round(quizGroupAvg * 10) / 10,
     trendData,
   }
@@ -999,4 +1014,97 @@ export async function getAgentCSATDetail(
     console.error("[bigquery-mypage] getAgentCSATDetail error:", error)
     return empty
   }
+}
+
+// ══════════════════════════════════════════════════════════════
+// getAgentsSummary — 상담사 목록 + 배치 KPI (관리자용)
+// ══════════════════════════════════════════════════════════════
+
+export async function getAgentsSummary(
+  center?: string,
+  month?: string,
+): Promise<AgentSummaryRow[]> {
+  const bq = getBigQueryClient()
+  const hrAgents = await getHrAgentsList(center)
+
+  if (hrAgents.length === 0) return []
+
+  const targetMonth = month || new Date().toISOString().slice(0, 7)
+
+  const query = `
+    WITH qc_summary AS (
+      SELECT
+        e.agent_id,
+        SAFE_DIVIDE(
+          SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END
+            + CASE WHEN e.empathy_error THEN 1 ELSE 0 END
+            + CASE WHEN e.apology_error THEN 1 ELSE 0 END
+            + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END
+            + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
+          COUNT(*) * 5
+        ) AS att_rate,
+        SAFE_DIVIDE(
+          SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END
+            + CASE WHEN e.guide_error THEN 1 ELSE 0 END
+            + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END
+            + CASE WHEN e.required_search_error THEN 1 ELSE 0 END
+            + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END
+            + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END
+            + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END
+            + CASE WHEN e.system_error THEN 1 ELSE 0 END
+            + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END
+            + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END
+            + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
+          COUNT(*) * 11
+        ) AS ops_rate
+      FROM ${EVALUATIONS} e
+      WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = @month
+      GROUP BY e.agent_id
+    ),
+    quiz_summary AS (
+      SELECT
+        s.user_id AS agent_id,
+        AVG(${SCORE_SQL}) AS avg_score
+      FROM ${SUBMISSIONS} s
+      WHERE s.month = @month AND s.exam_mode = 'exam' AND ${SCORE_SQL} IS NOT NULL
+      GROUP BY s.user_id
+    )
+    SELECT
+      qc.agent_id AS qc_agent_id,
+      qc.att_rate,
+      qc.ops_rate,
+      qz.agent_id AS qz_agent_id,
+      qz.avg_score AS quiz_score
+    FROM qc_summary qc
+    FULL OUTER JOIN quiz_summary qz ON qc.agent_id = qz.agent_id
+  `
+
+  const [rows] = await bq.query({ query, params: { month: targetMonth } })
+
+  // Build a map from BQ results
+  const kpiMap = new Map<string, { attRate: number | null; opsRate: number | null; quizScore: number | null }>()
+  for (const row of rows as Record<string, unknown>[]) {
+    const agentId = String(row.qc_agent_id || row.qz_agent_id || "")
+    if (!agentId) continue
+    const existing = kpiMap.get(agentId) || { attRate: null, opsRate: null, quizScore: null }
+    if (row.att_rate != null) existing.attRate = Math.round(Number(row.att_rate) * 100) / 100
+    if (row.ops_rate != null) existing.opsRate = Math.round(Number(row.ops_rate) * 100) / 100
+    if (row.quiz_score != null) existing.quizScore = Math.round(Number(row.quiz_score) * 10) / 10
+    kpiMap.set(agentId, existing)
+  }
+
+  // Merge HR list with KPI data
+  return hrAgents.map(agent => {
+    const kpi = kpiMap.get(agent.agentId) || { attRate: null, opsRate: null, quizScore: null }
+    return {
+      agentId: agent.agentId,
+      name: agent.name,
+      center: agent.center,
+      hireDate: agent.hireDate,
+      tenureMonths: agent.tenureMonths,
+      attRate: kpi.attRate,
+      opsRate: kpi.opsRate,
+      quizScore: kpi.quizScore,
+    }
+  })
 }

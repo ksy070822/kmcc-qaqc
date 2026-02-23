@@ -43,7 +43,7 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
 
   const topErrors = data?.topErrors ?? []
   const maxErrorCount = topErrors[0]?.count ?? 1
-  const errorColors = ["bg-rose-500", "bg-rose-400", "bg-orange-400", "bg-amber-400", "bg-amber-300"]
+  const errorColors = ["bg-[#2c6edb]", "bg-[#4A6FA5]", "bg-[#6B93D6]", "bg-[#9E9E9E]", "bg-[#B3B3B3]"]
 
   return (
     <div className="space-y-6">
@@ -66,14 +66,14 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
           label="태도 오류율"
           value={(data?.attitudeErrorRate ?? 0).toFixed(1)}
           suffix="%"
-          bgColor="bg-amber-50"
+          bgColor="bg-slate-50"
           target={{ label: "목표", value: data?.attitudeTarget ?? 3.3, current: data?.attitudeErrorRate ?? 0 }}
         />
         <MypageKpiCard
           label="오상담 오류율"
           value={(data?.opsErrorRate ?? 0).toFixed(1)}
           suffix="%"
-          bgColor="bg-purple-50"
+          bgColor="bg-blue-50"
           target={{ label: "목표", value: data?.opsTarget ?? 3.9, current: data?.opsErrorRate ?? 0 }}
         />
         <MypageKpiCard
@@ -92,25 +92,27 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
           {(data?.monthlyTrend ?? []).length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
                 <XAxis
                   dataKey="month"
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  tick={{ fontSize: 11, fill: "#666666" }}
+                  axisLine={{ stroke: "#D9D9D9" }}
                   tickFormatter={(v: string) => {
                     const parts = v.split("-")
                     return `${parts[0].slice(2)}.${parts[1]}`
                   }}
                 />
-                <YAxis domain={[0, "auto"]} tick={{ fontSize: 10, fill: "#64748b" }} />
+                <YAxis domain={[0, "auto"]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
                 <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                  labelStyle={{ color: "#000000", fontWeight: 600 }}
                   formatter={(v: number, name: string) => [`${v.toFixed(1)}%`, name]}
                 />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-                <ReferenceLine y={data?.attitudeTarget ?? 3.3} stroke="#f59e0b" strokeDasharray="4 4" label={{ value: "태도 목표", fontSize: 10, fill: "#f59e0b" }} />
-                <ReferenceLine y={data?.opsTarget ?? 3.9} stroke="#a855f7" strokeDasharray="4 4" label={{ value: "오상담 목표", fontSize: 10, fill: "#a855f7" }} />
-                <Line type="monotone" dataKey="attRate" name="태도 오류율" stroke="#f59e0b" strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="opsRate" name="오상담 오류율" stroke="#a855f7" strokeWidth={2} dot={{ r: 3 }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+                <ReferenceLine y={data?.attitudeTarget ?? 3.3} stroke="#DD2222" strokeDasharray="6 3" strokeOpacity={0.6} label={{ value: "태도 목표", fontSize: 10, fill: "#DD2222" }} />
+                <ReferenceLine y={data?.opsTarget ?? 3.9} stroke="#DD2222" strokeDasharray="6 3" strokeOpacity={0.4} label={{ value: "오상담 목표", fontSize: 10, fill: "#DD2222" }} />
+                <Line type="monotone" dataKey="attRate" name="태도 오류율" stroke="#6B93D6" strokeWidth={2.5} dot={{ r: 3, fill: "#6B93D6" }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="opsRate" name="오상담 오류율" stroke="#9E9E9E" strokeWidth={2.5} dot={{ r: 3, fill: "#9E9E9E" }} activeDot={{ r: 5 }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

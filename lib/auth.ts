@@ -36,8 +36,8 @@ const TEST_USERS: Record<UserRole, UserInfo> = {
     center: '용산', service: null, channel: null, agentId: null,
   },
   agent: {
-    userId: 'agent01', userName: '박상담사', role: 'agent',
-    center: '용산', service: '택시 유선', channel: '유선', agentId: 'agent01',
+    userId: 'vivi.koc', userName: 'vivi.koc', role: 'agent',
+    center: '용산', service: '택시', channel: '채팅', agentId: 'vivi.koc',
   },
 }
 
@@ -66,4 +66,16 @@ export function clearAuth(): void {
 
 export function getTestUser(role: UserRole): UserInfo {
   return TEST_USERS[role]
+}
+
+// 상담사 테스트 프리셋 (유선/채팅)
+export const AGENT_PRESETS: Record<string, UserInfo> = {
+  voice_yongsan: {
+    userId: 'vivi.koc', userName: '김보은', role: 'agent',
+    center: '용산', service: '택시', channel: '유선', agentId: 'vivi.koc',
+  },
+  chat_gwangju: {
+    userId: 'isabella.itx', userName: 'isabella.itx', role: 'agent',
+    center: '광주', service: '바이크/마스', channel: '채팅', agentId: 'isabella.itx',
+  },
 }

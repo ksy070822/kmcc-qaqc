@@ -50,9 +50,11 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
       <div className="flex items-center gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900">
-            {user?.userName ?? "상담사"}님, 반갑습니다!
+            {user?.userId ?? "상담사"}님, 반갑습니다!
           </h1>
-          <p className="text-sm text-slate-500 mt-0.5">통합 품질 성과 현황을 확인하세요</p>
+          <p className="text-sm text-slate-500 mt-0.5">
+            {user?.center && <span>{user.center} · </span>}통합 품질 성과 현황을 확인하세요
+          </p>
         </div>
         <Badge variant="outline" className={level.color}>
           {level.label}
@@ -76,7 +78,7 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
         <MypageSummaryCard
           title="상담 평점"
           icon={Star}
-          headerColor="bg-emerald-500"
+          headerColor="bg-[#2c6edb]"
           mainValue={(data?.csatScore ?? 0).toFixed(1)}
           mainSuffix="점"
           comparisons={[
@@ -88,7 +90,7 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
         <MypageSummaryCard
           title="QA 평가"
           icon={ClipboardCheck}
-          headerColor="bg-blue-600"
+          headerColor="bg-[#4A6FA5]"
           mainValue={(data?.qaScore ?? 0).toFixed(1)}
           mainSuffix="점"
           comparisons={[
@@ -100,7 +102,7 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
         <MypageSummaryCard
           title="업무지식 테스트"
           icon={BookOpen}
-          headerColor="bg-amber-500"
+          headerColor="bg-[#6B93D6]"
           mainValue={(data?.quizScore ?? 0).toFixed(1)}
           mainSuffix="점"
           comparisons={[

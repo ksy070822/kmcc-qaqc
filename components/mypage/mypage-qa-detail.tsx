@@ -55,8 +55,8 @@ export function MypageQaDetail({ agentId, onBack }: MypageQaDetailProps) {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <MypageKpiCard label="감성케어 평균" value={(data?.empathyCareAvg ?? 0).toFixed(1)} suffix="점" bgColor="bg-indigo-50" />
-        <MypageKpiCard label="업무/전산 평균" value={(data?.businessSystemAvg ?? 0).toFixed(1)} suffix="점" bgColor="bg-sky-50" />
+        <MypageKpiCard label="감성케어 평균" value={(data?.empathyCareAvg ?? 0).toFixed(1)} suffix="점" bgColor="bg-blue-50" />
+        <MypageKpiCard label="업무/전산 평균" value={(data?.businessSystemAvg ?? 0).toFixed(1)} suffix="점" bgColor="bg-slate-50" />
         <MypageKpiCard label="종합 QA 점수" value={(data?.totalScore ?? 0).toFixed(1)} suffix="점" bgColor="bg-slate-800" textColor="text-white" />
         <MypageKpiCard
           label="당월 평가차수"
@@ -73,23 +73,25 @@ export function MypageQaDetail({ agentId, onBack }: MypageQaDetailProps) {
           {(data?.monthlyTrend ?? []).length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
                 <XAxis
                   dataKey="month"
-                  tick={{ fontSize: 11, fill: "#64748b" }}
+                  tick={{ fontSize: 11, fill: "#666666" }}
+                  axisLine={{ stroke: "#D9D9D9" }}
                   tickFormatter={(v: string) => {
                     const parts = v.split("-")
                     return `${parts[0].slice(2)}.${parts[1]}`
                   }}
                 />
-                <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#64748b" }} />
+                <YAxis domain={[50, 100]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
                 <Tooltip
-                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                  contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                  labelStyle={{ color: "#000000", fontWeight: 600 }}
                   formatter={(v: number, name: string) => [`${v.toFixed(1)}점`, name]}
                 />
-                <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-                <Line type="monotone" dataKey="agentScore" name="본인 점수" stroke="#2563eb" strokeWidth={2} dot={{ r: 3, fill: "#2563eb" }} />
-                <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 2 }} />
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+                <Line type="monotone" dataKey="agentScore" name="본인 점수" stroke="#2c6edb" strokeWidth={2.5} dot={{ r: 3, fill: "#2c6edb" }} activeDot={{ r: 5 }} />
+                <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
               </LineChart>
             </ResponsiveContainer>
           ) : (

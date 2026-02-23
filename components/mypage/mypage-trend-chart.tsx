@@ -42,10 +42,11 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
       </p>
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+          <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
           <XAxis
             dataKey="month"
-            tick={{ fontSize: 11, fill: "#64748b" }}
+            tick={{ fontSize: 11, fill: "#666666" }}
+            axisLine={{ stroke: "#D9D9D9" }}
             tickFormatter={(v: string) => {
               const parts = v.split("-")
               return parts.length >= 2 ? `${parts[0].slice(2)}.${parts[1]}` : v
@@ -56,62 +57,69 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             yAxisId="left"
             orientation="left"
             domain={[0, 10]}
-            tick={{ fontSize: 10, fill: "#64748b" }}
-            label={{ value: "QC 오류율(%)", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#94a3b8" } }}
+            tick={{ fontSize: 10, fill: "#666666" }}
+            axisLine={{ stroke: "#D9D9D9" }}
+            label={{ value: "QC 오류율(%)", angle: -90, position: "insideLeft", style: { fontSize: 10, fill: "#808080" } }}
           />
           {/* 우측 Y축: 점수 (0~100) */}
           <YAxis
             yAxisId="right"
             orientation="right"
             domain={[0, 100]}
-            tick={{ fontSize: 10, fill: "#64748b" }}
-            label={{ value: "점수", angle: 90, position: "insideRight", style: { fontSize: 10, fill: "#94a3b8" } }}
+            tick={{ fontSize: 10, fill: "#666666" }}
+            axisLine={{ stroke: "#D9D9D9" }}
+            label={{ value: "점수", angle: 90, position: "insideRight", style: { fontSize: 10, fill: "#808080" } }}
           />
           <Tooltip
-            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+            contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+            labelStyle={{ color: "#000000", fontWeight: 600 }}
             formatter={(value: number, name: string) => {
               if (name === "QC 오류율") return [`${value.toFixed(1)}%`, name]
               if (name === "상담 평점") return [value.toFixed(2), name]
               return [`${value.toFixed(1)}점`, name]
             }}
           />
-          <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-          <ReferenceLine yAxisId="left" y={3} stroke="#ef4444" strokeDasharray="4 4" strokeOpacity={0.5} />
+          <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+          <ReferenceLine yAxisId="left" y={3} stroke="#DD2222" strokeDasharray="6 3" strokeWidth={1.5} strokeOpacity={0.6} />
           <Line
             yAxisId="left"
             type="monotone"
             dataKey="qcRate"
             name="QC 오류율"
-            stroke="#334155"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#334155" }}
+            stroke="#2c6edb"
+            strokeWidth={2.5}
+            dot={{ r: 3, fill: "#2c6edb" }}
+            activeDot={{ r: 5 }}
           />
           <Line
             yAxisId="right"
             type="monotone"
             dataKey="csatScore"
             name="상담 평점"
-            stroke="#10b981"
+            stroke="#6B93D6"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#10b981" }}
+            dot={{ r: 3, fill: "#6B93D6" }}
+            activeDot={{ r: 5 }}
           />
           <Line
             yAxisId="right"
             type="monotone"
             dataKey="qaScore"
             name="QA 점수"
-            stroke="#2563eb"
+            stroke="#4A6FA5"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#2563eb" }}
+            dot={{ r: 3, fill: "#4A6FA5" }}
+            activeDot={{ r: 5 }}
           />
           <Line
             yAxisId="right"
             type="monotone"
             dataKey="quizScore"
             name="직무테스트"
-            stroke="#f59e0b"
+            stroke="#9E9E9E"
             strokeWidth={2}
-            dot={{ r: 3, fill: "#f59e0b" }}
+            dot={{ r: 3, fill: "#9E9E9E" }}
+            activeDot={{ r: 5 }}
           />
         </ComposedChart>
       </ResponsiveContainer>

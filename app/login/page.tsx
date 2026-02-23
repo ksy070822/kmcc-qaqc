@@ -7,13 +7,17 @@ import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import Image from "next/image"
-import { setAuth, getTestUser, ROLE_CONFIG, type UserRole } from "@/lib/auth"
+import { setAuth, getTestUser, ROLE_CONFIG, AGENT_PRESETS, type UserRole } from "@/lib/auth"
 
 const TEST_ACCOUNTS: Array<{ role: UserRole; label: string; color: string }> = [
   { role: "hq_admin", label: "본사 관리자", color: "bg-[#2c6edb] hover:bg-[#202237] text-white" },
   { role: "manager", label: "관리자", color: "bg-[#202237] hover:bg-[#202237]/80 text-white" },
   { role: "instructor", label: "강사", color: "bg-[#ffcd00] hover:bg-[#ffcd00]/80 text-black" },
-  { role: "agent", label: "상담사", color: "bg-white hover:bg-[#f5f5f5] text-[#202237] border border-[#D9D9D9]" },
+]
+
+const AGENT_TEST_ACCOUNTS: Array<{ key: string; label: string; sub: string; color: string }> = [
+  { key: "voice_yongsan", label: "유선 상담사", sub: "vivi.koc · 용산/택시", color: "bg-white hover:bg-[#f5f5f5] text-[#202237] border border-[#D9D9D9]" },
+  { key: "chat_gwangju", label: "채팅 상담사", sub: "isabella.itx · 광주/바이크", color: "bg-white hover:bg-[#f5f5f5] text-[#202237] border border-[#D9D9D9]" },
 ]
 
 export default function LoginPage() {
@@ -33,6 +37,14 @@ export default function LoginPage() {
     const testUser = getTestUser(role)
     setAuth(testUser)
     router.push(ROLE_CONFIG[role].defaultRoute)
+  }
+
+  const handleAgentPresetLogin = (key: string) => {
+    const preset = AGENT_PRESETS[key]
+    if (preset) {
+      setAuth(preset)
+      router.push(ROLE_CONFIG.agent.defaultRoute)
+    }
   }
 
   const handleGoogleLogin = () => {
@@ -95,7 +107,7 @@ export default function LoginPage() {
           {/* 테스트 계정 바로가기 */}
           <div className="pt-2">
             <p className="text-xs text-muted-foreground text-center mb-3">테스트 계정으로 바로 로그인</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-3 gap-2">
               {TEST_ACCOUNTS.map((account) => (
                 <Button
                   key={account.role}
@@ -104,6 +116,21 @@ export default function LoginPage() {
                   onClick={() => handleTestLogin(account.role)}
                 >
                   {account.label}
+                </Button>
+              ))}
+            </div>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              {AGENT_TEST_ACCOUNTS.map((account) => (
+                <Button
+                  key={account.key}
+                  size="sm"
+                  className={`text-xs h-auto py-2 ${account.color}`}
+                  onClick={() => handleAgentPresetLogin(account.key)}
+                >
+                  <div className="text-center">
+                    <div>{account.label}</div>
+                    <div className="text-[10px] text-muted-foreground font-normal mt-0.5">{account.sub}</div>
+                  </div>
                 </Button>
               ))}
             </div>

@@ -62,7 +62,7 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
           type="month"
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          className="text-sm border border-slate-200 rounded-lg px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
@@ -78,14 +78,14 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
         <>
           {/* KPI Cards */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <MypageKpiCard label="누적 리뷰수" value={String(data?.totalReviews ?? 0)} suffix="건" bgColor="bg-emerald-50" />
+            <MypageKpiCard label="누적 리뷰수" value={String(data?.totalReviews ?? 0)} suffix="건" bgColor="bg-blue-50" />
             <MypageKpiCard
               label="5점 비율"
               value={(data?.score5Rate ?? 0).toFixed(1)}
               suffix="%"
-              bgColor="bg-teal-50"
+              bgColor="bg-slate-50"
             />
-            <MypageKpiCard label="불만 비율" value={(data?.lowScoreRate ?? 0).toFixed(1)} suffix="%" bgColor="bg-rose-50" />
+            <MypageKpiCard label="불만 비율" value={(data?.lowScoreRate ?? 0).toFixed(1)} suffix="%" bgColor="bg-red-50" />
             <MypageKpiCard label="통합 평균 평점" value={(data?.avgScore ?? 0).toFixed(2)} suffix="점" bgColor="bg-slate-800" textColor="text-white" />
           </div>
 
@@ -95,23 +95,25 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
               <p className="text-sm font-medium text-slate-700 mb-4">월별 평균 평점 추이</p>
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={data?.monthlyTrend} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
                   <XAxis
                     dataKey="month"
-                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tick={{ fontSize: 11, fill: "#666666" }}
+                    axisLine={{ stroke: "#D9D9D9" }}
                     tickFormatter={(v: string) => {
                       const parts = v.split("-")
                       return `${parts[0].slice(2)}.${parts[1]}`
                     }}
                   />
-                  <YAxis domain={[3.5, 5]} tick={{ fontSize: 10, fill: "#64748b" }} />
+                  <YAxis domain={[3.5, 5]} tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
                   <Tooltip
-                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }}
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
+                    labelStyle={{ color: "#000000", fontWeight: 600 }}
                     formatter={(v: number, name: string) => [v.toFixed(2), name]}
                   />
-                  <Legend wrapperStyle={{ fontSize: 11 }} iconSize={8} />
-                  <Line type="monotone" dataKey="agentAvg" name="본인 평점" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: "#10b981" }} />
-                  <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 4" dot={{ r: 2 }} />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+                  <Line type="monotone" dataKey="agentAvg" name="본인 평점" stroke="#2c6edb" strokeWidth={2.5} dot={{ r: 3, fill: "#2c6edb" }} activeDot={{ r: 5 }} />
+                  <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

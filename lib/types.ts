@@ -524,13 +524,31 @@ export interface CSATDashboardStats {
   // 전일/전주 대비
   prevAvgScore?: number
   scoreTrend?: number
+  // 신규: 평가 현황
+  totalConsults: number       // 상담완료건수 (TODO: 별도 쿼리)
+  totalRequests: number       // 평가요청수
+  reviewRate: number          // 응답율 (리뷰/요청, %)
+  lowScoreCount: number       // 1~2점 건수
+  score1Count: number         // 1점 건수
+  score2Count: number         // 2점 건수
+  lowScoreRate: number        // 저점비율 (%)
+  // 전주대비
+  prevTotalReviews?: number
+  prevLowScoreCount?: number
+  prevTotalRequests?: number
+  reviewsTrend?: number       // 평가수 전주대비 (%)
+  lowScoreTrend?: number      // 저점건수 전주대비 (%)
+  requestsTrend?: number      // 평가요청 전주대비 (%)
+  consultsTrend?: number      // 상담완료 전주대비 (%)
 }
 
 export interface CSATTrendData {
   date: string          // YYYY-MM-DD
-  용산: number
-  광주: number
-  전체: number
+  용산: number          // 저점비율 (%)
+  광주: number          // 저점비율 (%)
+  전체: number          // 저점비율 (%)
+  totalCount?: number   // 일별 전체 리뷰수
+  lowCount?: number     // 일별 저점건수
 }
 
 export interface CSATDailyRow {
@@ -558,6 +576,29 @@ export interface CSATTagRow {
   optionType: "POSITIVE" | "NEGATIVE"
   count: number
   avgScore: number
+}
+
+export interface CSATWeeklyRow {
+  period: string          // "02/12-02/18"
+  avgScore: number
+  reviewCount: number
+  responseRate: number    // 응답율 (%)
+  score5Rate: number
+  score1Rate: number
+  score3Rate: number
+  consultReviewRate: number  // 상담대비 평가율 (%)
+}
+
+export interface CSATLowScoreWeekly {
+  period: string          // "02/12-02/18"
+  totalReviews: number
+  lowCount: number
+  lowRate: number         // 저점비율 (%)
+  prevLowRate?: number    // 전주 저점비율 (전주대비 계산용)
+  score1Count: number
+  score2Count: number
+  score1Services: Array<{ service: string; count: number; rate: number }>
+  score2Services: Array<{ service: string; count: number; rate: number }>
 }
 
 // ============================================================
@@ -633,6 +674,9 @@ export interface AgentMonthlySummary {
   // 직무테스트
   knowledgeScore?: number
   knowledgeTestCount?: number
+
+  // 입사 정보
+  tenureMonths?: number
 
   // 종합 리스크
   compositeRiskScore?: number
@@ -798,4 +842,25 @@ export interface MypageQuizDetail {
     passed: boolean
     centerAvg: number
   }>
+}
+
+// ── 상담사 관리 (HR 기반) ──
+
+export interface HrAgent {
+  agentId: string
+  name: string | null
+  center: string
+  hireDate: string | null
+  tenureMonths: number
+}
+
+export interface AgentSummaryRow {
+  agentId: string
+  name: string | null
+  center: string
+  hireDate: string | null
+  tenureMonths: number
+  attRate: number | null
+  opsRate: number | null
+  quizScore: number | null
 }
