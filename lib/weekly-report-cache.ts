@@ -174,7 +174,7 @@ export async function generateBatchWeeklyReports(
     SELECT
       e.agent_id,
       FORMAT_DATE('%Y-%m-%d', e.evaluation_date) AS eval_date,
-      e.consult_id,
+      e.consultation_id,
       e.service,
       e.comment,
       ${errorColSelects}
@@ -221,7 +221,7 @@ export async function generateBatchWeeklyReports(
     if (!evalsMap.has(agentId)) evalsMap.set(agentId, [])
     evalsMap.get(agentId)!.push({
       evaluationDate: String(row.eval_date),
-      consultId: String(row.consult_id || ""),
+      consultId: String(row.consultation_id || ""),
       service: String(row.service || ""),
       items,
       comment: row.comment ? String(row.comment) : undefined,
@@ -349,7 +349,7 @@ export async function generateSingleWeeklyReport(
   const evalsQuery = `
     SELECT
       FORMAT_DATE('%Y-%m-%d', e.evaluation_date) AS eval_date,
-      e.consult_id, e.service, e.comment,
+      e.consultation_id, e.service, e.comment,
       ${errorColSelects}
     FROM ${EVALUATIONS} e
     WHERE e.agent_id = @agentId
@@ -381,7 +381,7 @@ export async function generateSingleWeeklyReport(
     }
     evaluations.push({
       evaluationDate: String(row.eval_date),
-      consultId: String(row.consult_id || ""),
+      consultId: String(row.consultation_id || ""),
       service: String(row.service || ""),
       items,
       comment: row.comment ? String(row.comment) : undefined,
