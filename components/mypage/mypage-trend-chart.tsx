@@ -14,10 +14,10 @@ import {
 
 interface TrendDataItem {
   month: string
-  qcRate?: number
-  csatScore?: number
-  qaScore?: number
-  quizScore?: number
+  qcRate?: number | null
+  csatScore?: number | null
+  qaScore?: number | null
+  quizScore?: number | null
 }
 
 interface MypageTrendChartProps {
@@ -73,7 +73,8 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
           <Tooltip
             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
             labelStyle={{ color: "#000000", fontWeight: 600 }}
-            formatter={(value: number, name: string) => {
+            formatter={(value: number | null, name: string) => {
+              if (value == null) return ["-", name]
               if (name === "QC 오류율") return [`${value.toFixed(1)}%`, name]
               if (name === "상담 평점") return [value.toFixed(2), name]
               return [`${value.toFixed(1)}점`, name]
@@ -90,6 +91,7 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             strokeWidth={2.5}
             dot={{ r: 3, fill: "#2c6edb" }}
             activeDot={{ r: 5 }}
+            connectNulls
           />
           <Line
             yAxisId="right"
@@ -100,6 +102,7 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             strokeWidth={2}
             dot={{ r: 3, fill: "#6B93D6" }}
             activeDot={{ r: 5 }}
+            connectNulls
           />
           <Line
             yAxisId="right"
@@ -110,6 +113,7 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             strokeWidth={2}
             dot={{ r: 3, fill: "#4A6FA5" }}
             activeDot={{ r: 5 }}
+            connectNulls
           />
           <Line
             yAxisId="right"
@@ -120,6 +124,7 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             strokeWidth={2}
             dot={{ r: 3, fill: "#9E9E9E" }}
             activeDot={{ r: 5 }}
+            connectNulls
           />
         </ComposedChart>
       </ResponsiveContainer>

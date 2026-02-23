@@ -762,10 +762,10 @@ export interface MypageProfile {
   quizGroupAvg: number
   trendData: Array<{
     month: string
-    qcRate: number
-    csatScore: number
-    qaScore: number
-    quizScore: number
+    qcRate: number | null
+    csatScore: number | null
+    qaScore: number | null
+    quizScore: number | null
   }>
 }
 

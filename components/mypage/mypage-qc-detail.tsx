@@ -80,8 +80,40 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
           label="통합 오류율"
           value={(data?.totalErrorRate ?? 0).toFixed(1)}
           suffix="%"
-          bgColor="bg-slate-800"
-          textColor="text-white"
+          bgColor={
+            (data?.totalErrorRate ?? 0) === 0
+              ? "bg-slate-50"
+              : (data?.totalErrorRate ?? 99) <= (data?.attitudeTarget ?? 3.0)
+                ? "bg-emerald-50"
+                : (data?.totalErrorRate ?? 99) <= 5.0
+                  ? "bg-amber-50"
+                  : "bg-red-50"
+          }
+          textColor={
+            (data?.totalErrorRate ?? 0) === 0
+              ? "text-slate-900"
+              : (data?.totalErrorRate ?? 99) <= (data?.attitudeTarget ?? 3.0)
+                ? "text-emerald-700"
+                : (data?.totalErrorRate ?? 99) <= 5.0
+                  ? "text-amber-700"
+                  : "text-red-700"
+          }
+          badge={
+            (data?.totalErrorRate ?? 0) === 0
+              ? undefined
+              : (data?.totalErrorRate ?? 99) <= (data?.attitudeTarget ?? 3.0)
+                ? "양호"
+                : (data?.totalErrorRate ?? 99) <= 5.0
+                  ? "주의"
+                  : "위험"
+          }
+          badgeColor={
+            (data?.totalErrorRate ?? 99) <= (data?.attitudeTarget ?? 3.0)
+              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+              : (data?.totalErrorRate ?? 99) <= 5.0
+                ? "bg-amber-50 text-amber-700 border-amber-200"
+                : "bg-red-50 text-red-700 border-red-200"
+          }
         />
       </div>
 
@@ -154,7 +186,7 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
 
       {/* Recent Evaluations Table */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <p className="text-sm font-medium text-slate-700 mb-4">최근 평가 내역</p>
+        <p className="text-sm font-medium text-slate-700 mb-4">최근 오류 내역</p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -167,31 +199,28 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
               </tr>
             </thead>
             <tbody>
-              {(data?.recentEvaluations ?? []).length === 0 ? (
-                <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-400">평가 내역이 없습니다</td></tr>
-              ) : (
-                data!.recentEvaluations.map((row, i) => (
+              {(() => {
+                const errorRows = (data?.recentEvaluations ?? []).filter(row => row.errorItems.length > 0)
+                if (errorRows.length === 0) {
+                  return <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-400">오류 내역이 없습니다</td></tr>
+                }
+                return errorRows.map((row, i) => (
                   <tr key={i} className="border-b border-slate-100 last:border-0">
                     <td className="py-2 px-3 text-slate-700">{row.evaluationDate}</td>
                     <td className="py-2 px-3 text-slate-600 font-mono text-xs">{row.consultId || "-"}</td>
                     <td className="py-2 px-3 text-slate-700">{row.service}</td>
-                    <td className="py-2 px-3 text-slate-700">{row.errorItems.length > 0 ? row.errorItems.join(", ") : "-"}</td>
+                    <td className="py-2 px-3 text-slate-700">{row.errorItems.join(", ")}</td>
                     <td className="py-2 px-3">
                       <Badge
                         variant="outline"
-                        className={cn(
-                          "text-[10px]",
-                          row.result === "정상"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : "bg-red-50 text-red-700 border-red-200"
-                        )}
+                        className="text-[10px] bg-red-50 text-red-700 border-red-200"
                       >
                         {row.result}
                       </Badge>
                     </td>
                   </tr>
                 ))
-              )}
+              })()}
             </tbody>
           </table>
         </div>

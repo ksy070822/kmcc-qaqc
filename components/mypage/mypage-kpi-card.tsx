@@ -47,7 +47,7 @@ export function MypageKpiCard({
       </div>
       <p className={cn("text-2xl font-bold tabular-nums", textColor)}>
         {value}
-        {suffix && <span className="text-sm font-normal text-slate-400 ml-0.5">{suffix}</span>}
+        {suffix && <span className={cn("text-sm font-normal ml-0.5", textColor === "text-white" ? "text-white/60" : "text-slate-400")}>{suffix}</span>}
       </p>
       {target && (
         <p className={cn("text-[11px] mt-1", achieved ? "text-emerald-600" : "text-red-500")}>

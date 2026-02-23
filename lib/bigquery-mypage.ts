@@ -181,36 +181,43 @@ export async function getAgentProfile(
       csatMap.set(String(row.month), Number(row.avg_score) || 0)
       if (row.center_avg != null) csatGroupAvg = Number(row.center_avg) || 0
     }
-  } catch {
-    // cross-project query may fail - return zeros
+  } catch (err) {
+    console.error("[bigquery-mypage] CSAT cross-project query failed:", err)
   }
 
-  // Build trend data
-  const trendData = rows.map(row => ({
-    month: String(row.month),
-    qcRate: Math.round((Number(row.qc_rate) || 0) * 100) / 100,
-    csatScore: Math.round((csatMap.get(String(row.month)) || 0) * 100) / 100,
-    qaScore: Math.round((Number(row.qa_score) || 0) * 10) / 10,
-    quizScore: Math.round((Number(row.quiz_score) || 0) * 10) / 10,
-  }))
+  // Build trend data — 데이터 없는 월은 null (선 끊김 처리)
+  const trendData = rows.map(row => {
+    const qcRaw = Number(row.qc_rate)
+    const csatRaw = csatMap.get(String(row.month))
+    const qaRaw = row.qa_score != null ? Number(row.qa_score) : null
+    const quizRaw = row.quiz_score != null ? Number(row.quiz_score) : null
+    return {
+      month: String(row.month),
+      qcRate: qcRaw > 0 ? Math.round(qcRaw * 100) / 100 : null,
+      csatScore: csatRaw != null ? Math.round(csatRaw * 100) / 100 : null,
+      qaScore: qaRaw != null && qaRaw > 0 ? Math.round(qaRaw * 10) / 10 : null,
+      quizScore: quizRaw != null && quizRaw > 0 ? Math.round(quizRaw * 10) / 10 : null,
+    }
+  })
 
-  // Latest available (non-zero) value for each metric
+  // Latest available (non-null) value for each metric
   // 당월에 데이터가 없으면 직전 월 데이터를 사용
-  function latestNonZero(key: keyof typeof trendData[0]): { current: number; prev: number } {
+  function latestNonNull(key: keyof typeof trendData[0]): { current: number; prev: number } {
     const reversed = [...trendData].reverse()
     let currentVal = 0, prevVal = 0, found = false
     for (const item of reversed) {
-      const v = item[key] as number
-      if (!found && v > 0) { currentVal = v; found = true; continue }
-      if (found && v > 0) { prevVal = v; break }
+      const v = item[key]
+      if (v == null) continue
+      if (!found) { currentVal = v as number; found = true; continue }
+      if (found) { prevVal = v as number; break }
     }
     return { current: currentVal, prev: prevVal }
   }
 
-  const qc = latestNonZero("qcRate")
-  const csat = latestNonZero("csatScore")
-  const qa = latestNonZero("qaScore")
-  const quiz = latestNonZero("quizScore")
+  const qc = latestNonNull("qcRate")
+  const csat = latestNonNull("csatScore")
+  const qa = latestNonNull("qaScore")
+  const quiz = latestNonNull("quizScore")
 
   const qcGroupAvg = Number(rows[rows.length - 1]?.qc_group_avg) || 0
   const qaGroupAvg = Number(rows[rows.length - 1]?.qa_group_avg) || 0
