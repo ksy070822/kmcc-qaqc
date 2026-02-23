@@ -47,7 +47,7 @@ export function QAScoreTrendChart({ data }: QAScoreTrendChartProps) {
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#E6E6E6" />
             <XAxis dataKey="month" tick={{ fontSize: 12, fill: MODI.textSecondary }} />
-            <YAxis domain={[80, 100]} ticks={[80, 82, 84, 86, 88, 90, 92, 94, 96, 98, 100]} tick={{ fontSize: 12, fill: MODI.textSecondary }} />
+            <YAxis domain={[80, 95]} ticks={[80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95]} tick={{ fontSize: 11, fill: MODI.textSecondary }} />
             <Tooltip />
             <Legend />
             <ReferenceLine y={90} stroke={MODI.brandWarning} strokeDasharray="6 3" label={{ value: "목표 90", position: "insideTopRight", fontSize: 11, fill: MODI.brandWarning }} />

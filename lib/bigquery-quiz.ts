@@ -8,6 +8,9 @@ import type {
 
 const SUBMISSIONS = "`csopp-25f2.quiz_results.submissions`"
 
+// 점수 컬럼: score가 있으면 우선, 없으면 percentage 사용
+const SCORE_SQL = `COALESCE(s.score, s.percentage)`
+
 // 센터 정규화 (submissions.center 값 → 용산/광주)
 const CENTER_SQL = `CASE
     WHEN s.center IN ('용산', 'KMCC용산', 'KMCC 용산', '모빌리티크루') THEN '용산'
@@ -15,7 +18,7 @@ const CENTER_SQL = `CASE
     ELSE s.center
   END`
 
-// 서비스명 정규화 (영문 → 한글)
+// 서비스명 정규화 (영문 → 한글 + 그룹화)
 const SERVICE_SQL = `CASE COALESCE(s.\`group\`, s.service)
     WHEN 'taxi' THEN '택시'
     WHEN 'daeri' THEN '대리'
@@ -23,8 +26,14 @@ const SERVICE_SQL = `CASE COALESCE(s.\`group\`, s.service)
     WHEN 'bike' THEN '바이크/마스'
     WHEN 'parking' THEN '주차/카오너'
     WHEN 'cargo' THEN '화물'
+    WHEN '심사' THEN '택시'
+    WHEN '외국어' THEN '택시'
+    WHEN '챗보드' THEN '택시'
     ELSE COALESCE(s.\`group\`, s.service)
   END`
+
+// 공통 WHERE 조건: percentage가 있는 정상 응시 데이터
+const BASE_WHERE = `${SCORE_SQL} IS NOT NULL AND s.exam_mode = 'exam'`
 
 // 필터 빌더
 function buildQuizFilters(
@@ -72,20 +81,20 @@ export async function getQuizDashboardStats(
     const query = `
       WITH current_period AS (
         SELECT
-          AVG(s.score) AS avg_score,
+          AVG(${SCORE_SQL}) AS avg_score,
           COUNT(*) AS total_submissions,
           COUNT(DISTINCT s.user_id) AS unique_agents,
-          SAFE_DIVIDE(COUNTIF(s.score >= 90), COUNT(*)) * 100 AS pass_rate,
-          AVG(CASE WHEN ${CENTER_SQL} = '용산' THEN s.score END) AS yongsan_avg,
-          AVG(CASE WHEN ${CENTER_SQL} = '광주' THEN s.score END) AS gwangju_avg
+          SAFE_DIVIDE(COUNTIF(${SCORE_SQL} >= 90), COUNT(*)) * 100 AS pass_rate,
+          AVG(CASE WHEN ${CENTER_SQL} = '용산' THEN ${SCORE_SQL} END) AS yongsan_avg,
+          AVG(CASE WHEN ${CENTER_SQL} = '광주' THEN ${SCORE_SQL} END) AS gwangju_avg
         FROM ${SUBMISSIONS} s
-        WHERE s.score IS NOT NULL
+        WHERE ${BASE_WHERE}
           ${monthFilter}
       ),
       prev_period AS (
-        SELECT AVG(s.score) AS avg_score
+        SELECT AVG(${SCORE_SQL}) AS avg_score
         FROM ${SUBMISSIONS} s
-        WHERE s.score IS NOT NULL
+        WHERE ${BASE_WHERE}
           ${prevMonthFilter}
       )
       SELECT
@@ -142,13 +151,13 @@ export async function getQuizScoreTrend(
     const query = `
       SELECT
         s.month,
-        AVG(s.score) AS overall_avg,
-        AVG(CASE WHEN ${CENTER_SQL} = '용산' THEN s.score END) AS yongsan_avg,
-        AVG(CASE WHEN ${CENTER_SQL} = '광주' THEN s.score END) AS gwangju_avg,
+        AVG(${SCORE_SQL}) AS overall_avg,
+        AVG(CASE WHEN ${CENTER_SQL} = '용산' THEN ${SCORE_SQL} END) AS yongsan_avg,
+        AVG(CASE WHEN ${CENTER_SQL} = '광주' THEN ${SCORE_SQL} END) AS gwangju_avg,
         COUNT(*) AS submissions,
-        SAFE_DIVIDE(COUNTIF(s.score >= 90), COUNT(*)) * 100 AS pass_rate
+        SAFE_DIVIDE(COUNTIF(${SCORE_SQL} >= 90), COUNT(*)) * 100 AS pass_rate
       FROM ${SUBMISSIONS} s
-      WHERE s.score IS NOT NULL
+      WHERE ${BASE_WHERE}
         AND s.month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH))
       GROUP BY s.month
       ORDER BY s.month
@@ -194,18 +203,18 @@ export async function getQuizAgentStats(
     const query = `
       SELECT
         s.user_id,
-        s.name AS user_name,
+        COALESCE(s.user_name, s.name) AS user_name,
         ${CENTER_SQL} AS center,
         s.month,
-        AVG(s.score) AS avg_score,
-        MAX(s.score) AS max_score,
+        AVG(${SCORE_SQL}) AS avg_score,
+        MAX(${SCORE_SQL}) AS max_score,
         COUNT(*) AS attempt_count,
-        COUNTIF(s.score >= 90) AS pass_count
+        COUNTIF(${SCORE_SQL} >= 90) AS pass_count
       FROM ${SUBMISSIONS} s
-      WHERE s.score IS NOT NULL
+      WHERE ${BASE_WHERE}
         ${where}
         ${defaultMonth}
-      GROUP BY s.user_id, s.name, center, s.month
+      GROUP BY s.user_id, user_name, center, s.month
       HAVING center IN ('용산', '광주')
       ORDER BY avg_score DESC
     `
@@ -251,10 +260,10 @@ export async function getQuizServiceTrend(
       SELECT
         s.month,
         ${SERVICE_SQL} AS svc,
-        AVG(s.score) AS avg_score,
+        AVG(${SCORE_SQL}) AS avg_score,
         COUNT(*) AS submissions
       FROM ${SUBMISSIONS} s
-      WHERE s.score IS NOT NULL
+      WHERE ${BASE_WHERE}
         AND s.month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH))
         ${centerWhere}
         AND ${CENTER_SQL} IN ('용산', '광주')

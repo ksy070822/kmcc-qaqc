@@ -20,11 +20,23 @@ function serviceNormalizeSql(alias = "q"): string {
 }
 
 // 필터 WHERE절 + params 빌더
+// 근속기간 카테고리 → BigQuery 조건
+function tenureToSql(tenure: string, alias: string): string {
+  switch (tenure) {
+    case "3개월 미만": return `${alias}.tenure_months < 3`
+    case "3개월 이상": return `${alias}.tenure_months >= 3 AND ${alias}.tenure_months < 6`
+    case "6개월 이상": return `${alias}.tenure_months >= 6 AND ${alias}.tenure_months < 12`
+    case "12개월 이상": return `${alias}.tenure_months >= 12`
+    default: return ""
+  }
+}
+
 function buildFilterClause(
   filters: {
     center?: string
     service?: string
     channel?: string
+    tenure?: string
     startMonth?: string
     endMonth?: string
   },
@@ -52,6 +64,12 @@ function buildFilterClause(
   if (filters.channel) {
     where += ` AND ${alias}.channel = @channel`
     params.channel = filters.channel
+  }
+  if (filters.tenure) {
+    const tenureSql = tenureToSql(filters.tenure, alias)
+    if (tenureSql) {
+      where += ` AND ${tenureSql}`
+    }
   }
 
   return { where, params }
@@ -97,13 +115,19 @@ export async function getQADashboardStats(
           COUNT(CASE WHEN q.center = '용산' THEN 1 END) AS yongsan_evals,
           COUNT(CASE WHEN q.center = '광주' THEN 1 END) AS gwangju_evals,
           AVG(CASE WHEN q.channel = '유선' THEN q.total_score END) AS voice_avg,
-          AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS chat_avg
+          AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS chat_avg,
+          AVG(CASE WHEN q.center = '용산' AND q.channel = '유선' THEN q.total_score END) AS yongsan_voice_avg,
+          AVG(CASE WHEN q.center = '용산' AND q.channel = '채팅' THEN q.total_score END) AS yongsan_chat_avg,
+          AVG(CASE WHEN q.center = '광주' AND q.channel = '유선' THEN q.total_score END) AS gwangju_voice_avg,
+          AVG(CASE WHEN q.center = '광주' AND q.channel = '채팅' THEN q.total_score END) AS gwangju_chat_avg
         FROM ${TABLE} q
         WHERE ${monthFilter}
       ),
       prev_period AS (
         SELECT
-          AVG(q.total_score) AS avg_score
+          AVG(q.total_score) AS avg_score,
+          AVG(CASE WHEN q.channel = '유선' THEN q.total_score END) AS prev_voice_avg,
+          AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS prev_chat_avg
         FROM ${TABLE} q
         WHERE q.evaluation_month = @prevMonth
       )
@@ -117,7 +141,13 @@ export async function getQADashboardStats(
         c.gwangju_evals,
         c.voice_avg,
         c.chat_avg,
-        p.avg_score AS prev_avg_score
+        c.yongsan_voice_avg,
+        c.yongsan_chat_avg,
+        c.gwangju_voice_avg,
+        c.gwangju_chat_avg,
+        p.avg_score AS prev_avg_score,
+        p.prev_voice_avg,
+        p.prev_chat_avg
       FROM current_period c
       CROSS JOIN prev_period p
     `
@@ -127,6 +157,10 @@ export async function getQADashboardStats(
 
     const avgScore = Number(row.avg_score) || 0
     const prevAvg = Number(row.prev_avg_score) || 0
+    const voiceAvg = Number(row.voice_avg) || 0
+    const chatAvg = Number(row.chat_avg) || 0
+    const prevVoiceAvg = Number(row.prev_voice_avg) || 0
+    const prevChatAvg = Number(row.prev_chat_avg) || 0
 
     const data: QADashboardStats = {
       avgScore: Math.round(avgScore * 10) / 10,
@@ -136,11 +170,19 @@ export async function getQADashboardStats(
       gwangjuAvgScore: Math.round((Number(row.gwangju_avg) || 0) * 10) / 10,
       yongsanEvaluations: Number(row.yongsan_evals) || 0,
       gwangjuEvaluations: Number(row.gwangju_evals) || 0,
-      voiceAvgScore: Math.round((Number(row.voice_avg) || 0) * 10) / 10,
-      chatAvgScore: Math.round((Number(row.chat_avg) || 0) * 10) / 10,
+      voiceAvgScore: Math.round(voiceAvg * 10) / 10,
+      chatAvgScore: Math.round(chatAvg * 10) / 10,
       monthLabel: targetMonth,
       prevMonthAvgScore: prevAvg > 0 ? Math.round(prevAvg * 10) / 10 : undefined,
       scoreTrend: prevAvg > 0 ? Math.round((avgScore - prevAvg) * 10) / 10 : undefined,
+      prevVoiceAvgScore: prevVoiceAvg > 0 ? Math.round(prevVoiceAvg * 10) / 10 : undefined,
+      prevChatAvgScore: prevChatAvg > 0 ? Math.round(prevChatAvg * 10) / 10 : undefined,
+      voiceTrend: prevVoiceAvg > 0 ? Math.round((voiceAvg - prevVoiceAvg) * 10) / 10 : undefined,
+      chatTrend: prevChatAvg > 0 ? Math.round((chatAvg - prevChatAvg) * 10) / 10 : undefined,
+      yongsanVoiceAvg: Math.round((Number(row.yongsan_voice_avg) || 0) * 10) / 10,
+      yongsanChatAvg: Math.round((Number(row.yongsan_chat_avg) || 0) * 10) / 10,
+      gwangjuVoiceAvg: Math.round((Number(row.gwangju_voice_avg) || 0) * 10) / 10,
+      gwangjuChatAvg: Math.round((Number(row.gwangju_chat_avg) || 0) * 10) / 10,
     }
 
     return { success: true, data }
@@ -271,6 +313,7 @@ export async function getQAItemStats(
     center?: string
     service?: string
     channel?: string
+    tenure?: string
     startMonth?: string
     endMonth?: string
   }
@@ -309,7 +352,17 @@ export async function getQAItemStats(
         AVG(q.spelling) AS spelling_avg,
         AVG(q.close_request) AS closeRequest_avg,
         AVG(q.copy_error) AS copyError_avg,
-        AVG(q.operation_error) AS operationError_avg
+        AVG(q.operation_error) AS operationError_avg,
+        -- 가점/감점 건수·합계
+        COUNT(*) AS total_evals,
+        COUNTIF(q.praise_bonus > 0) AS praiseBonus_count,
+        SUM(COALESCE(q.praise_bonus, 0)) AS praiseBonus_sum,
+        COUNTIF(q.honorific_error < 0) AS honorificError_count,
+        SUM(COALESCE(q.honorific_error, 0)) AS honorificError_sum,
+        COUNTIF(q.copy_error < 0) AS copyError_count,
+        SUM(COALESCE(q.copy_error, 0)) AS copyError_sum,
+        COUNTIF(q.operation_error < 0) AS operationError_count,
+        SUM(COALESCE(q.operation_error, 0)) AS operationError_sum
       FROM ${TABLE} q
       WHERE ${baseFilter} ${where}
     `
@@ -317,46 +370,58 @@ export async function getQAItemStats(
     const [rows] = await bq.query({ query, params })
     const row = (rows as Record<string, unknown>[])[0] || {}
 
-    // QA_EVALUATION_ITEMS 매핑 (constants에서 정의된 항목)
-    const itemDefs: Array<{ columnKey: string; name: string; shortName: string; maxScore: number; category: string }> = [
-      { columnKey: "greetingScore", name: "인사예절", shortName: "인사", maxScore: 6, category: "공통" },
-      { columnKey: "responseExpression", name: "화답표현", shortName: "화답", maxScore: 5, category: "공통" },
-      { columnKey: "inquiryComprehension", name: "문의내용파악", shortName: "문의파악", maxScore: 5, category: "공통" },
-      { columnKey: "identityCheck", name: "본인확인", shortName: "본인확인", maxScore: 5, category: "공통" },
-      { columnKey: "requiredSearch", name: "필수탐색", shortName: "필수탐색", maxScore: 5, category: "공통" },
-      { columnKey: "businessKnowledge", name: "업무지식", shortName: "업무지식", maxScore: 15, category: "공통" },
-      { columnKey: "promptness", name: "신속성", shortName: "신속성", maxScore: 3, category: "공통" },
-      { columnKey: "systemProcessing", name: "전산처리", shortName: "전산처리", maxScore: 6, category: "공통" },
-      { columnKey: "consultationHistory", name: "상담이력", shortName: "상담이력", maxScore: 5, category: "공통" },
-      { columnKey: "empathyCare", name: "감성케어", shortName: "감성케어", maxScore: 17, category: "공통" },
-      { columnKey: "languageExpression", name: "언어표현", shortName: "언어표현", maxScore: 5, category: "공통" },
-      { columnKey: "listeningFocus", name: "경청/집중태도", shortName: "경청", maxScore: 5, category: "공통" },
-      { columnKey: "explanationAbility", name: "설명능력", shortName: "설명능력", maxScore: 5, category: "공통" },
-      { columnKey: "perceivedSatisfaction", name: "체감만족", shortName: "체감만족", maxScore: 3, category: "공통" },
-      { columnKey: "praiseBonus", name: "칭찬접수", shortName: "칭찬", maxScore: 10, category: "공통" },
-      { columnKey: "voicePerformance", name: "음성연출", shortName: "음성연출", maxScore: 8, category: "유선전용" },
-      { columnKey: "speechSpeed", name: "말속도/발음", shortName: "말속도", maxScore: 2, category: "유선전용" },
-      { columnKey: "honorificError", name: "호칭오류", shortName: "호칭오류", maxScore: -1, category: "유선전용" },
-      { columnKey: "spelling", name: "맞춤법", shortName: "맞춤법", maxScore: 5, category: "채팅전용" },
-      { columnKey: "closeRequest", name: "종료요청", shortName: "종료요청", maxScore: 3, category: "채팅전용" },
-      { columnKey: "copyError", name: "복사오류", shortName: "복사오류", maxScore: -1, category: "채팅전용" },
-      { columnKey: "operationError", name: "조작오류", shortName: "조작오류", maxScore: -1, category: "채팅전용" },
+    // QA_EVALUATION_ITEMS 매핑 (채널별 배점이 다른 항목은 voiceMax/chatMax 분리)
+    const ch = filters.channel // "유선" | "채팅" | undefined
+    const itemDefs: Array<{ columnKey: string; name: string; shortName: string; voiceMax: number; chatMax: number; category: string }> = [
+      { columnKey: "greetingScore", name: "인사예절", shortName: "인사", voiceMax: 6, chatMax: 3, category: "공통" },
+      { columnKey: "responseExpression", name: "화답표현", shortName: "화답", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "inquiryComprehension", name: "문의내용파악", shortName: "문의파악", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "identityCheck", name: "본인확인", shortName: "본인확인", voiceMax: 5, chatMax: 3, category: "공통" },
+      { columnKey: "requiredSearch", name: "필수탐색", shortName: "필수탐색", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "businessKnowledge", name: "업무지식", shortName: "업무지식", voiceMax: 15, chatMax: 15, category: "공통" },
+      { columnKey: "promptness", name: "신속성", shortName: "신속성", voiceMax: 3, chatMax: 3, category: "공통" },
+      { columnKey: "systemProcessing", name: "전산처리", shortName: "전산처리", voiceMax: 6, chatMax: 6, category: "공통" },
+      { columnKey: "consultationHistory", name: "상담이력", shortName: "상담이력", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "empathyCare", name: "감성케어", shortName: "감성케어", voiceMax: 17, chatMax: 17, category: "공통" },
+      { columnKey: "languageExpression", name: "언어표현", shortName: "언어표현", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "listeningFocus", name: "경청/집중태도", shortName: "경청", voiceMax: 5, chatMax: 5, category: "공통" },
+      { columnKey: "explanationAbility", name: "설명능력", shortName: "설명능력", voiceMax: 5, chatMax: 10, category: "공통" },
+      { columnKey: "perceivedSatisfaction", name: "체감만족", shortName: "체감만족", voiceMax: 3, chatMax: 5, category: "공통" },
+      { columnKey: "praiseBonus", name: "칭찬접수", shortName: "칭찬", voiceMax: 10, chatMax: 10, category: "공통" },
+      { columnKey: "voicePerformance", name: "음성연출", shortName: "음성연출", voiceMax: 8, chatMax: 0, category: "유선전용" },
+      { columnKey: "speechSpeed", name: "말속도/발음", shortName: "말속도", voiceMax: 2, chatMax: 0, category: "유선전용" },
+      { columnKey: "honorificError", name: "호칭오류", shortName: "호칭오류", voiceMax: -1, chatMax: 0, category: "유선전용" },
+      { columnKey: "spelling", name: "맞춤법", shortName: "맞춤법", voiceMax: 0, chatMax: 5, category: "채팅전용" },
+      { columnKey: "closeRequest", name: "종료요청", shortName: "종료요청", voiceMax: 0, chatMax: 3, category: "채팅전용" },
+      { columnKey: "copyError", name: "복사오류", shortName: "복사오류", voiceMax: 0, chatMax: -1, category: "채팅전용" },
+      { columnKey: "operationError", name: "조작오류", shortName: "조작오류", voiceMax: 0, chatMax: -1, category: "채팅전용" },
     ]
 
     const data: QAItemStats[] = itemDefs.map(def => {
       const avgVal = Number(row[`${def.columnKey}_avg`]) || 0
-      const absMax = Math.abs(def.maxScore)
+      // 채널에 따라 배점 결정
+      const maxScore = ch === "채팅" ? def.chatMax : def.voiceMax
+      const absMax = Math.abs(maxScore)
       return {
         itemName: def.name,
         shortName: def.shortName,
-        maxScore: def.maxScore,
+        maxScore,
         avgScore: Math.round(avgVal * 100) / 100,
         avgRate: absMax > 0 ? Math.round((avgVal / absMax) * 10000) / 100 : 0,
         category: def.category,
       }
     })
 
-    return { success: true, data }
+    // 가점/감점 항목 건수·합계
+    const specialItems = {
+      totalEvals: Number(row.total_evals) || 0,
+      praiseBonus: { count: Number(row.praiseBonus_count) || 0, sum: Number(row.praiseBonus_sum) || 0 },
+      honorificError: { count: Number(row.honorificError_count) || 0, sum: Number(row.honorificError_sum) || 0 },
+      copyError: { count: Number(row.copyError_count) || 0, sum: Number(row.copyError_sum) || 0 },
+      operationError: { count: Number(row.operationError_count) || 0, sum: Number(row.operationError_sum) || 0 },
+    }
+
+    return { success: true, data, specialItems }
   } catch (error) {
     console.error("[bigquery-qa] getQAItemStats error:", error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
@@ -371,6 +436,7 @@ export async function getQAMonthlyTable(
     center?: string
     service?: string
     channel?: string
+    tenure?: string
     startMonth?: string
     endMonth?: string
   }
@@ -430,6 +496,7 @@ export async function getQAConsultTypeStats(
     center?: string
     service?: string
     channel?: string
+    tenure?: string
     startMonth?: string
     endMonth?: string
   }
@@ -469,6 +536,215 @@ export async function getQAConsultTypeStats(
     return { success: true, data }
   } catch (error) {
     console.error("[bigquery-qa] getQAConsultTypeStats error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * 인원별 현황: 5회 이상 평가 받은 상담사 중 그룹 평균 이하 + 취약항목
+ */
+export async function getQAAgentPerformance(
+  filters: {
+    center?: string
+    service?: string
+    channel?: string
+    tenure?: string
+    startMonth?: string
+    endMonth?: string
+  }
+): Promise<{ success: boolean; data?: import("@/lib/types").QAAgentPerformance[]; error?: string }> {
+  try {
+    const bq = getBigQueryClient()
+    const { where, params } = buildFilterClause(filters)
+
+    let baseFilter = "1=1"
+    if (!filters.startMonth && !filters.endMonth) {
+      baseFilter = "q.evaluation_month = @defaultMonth"
+      params.defaultMonth = new Date().toISOString().slice(0, 7)
+    }
+
+    const normalizedService = serviceNormalizeSql("q")
+
+    // 항목 컬럼 목록 (취약항목 산출용)
+    const itemColumns = [
+      { col: "greeting_score", name: "인사예절" },
+      { col: "response_expression", name: "화답표현" },
+      { col: "inquiry_comprehension", name: "문의내용파악" },
+      { col: "identity_check", name: "본인확인" },
+      { col: "required_search", name: "필수탐색" },
+      { col: "business_knowledge", name: "업무지식" },
+      { col: "promptness", name: "신속성" },
+      { col: "system_processing", name: "전산처리" },
+      { col: "consultation_history", name: "상담이력" },
+      { col: "empathy_care", name: "감성케어" },
+      { col: "language_expression", name: "언어표현" },
+      { col: "listening_focus", name: "경청/집중태도" },
+      { col: "explanation_ability", name: "설명능력" },
+      { col: "perceived_satisfaction", name: "체감만족" },
+    ]
+
+    const agentItemAvgs = itemColumns.map(i => `AVG(q.${i.col}) AS agent_${i.col}`).join(",\n        ")
+    const groupItemAvgs = itemColumns.map(i => `AVG(q.${i.col}) AS grp_${i.col}`).join(",\n        ")
+
+    const query = `
+      WITH agent_stats AS (
+        SELECT
+          q.agent_name,
+          q.agent_id,
+          q.center,
+          ${normalizedService} AS norm_service,
+          q.channel,
+          COUNT(*) AS eval_count,
+          AVG(q.total_score) AS agent_avg,
+          ${agentItemAvgs}
+        FROM ${TABLE} q
+        WHERE ${baseFilter} ${where}
+        GROUP BY q.agent_name, q.agent_id, q.center, ${normalizedService}, q.channel
+        HAVING COUNT(*) >= 5
+      ),
+      group_stats AS (
+        SELECT
+          q.center,
+          ${normalizedService} AS norm_service,
+          q.channel,
+          AVG(q.total_score) AS group_avg,
+          ${groupItemAvgs}
+        FROM ${TABLE} q
+        WHERE ${baseFilter} ${where}
+        GROUP BY q.center, ${normalizedService}, q.channel
+      ),
+      group_agent_count AS (
+        SELECT center, norm_service, channel, COUNT(*) AS group_total
+        FROM agent_stats
+        GROUP BY center, norm_service, channel
+      )
+      SELECT
+        a.agent_name,
+        a.agent_id,
+        a.center,
+        a.norm_service AS service,
+        a.channel,
+        a.eval_count,
+        a.agent_avg,
+        g.group_avg,
+        gc.group_total,
+        ${itemColumns.map(i => `a.agent_${i.col}, g.grp_${i.col}`).join(",\n        ")}
+      FROM agent_stats a
+      JOIN group_stats g
+        ON a.center = g.center AND a.norm_service = g.norm_service AND a.channel = g.channel
+      JOIN group_agent_count gc
+        ON a.center = gc.center AND a.norm_service = gc.norm_service AND a.channel = gc.channel
+      WHERE a.agent_avg <= g.group_avg
+      ORDER BY (a.agent_avg - g.group_avg) ASC
+    `
+
+    const [rows] = await bq.query({ query, params })
+    const data: import("@/lib/types").QAAgentPerformance[] = (rows as Record<string, unknown>[]).map(row => {
+      const weakItems: string[] = []
+      for (const item of itemColumns) {
+        const agentVal = Number(row[`agent_${item.col}`]) || 0
+        const grpVal = Number(row[`grp_${item.col}`]) || 0
+        if (grpVal > 0 && agentVal < grpVal) {
+          weakItems.push(item.name)
+        }
+      }
+
+      return {
+        agentName: String(row.agent_name),
+        agentId: row.agent_id ? String(row.agent_id) : undefined,
+        center: String(row.center),
+        service: String(row.service),
+        channel: String(row.channel),
+        evaluations: Number(row.eval_count) || 0,
+        avgScore: Math.round((Number(row.agent_avg) || 0) * 10) / 10,
+        groupAvg: Math.round((Number(row.group_avg) || 0) * 10) / 10,
+        diff: Math.round(((Number(row.agent_avg) || 0) - (Number(row.group_avg) || 0)) * 10) / 10,
+        groupTotal: Number(row.group_total) || 0,
+        weakItems,
+      }
+    })
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("[bigquery-qa] getQAAgentPerformance error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * 유의 상담사 수 (센터별) - 5회 이상 평가 & 그룹 평균 이하
+ */
+export async function getQAUnderperformerCount(
+  startMonth?: string | null,
+  endMonth?: string | null
+): Promise<{ success: boolean; data?: { yongsan: number; gwangju: number; total: number }; error?: string }> {
+  try {
+    const bq = getBigQueryClient()
+    const targetMonth = endMonth || startMonth || new Date().toISOString().slice(0, 7)
+
+    let monthFilter = "q.evaluation_month = @month"
+    const params: Record<string, string> = { month: targetMonth }
+
+    if (startMonth && endMonth && startMonth !== endMonth) {
+      monthFilter = "q.evaluation_month >= @startMonth AND q.evaluation_month <= @endMonth"
+      params.startMonth = startMonth
+      params.endMonth = endMonth
+      delete params.month
+    }
+
+    const normalizedService = serviceNormalizeSql("q")
+
+    const query = `
+      WITH agent_stats AS (
+        SELECT
+          q.agent_name,
+          q.center,
+          ${normalizedService} AS norm_service,
+          q.channel,
+          COUNT(*) AS eval_count,
+          AVG(q.total_score) AS agent_avg
+        FROM ${TABLE} q
+        WHERE ${monthFilter}
+        GROUP BY q.agent_name, q.center, ${normalizedService}, q.channel
+        HAVING COUNT(*) >= 5
+      ),
+      group_stats AS (
+        SELECT
+          q.center,
+          ${normalizedService} AS norm_service,
+          q.channel,
+          AVG(q.total_score) AS group_avg
+        FROM ${TABLE} q
+        WHERE ${monthFilter}
+        GROUP BY q.center, ${normalizedService}, q.channel
+      ),
+      underperformers AS (
+        SELECT a.center
+        FROM agent_stats a
+        JOIN group_stats g
+          ON a.center = g.center AND a.norm_service = g.norm_service AND a.channel = g.channel
+        WHERE a.agent_avg <= g.group_avg
+      )
+      SELECT
+        COUNTIF(center = '용산') AS yongsan,
+        COUNTIF(center = '광주') AS gwangju,
+        COUNT(*) AS total
+      FROM underperformers
+    `
+
+    const [rows] = await bq.query({ query, params })
+    const row = (rows as Record<string, unknown>[])[0] || {}
+
+    return {
+      success: true,
+      data: {
+        yongsan: Number(row.yongsan) || 0,
+        gwangju: Number(row.gwangju) || 0,
+        total: Number(row.total) || 0,
+      },
+    }
+  } catch (error) {
+    console.error("[bigquery-qa] getQAUnderperformerCount error:", error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }

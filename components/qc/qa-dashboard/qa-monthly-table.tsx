@@ -3,11 +3,13 @@
 import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2 } from "lucide-react"
+import { SERVICE_ORDER } from "@/lib/constants"
 
 interface Props {
   center: string
   service: string
   channel: string
+  tenure: string
   startMonth?: string
   endMonth?: string
 }
@@ -23,7 +25,7 @@ interface MonthlyRow {
   maxScore: number
 }
 
-export function QAMonthlyTable({ center, service, channel, startMonth, endMonth }: Props) {
+export function QAMonthlyTable({ center, service, channel, tenure, startMonth, endMonth }: Props) {
   const [data, setData] = useState<MonthlyRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -35,12 +37,25 @@ export function QAMonthlyTable({ center, service, channel, startMonth, endMonth 
         if (center !== "all") params.set("center", center)
         if (service !== "all") params.set("service", service)
         if (channel !== "all") params.set("channel", channel)
+        if (tenure !== "all") params.set("tenure", tenure)
         if (startMonth) params.set("startMonth", startMonth.slice(0, 7))
         if (endMonth) params.set("endMonth", endMonth.slice(0, 7))
 
         const res = await fetch(`/api/data?${params}`)
         const json = await res.json()
-        if (json.success && json.data) setData(json.data)
+        if (json.success && json.data) {
+          // SERVICE_ORDER 기준 정렬 (월 DESC → 센터 → 서비스순 → 채널)
+          const orderMap = new Map((SERVICE_ORDER as readonly string[]).map((s, i) => [s, i]))
+          const sorted = (json.data as MonthlyRow[]).sort((a, b) => {
+            if (a.month !== b.month) return b.month.localeCompare(a.month)
+            if (a.center !== b.center) return a.center.localeCompare(b.center)
+            const ai = orderMap.get(a.service) ?? 999
+            const bi = orderMap.get(b.service) ?? 999
+            if (ai !== bi) return ai - bi
+            return a.channel.localeCompare(b.channel)
+          })
+          setData(sorted)
+        }
       } catch (err) {
         console.error("QA monthly error:", err)
       } finally {
@@ -48,7 +63,7 @@ export function QAMonthlyTable({ center, service, channel, startMonth, endMonth 
       }
     }
     fetchData()
-  }, [center, service, channel, startMonth, endMonth])
+  }, [center, service, channel, tenure, startMonth, endMonth])
 
   if (loading) {
     return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>

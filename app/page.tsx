@@ -7,6 +7,7 @@ import { ROLE_CONFIG } from "@/lib/auth"
 import { Sidebar } from "@/components/qc/sidebar"
 import { Header } from "@/components/qc/header"
 import { Dashboard } from "@/components/qc/dashboard"
+import { QualityDashboard } from "@/components/qc/quality-dashboard"
 import { AgentAnalysis } from "@/components/qc/agents"
 import { FocusManagement } from "@/components/qc/focus"
 import { AnalyticsReports } from "@/components/qc/reports"
@@ -91,7 +92,7 @@ export default function QCManagementApp() {
   const renderContent = () => {
     switch (currentTab) {
       case "dashboard":
-        return <Dashboard onNavigateToFocus={handleNavigateToFocus} selectedDate={searchDate} />
+        return <QualityDashboard onNavigateToFocus={handleNavigateToFocus} />
       case "predictions":
         return <Predictions onNavigateToFocus={handleNavigateToFocus} />
       case "agents":

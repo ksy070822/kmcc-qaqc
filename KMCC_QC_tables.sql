@@ -197,3 +197,119 @@ VALUES
 ('202601_yongsan_ops', '1월 용산 오상담', '용산', 'ops', 3.9, 'monthly', '2026-01-01', '2026-01-31'),
 ('202601_gwangju_attitude', '1월 광주 상담태도', '광주', 'attitude', 2.7, 'monthly', '2026-01-01', '2026-01-31'),
 ('202601_gwangju_ops', '1월 광주 오상담', '광주', 'ops', 1.7, 'monthly', '2026-01-01', '2026-01-31');
+
+-- ============================================================
+-- QA(품질보증) 평가 테이블
+-- 유선/채팅 통합 (채널별 고유 항목은 NULLABLE)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.qa_evaluations` (
+  -- PK
+  qa_eval_id STRING NOT NULL,              -- "{agent_id}_{month}_{round}"
+  evaluation_date DATE NOT NULL,           -- 평가월 1일 (파티션 키)
+  evaluation_month STRING NOT NULL,        -- "2026-01"
+  round INT64 NOT NULL,                    -- 차시 1~5
+  consultation_id STRING,
+
+  -- 상담사 정보
+  center STRING NOT NULL,                  -- 용산/광주
+  team STRING,
+  service STRING NOT NULL,
+  channel STRING NOT NULL,                 -- 유선/채팅
+  agent_name STRING NOT NULL,
+  agent_id STRING,                         -- LDAP (agents 테이블 FK)
+  tenure_months INT64,
+  work_type STRING,                        -- 주간/야간
+
+  -- 총점
+  total_score FLOAT64 NOT NULL,            -- 0~100
+
+  -- 공통 항목 (유선+채팅)
+  greeting_score FLOAT64,                  -- 유선:인사예절(6) / 채팅:(끝)인사(3)
+  response_expression FLOAT64,             -- 화답표현(5)
+  inquiry_comprehension FLOAT64,           -- 문의내용파악(5)
+  identity_check FLOAT64,                  -- 본인확인: 유선(5)/채팅(3)
+  required_search FLOAT64,                 -- 필수탐색(5)
+  business_knowledge FLOAT64,              -- 업무지식(15)
+  promptness FLOAT64,                      -- 신속성(3)
+  system_processing FLOAT64,               -- 전산처리(6)
+  consultation_history FLOAT64,            -- 상담이력(5)
+  empathy_care FLOAT64,                    -- 감성케어(17)
+  language_expression FLOAT64,             -- 언어표현(5)
+  listening_focus FLOAT64,                 -- 경청/집중태도(5)
+  explanation_ability FLOAT64,             -- 설명능력: 유선(5)/채팅(10)
+  perceived_satisfaction FLOAT64,          -- 체감만족: 유선(3)/채팅(5)
+  praise_bonus FLOAT64,                    -- 칭찬접수(+10)
+
+  -- 유선 전용 (채팅은 NULL)
+  voice_performance FLOAT64,               -- 음성연출(8)
+  speech_speed FLOAT64,                    -- 말속도/발음(2)
+  honorific_error FLOAT64,                 -- 호칭오류(-1)
+
+  -- 채팅 전용 (유선은 NULL)
+  spelling FLOAT64,                        -- 맞춤법(5)
+  close_request FLOAT64,                   -- 종료요청(3)
+  copy_error FLOAT64,                      -- 복사오류(-1)
+  operation_error FLOAT64,                 -- 조작오류(-1)
+
+  -- 상담유형
+  consult_type_depth1 STRING,
+  consult_type_depth2 STRING,
+  consult_type_depth3 STRING,
+  consult_type_depth4 STRING,
+
+  -- 피드백
+  knowledge_feedback STRING,
+  satisfaction_comment STRING,
+
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
+PARTITION BY evaluation_date
+CLUSTER BY center, channel, service;
+
+-- ============================================================
+-- 상담사별 월간 종합 요약 테이블
+-- QA + QC + CSAT + 직무테스트 통합 스냅샷
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.agent_monthly_summary` (
+  summary_id STRING NOT NULL,              -- "{agent_id}_{month}"
+  summary_month STRING NOT NULL,           -- "2026-01"
+  summary_date DATE NOT NULL,              -- 파티션 키 (월 1일)
+
+  agent_id STRING NOT NULL,
+  agent_name STRING,
+  center STRING NOT NULL,
+  service STRING,
+  channel STRING,
+  work_type STRING,
+
+  -- QA 지표
+  qa_score FLOAT64,                        -- QA 평균 점수 (100점)
+  qa_eval_count INT64,                     -- QA 평가 횟수
+
+  -- QC 지표
+  qc_attitude_rate FLOAT64,                -- 태도 오류율 (%)
+  qc_ops_rate FLOAT64,                     -- 오상담 오류율 (%)
+  qc_total_rate FLOAT64,                   -- 합계 오류율
+  qc_eval_count INT64,
+
+  -- CSAT 지표
+  csat_avg_score FLOAT64,                  -- 평균 평점 (5점)
+  csat_review_count INT64,
+
+  -- 직무테스트
+  knowledge_score FLOAT64,                 -- 업무지식 점수
+  knowledge_test_count INT64,
+
+  -- 종합 리스크
+  composite_risk_score FLOAT64,            -- 가중 종합 점수
+  risk_level STRING,                       -- low/medium/high/critical
+
+  -- AI 코멘트
+  ai_comment STRING,
+
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
+PARTITION BY summary_date
+CLUSTER BY center, agent_id;

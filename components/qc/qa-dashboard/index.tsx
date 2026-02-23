@@ -6,6 +6,7 @@ import { QAScoreTrendChart } from "./qa-score-trend-chart"
 import { QACenterComparison } from "./qa-center-comparison"
 import { QAItemAnalysis } from "./qa-item-analysis"
 import { QAMonthlyTable } from "./qa-monthly-table"
+import { QAAgentAnalysis } from "./qa-agent-analysis"
 import { DashboardFilters } from "@/components/qc/dashboard/dashboard-filters"
 import { useQADashboardData } from "@/lib/use-qa-dashboard-data"
 import { Loader2 } from "lucide-react"
@@ -41,7 +42,7 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
     }
   }, [externalMonth])
 
-  const { stats, centerStats, trendData, loading, error, refresh } = useQADashboardData(
+  const { stats, centerStats, trendData, underperformerCount, loading, error, refresh } = useQADashboardData(
     filterStartDate, filterEndDate
   )
 
@@ -64,7 +65,7 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
       )}
 
       {/* KPI 카드 */}
-      <QAOverviewSection stats={stats} />
+      <QAOverviewSection stats={stats} underperformerCount={underperformerCount} />
 
       {/* 점수 추이 차트 */}
       <QAScoreTrendChart data={trendData} />
@@ -97,6 +98,7 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
           {[
             { value: "item", label: "항목별 점수" },
             { value: "monthly", label: "월별 현황" },
+            { value: "agent", label: "인원별 현황" },
           ].map((tab) => (
             <button
               key={tab.value}
@@ -113,8 +115,9 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
           ))}
         </div>
 
-        {activeTab === "item" && <QAItemAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} startMonth={filterStartDate} endMonth={filterEndDate} />}
-        {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} startMonth={filterStartDate} endMonth={filterEndDate} />}
+        {activeTab === "item" && <QAItemAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
+        {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
+        {activeTab === "agent" && <QAAgentAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
       </div>
     </div>
   )
