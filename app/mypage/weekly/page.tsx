@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -56,8 +56,13 @@ export default function WeeklyReportPage() {
   const [detail, setDetail] = useState<WeeklyDetail | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const baseDate = weekOffset === 0 ? new Date() : addWeeks(new Date(), weekOffset)
-  const { start: weekStart, end: weekEnd } = getThursdayWeek(baseDate)
+  const { start: weekStart, end: weekEnd } = useMemo(() => {
+    const baseDate = weekOffset === 0 ? new Date() : addWeeks(new Date(), weekOffset)
+    return getThursdayWeek(baseDate)
+  }, [weekOffset])
+
+  const weekStartStr = format(weekStart, "yyyy-MM-dd")
+  const weekEndStr = format(weekEnd, "yyyy-MM-dd")
 
   useEffect(() => {
     async function fetchWeekly() {
@@ -67,8 +72,8 @@ export default function WeeklyReportPage() {
         const agentId = user.agentId || user.userId
         const params = new URLSearchParams({
           agentId,
-          startDate: format(weekStart, "yyyy-MM-dd"),
-          endDate: format(weekEnd, "yyyy-MM-dd"),
+          startDate: weekStartStr,
+          endDate: weekEndStr,
         })
 
         const res = await fetch(`/api/mypage/weekly?${params}`)
@@ -99,7 +104,7 @@ export default function WeeklyReportPage() {
     }
 
     fetchWeekly()
-  }, [user?.agentId, user?.userId, weekOffset, weekStart, weekEnd])
+  }, [user?.agentId, user?.userId, weekStartStr, weekEndStr])
 
   return (
     <div className="space-y-6">
