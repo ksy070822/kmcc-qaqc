@@ -87,12 +87,38 @@ FROM `csopp-25f2.KMCC_QC.productivity`
 WHERE work_date BETWEEN @start AND @end
 ```
 
-### AI(Gemini/Cursor)에게 이렇게 요청하세요
+### AI(Gemini/Cursor) 프롬프트 예시
 
-> "lib/bigquery-qa.ts 파일을 참고해서 lib/bigquery-productivity.ts를 만들어줘.
+**1단계: BigQuery 쿼리 파일 만들기**
+> "이 프로젝트의 lib/bigquery-qa.ts 파일을 참고해서 lib/bigquery-productivity.ts를 만들어줘.
 > BigQuery 테이블은 csopp-25f2.KMCC_QC.productivity이고,
-> agent_name, service, work_date, total_calls, avg_handle_time 컬럼이 있어.
-> 날짜 범위와 센터별 필터링이 가능해야 해."
+> agent_name, service, center, work_date, total_calls, avg_handle_time 컬럼이 있어.
+> 날짜 범위(startDate, endDate)와 센터별(용산/광주) 필터링이 가능해야 해.
+> 함수 이름은 getProductivityData로 해줘."
+
+**2단계: API 엔드포인트 만들기**
+> "app/api/data/route.ts 파일의 패턴을 참고해서
+> app/api/productivity/route.ts를 만들어줘.
+> lib/bigquery-productivity.ts의 getProductivityData 함수를 호출하고,
+> searchParams에서 startDate, endDate, center를 받아서 넘겨줘."
+
+**3단계: 대시보드 UI 만들기**
+> "components/qc/qa-dashboard/index.tsx 구조를 참고해서
+> components/qc/productivity-dashboard/index.tsx를 만들어줘.
+> /api/productivity에서 데이터를 fetch하고,
+> 상단에 KPI 카드 3개(총 처리건수, 시간당 처리량, 평균 처리시간),
+> 아래에 Recharts로 일별 추이 라인 차트를 넣어줘.
+> shadcn/ui의 Card 컴포넌트를 사용하고, 기존 프로젝트 스타일을 따라가줘."
+
+**4단계: 차트/테이블 추가**
+> "productivity-dashboard 폴더에 productivity-table.tsx를 추가해줘.
+> 상담사별 생산성 테이블이고, 컬럼은: 상담사명, 서비스, 처리건수, 시간당 처리량.
+> shadcn/ui의 Table 컴포넌트를 사용하고, 정렬 기능도 넣어줘.
+> components/qc/qa-dashboard/qa-monthly-table.tsx를 참고해."
+
+**에러가 났을 때**
+> "이 에러 메시지를 보고 원인을 알려줘: [에러 메시지 붙여넣기]"
+> "lib/bigquery-productivity.ts에서 BigQuery 쿼리 에러가 나. 쿼리를 확인해줘."
 
 ---
 
@@ -139,11 +165,37 @@ FROM `csopp-25f2.KMCC_QC.sla_metrics`
 WHERE metric_date BETWEEN @start AND @end
 ```
 
-### AI(Gemini/Cursor)에게 이렇게 요청하세요
+### AI(Gemini/Cursor) 프롬프트 예시
 
-> "lib/bigquery-qa.ts 파일을 참고해서 lib/bigquery-sla.ts를 만들어줘.
+**1단계: BigQuery 쿼리 파일 만들기**
+> "이 프로젝트의 lib/bigquery-qa.ts 파일을 참고해서 lib/bigquery-sla.ts를 만들어줘.
 > BigQuery 테이블은 csopp-25f2.KMCC_QC.sla_metrics이고,
-> 서비스별, 날짜별 SLA 지표(응답률, 서비스레벨, 평균대기시간, 포기율)를 조회해야 해."
+> service, center, metric_date, response_rate, service_level_20s, avg_wait_time, abandon_rate 컬럼이 있어.
+> 날짜 범위와 센터별, 서비스별 필터링이 가능해야 해.
+> 함수 이름은 getSlaData로 해줘."
+
+**2단계: API 엔드포인트 만들기**
+> "app/api/data/route.ts 패턴을 참고해서 app/api/sla/route.ts를 만들어줘.
+> lib/bigquery-sla.ts의 getSlaData 함수를 호출하고,
+> searchParams에서 startDate, endDate, center, service를 받아서 넘겨줘."
+
+**3단계: 대시보드 UI 만들기**
+> "components/qc/qa-dashboard/index.tsx 구조를 참고해서
+> components/qc/sla-dashboard/index.tsx를 만들어줘.
+> /api/sla에서 데이터를 fetch하고,
+> 상단에 KPI 카드 4개(응답률, 서비스레벨, 평균대기시간, 포기율),
+> 아래에 Recharts로 일별 추이 차트를 넣어줘.
+> 목표 대비 달성률도 색상으로 표시해줘 (달성=초록, 미달=빨강).
+> shadcn/ui 기반으로, 기존 프로젝트 스타일을 따라가줘."
+
+**4단계: 서비스별 비교 테이블**
+> "sla-dashboard 폴더에 sla-service-table.tsx를 추가해줘.
+> 서비스별 SLA 지표 비교 테이블이야.
+> 컬럼: 서비스명, 응답률, 서비스레벨(20s), 평균대기시간, 포기율.
+> 목표 대비 색상 표시하고, components/qc/qa-dashboard/qa-monthly-table.tsx를 참고해."
+
+**에러가 났을 때**
+> "이 에러 메시지를 보고 원인을 알려줘: [에러 메시지 붙여넣기]"
 
 ---
 
@@ -188,11 +240,40 @@ lib/
 const PASS_THRESHOLD = 75; // 기존: 70
 ```
 
-### AI(Gemini/Cursor)에게 이렇게 요청하세요
+### AI(Gemini/Cursor) 프롬프트 예시
 
+**기존 쿼리 수정하기**
+> "lib/bigquery-qa.ts 파일을 열어줘.
+> getQADashboardData 함수에서 QA 점수 조회 시
+> 채널(유선/채팅)별로 구분해서 가져오도록 수정해줘.
+> 기존 코드 패턴을 유지하면서 channel 파라미터를 추가해."
+
+**KPI 카드에 전월 대비 추가**
 > "components/qc/qa-dashboard/qa-overview-section.tsx를 열어서
 > QA 평균 점수 카드에 전월 대비 증감을 표시하는 기능을 추가해줘.
+> 증가면 초록색 화살표, 감소면 빨간색 화살표로 보여줘.
 > 기존 코드 스타일을 따라가줘."
+
+**차트 수정하기**
+> "components/qc/qa-dashboard/qa-score-trend-chart.tsx를 열어서
+> 현재 월별 평균 점수만 보여주는데, 센터별(용산/광주) 라인을 분리해줘.
+> Recharts의 Line 컴포넌트를 센터별로 하나씩 추가하면 돼.
+> 용산은 파란색, 광주는 초록색으로."
+
+**평가 항목 기준 변경**
+> "lib/constants.ts에서 QA_EVALUATION_ITEMS 부분을 찾아줘.
+> 여기서 '상담 지식' 항목의 배점을 15점에서 20점으로 변경하고 싶어.
+> 변경 시 다른 항목에 영향이 있는지도 확인해줘."
+
+**새 테이블 추가**
+> "components/qc/qa-dashboard/ 폴더에 qa-agent-ranking.tsx를 만들어줘.
+> 상담사별 QA 점수 순위 테이블이야.
+> 컬럼: 순위, 상담사명, 서비스, 평균점수, 평가건수, 전월대비.
+> qa-monthly-table.tsx 스타일을 참고하고, 점수 높은 순으로 정렬해줘."
+
+**에러가 났을 때**
+> "이 에러 메시지를 보고 원인을 알려줘: [에러 메시지 붙여넣기]"
+> "qa-dashboard가 빈 화면이야. 브라우저 콘솔에 이런 에러가 나와: [에러 붙여넣기]"
 
 ---
 
