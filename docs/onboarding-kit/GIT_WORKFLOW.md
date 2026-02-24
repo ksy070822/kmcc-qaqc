@@ -31,7 +31,7 @@
 
 ```bash
 # 프로젝트 폴더로 이동
-cd ~/Desktop/kmcc-qc-dashbord
+cd ~/Desktop/kmcc-qaqc
 
 # 최신 코드 받기
 git pull origin main
@@ -124,7 +124,7 @@ git push -u origin feature/sla-din
 
 ### GitHub 웹에서 만들기
 
-1. https://github.com/may070822/kmcc-qc-dashbord 접속
+1. https://github.com/ksy070822/kmcc-qaqc 접속
 2. 상단에 "Compare & pull request" 노란 버튼 클릭
 3. 제목과 설명 작성:
    ```
