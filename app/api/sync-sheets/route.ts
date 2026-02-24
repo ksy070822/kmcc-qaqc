@@ -60,25 +60,25 @@ export async function POST(request: NextRequest) {
     console.log('[Sync Sheets] 파싱 완료: 용산 ' + yonsanEvaluations.length + '건, 광주 ' + gwangjuEvaluations.length + '건');
 
     // BigQuery에서 기존 evaluation_id 조회 (중복 방지)
+    // evaluation_date 범위로 조회하여 대량 IN절 문제 회피
     const bigquery = getBigQueryClient();
-    const existingIdsQuery = `
-      SELECT DISTINCT evaluation_id
-      FROM ${EVAL_TABLE}
-      WHERE evaluation_id IN UNNEST(@evaluation_ids)
-    `;
 
     const allEvaluations = [...yonsanEvaluations, ...gwangjuEvaluations];
-    const evaluationIds = allEvaluations.map(e => e.evaluationId);
 
     let existingIds = new Set<string>();
-    if (evaluationIds.length > 0) {
+    if (allEvaluations.length > 0) {
       try {
-        // BigQuery는 UNNEST에 배열을 직접 전달할 수 없으므로, IN 절 사용
-        const idsList = evaluationIds.map(id => `'${id.replace(/'/g, "''")}'`).join(',');
+        // 시트 데이터에서 날짜 범위 추출
+        const dates = allEvaluations.map(e => e.date).filter(Boolean);
+        const minDate = dates.sort()[0];
+        const maxDate = dates.sort()[dates.length - 1];
+
+        console.log('[Sync Sheets] 중복 확인 범위: ' + minDate + ' ~ ' + maxDate);
+
         const query = `
           SELECT DISTINCT evaluation_id
           FROM ${EVAL_TABLE}
-          WHERE evaluation_id IN (${idsList})
+          WHERE evaluation_date BETWEEN '${minDate}' AND '${maxDate}'
         `;
 
         const [rows] = await bigquery.query({
@@ -87,10 +87,16 @@ export async function POST(request: NextRequest) {
         });
 
         existingIds = new Set(rows.map((row: any) => row.evaluation_id));
-        console.log('[Sync Sheets] 기존 데이터: ' + existingIds.size + '건');
+        console.log('[Sync Sheets] 기존 데이터: ' + existingIds.size + '건 (기간 내)');
         updateProgress('중복 확인', existingIds.size, allEvaluations.length);
       } catch (error) {
-        console.warn('[Sync Sheets] 기존 데이터 조회 실패, 전체 저장 시도:', error);
+        // 중복 확인 실패 시 동기화 중단 (중복 삽입 방지)
+        console.error('[Sync Sheets] 기존 데이터 조회 실패, 동기화 중단:', error);
+        finishSync('sync', false, { error: '중복 확인 실패: ' + (error instanceof Error ? error.message : String(error)) });
+        return NextResponse.json(
+          { success: false, error: "중복 확인 실패로 동기화를 중단합니다.", details: error instanceof Error ? error.message : String(error) },
+          { status: 500, headers: corsHeaders }
+        );
       }
     }
 
