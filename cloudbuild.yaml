@@ -55,6 +55,8 @@ steps:
       - '0'
       - '--max-instances'
       - '10'
+      - '--service-account'
+      - 'kmcc-qc@$PROJECT_ID.iam.gserviceaccount.com'
 
 # 대체 변수 기본값
 substitutions:

@@ -317,7 +317,7 @@ export async function getQAItemStats(
     startMonth?: string
     endMonth?: string
   }
-): Promise<{ success: boolean; data?: QAItemStats[]; error?: string }> {
+): Promise<{ success: boolean; data?: QAItemStats[]; specialItems?: Record<string, unknown>; error?: string }> {
   try {
     const bq = getBigQueryClient()
     const { where, params } = buildFilterClause(filters)

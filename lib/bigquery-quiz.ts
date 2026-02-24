@@ -13,7 +13,7 @@ const SCORE_SQL = `COALESCE(s.score, s.percentage)`
 
 // 센터 정규화 (submissions.center 값 → 용산/광주)
 const CENTER_SQL = `CASE
-    WHEN s.center IN ('용산', 'KMCC용산', 'KMCC 용산', '모빌리티크루') THEN '용산'
+    WHEN s.center IN ('용산', 'KMCC용산', 'KMCC 용산') THEN '용산'
     WHEN s.center IN ('광주', 'KMCC광주', 'KMCC 광주') THEN '광주'
     ELSE s.center
   END`
@@ -267,6 +267,7 @@ export async function getQuizServiceTrend(
         AND s.month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH))
         ${centerWhere}
         AND ${CENTER_SQL} IN ('용산', '광주')
+        AND NOT (${CENTER_SQL} = '용산' AND ${SERVICE_SQL} = '화물')
       GROUP BY s.month, svc
       HAVING svc IS NOT NULL AND svc != ''
       ORDER BY s.month, svc

@@ -53,13 +53,7 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
     if (viewMode === "weekly") {
       return "최근 6주"
     }
-    if (dateRange && dateRange.startDate && dateRange.endDate) {
-      const start = new Date(dateRange.startDate);
-      const end = new Date(dateRange.endDate);
-      const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-      return `${daysDiff}일`;
-    }
-    return "최근 1개월";
+    return "최근 14일";
   };
 
   const renderChart = (yongsanKey: keyof TrendData, gwangjuKey: keyof TrendData, title: string) => (

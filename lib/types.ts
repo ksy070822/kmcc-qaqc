@@ -549,6 +549,10 @@ export interface CSATTrendData {
   전체: number          // 저점비율 (%)
   totalCount?: number   // 일별 전체 리뷰수
   lowCount?: number     // 일별 저점건수
+  yongsanTotal?: number
+  yongsanLow?: number
+  gwangjuTotal?: number
+  gwangjuLow?: number
 }
 
 export interface CSATDailyRow {
@@ -585,7 +589,7 @@ export interface CSATWeeklyRow {
   responseRate: number    // 응답율 (%)
   score5Rate: number
   score1Rate: number
-  score3Rate: number
+  score2Rate: number
   consultReviewRate: number  // 상담대비 평가율 (%)
 }
 
@@ -682,6 +686,9 @@ export interface AgentMonthlySummary {
   compositeRiskScore?: number
   riskLevel?: "low" | "medium" | "high" | "critical"
   aiComment?: string
+
+  // 최근 3개월 이력 태그
+  watchTags?: string[]   // e.g. ["집중관리", "부진"]
 }
 
 // ============================================================
@@ -863,4 +870,518 @@ export interface AgentSummaryRow {
   attRate: number | null
   opsRate: number | null
   quizScore: number | null
+}
+
+// ============================================================
+// 코칭 시스템 타입
+// ============================================================
+
+// 8개 코칭 카테고리 ID
+export type CoachingCategoryId =
+  | 'greeting'        // 인사/예절
+  | 'empathy'         // 공감/감성케어
+  | 'inquiry'         // 문의파악/탐색
+  | 'knowledge'       // 업무지식/안내
+  | 'processing'      // 전산처리
+  | 'records'         // 이력/기록관리
+  | 'satisfaction'    // 체감만족/신속성
+  | 'communication'   // 의사소통
+
+// 코칭 카테고리 정의
+export interface CoachingCategoryDef {
+  id: CoachingCategoryId
+  label: string
+  qcItems: string[]         // QC 오류 항목 columnKey 목록
+  qaItems: string[]         // QA 항목 columnKey 목록
+  qcWeight: number          // QC 비중 (0~1)
+  qaWeight: number          // QA 비중 (0~1)
+  otherWeight?: number      // 기타 (Quiz/CSAT) 비중
+  otherSource?: 'quiz' | 'csat'
+}
+
+// 코칭 티어
+export type CoachingTier = '자립' | '관찰' | '집중' | '긴급'
+
+// 코칭 티어 설정
+export interface CoachingTierConfig {
+  tier: CoachingTier
+  minRisk: number
+  maxRisk: number
+  frequency: string       // 코칭 빈도 설명
+  monthlySessions: number
+}
+
+// 근속 구간
+export type TenureBand = 'new_hire' | 'early' | 'standard' | 'experienced'
+
+// 채널별 리스크 가중치
+export interface ChannelRiskWeights {
+  qa: number
+  qc: number
+  csat: number
+  quiz: number
+}
+
+// 카테고리별 취약점 분석 결과
+export interface CategoryWeakness {
+  categoryId: CoachingCategoryId
+  label: string
+  score: number           // 0~100 (100=완벽)
+  severity: 'normal' | 'weak' | 'critical'
+  qcEvidence: {
+    errorItems: string[]
+    errorCount: number
+    totalEvals: number
+    errorRate: number
+  }
+  qaEvidence: {
+    items: Array<{ name: string; score: number; maxScore: number }>
+    avgRate: number       // 점수/만점 비율
+  }
+  confidence: 'low' | 'moderate' | 'high'
+}
+
+// 상담유형별 오류 분석 (업무지식 드릴다운)
+export interface ConsultTypeErrorAnalysis {
+  depth2: string
+  depth3: string | null
+  errorCount: number
+  errorPct: number        // 해당 상담사의 오류 중 비율
+  groupAvgErrorPct: number
+  isHighlighted: boolean  // 그룹 평균 대비 이상
+}
+
+// 상담유형 오설정 분석
+export interface ConsultTypeCorrectionAnalysis {
+  correctionCount: number
+  totalEvals: number
+  correctionRate: number  // %
+  topMisclassifications: Array<{
+    originalDepth1: string
+    originalDepth2: string
+    correctedDepth1: string
+    correctedDepth2: string
+    count: number
+  }>
+}
+
+// 코칭 처방
+export interface CoachingPrescription {
+  categoryId: CoachingCategoryId
+  categoryLabel: string
+  severity: 'weak' | 'critical'
+  description: string     // 처방 내용
+  consultTypeDetail?: string  // 업무지식 부진 시 취약 상담유형
+  evidence: string        // 근거 요약
+}
+
+// 상담사 코칭 플랜
+export interface AgentCoachingPlan {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  tenureMonths: number
+  tenureBand: TenureBand
+  month: string           // YYYY-MM
+  tier: CoachingTier
+  riskScore: number
+  riskScoreV1?: number    // 기존 v1 점수 (비교용)
+  tierReason: string      // 티어 판정 근거
+  weaknesses: CategoryWeakness[]
+  prescriptions: CoachingPrescription[]
+  consultTypeErrors?: ConsultTypeErrorAnalysis[]
+  consultTypeCorrections?: ConsultTypeCorrectionAnalysis
+  monthlySessions: number
+  completedSessions: number
+  status: 'planned' | 'in_progress' | 'completed'
+}
+
+// 신입 상담사 프로파일
+export interface NewHireProfile {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  hireDate: string
+  tenureDays: number
+  // QC 현황 (데일리)
+  weeklyQcEvals: number
+  weeklyQcErrors: number
+  weeklyQcErrorRate: number
+  dailyQcTrend: Array<{ date: string; errorRate: number; evalCount: number }>
+  categoryErrors: Array<{ categoryId: CoachingCategoryId; label: string; count: number }>
+  // CSAT (채팅 신입만)
+  csatAvg?: number
+  csatLowRate?: number    // 1-2점 비율
+  // 코호트 대비
+  cohortWeek: number      // 입사 후 주차
+  cohortAvgErrorRate: number  // 같은 주차의 과거 코호트 평균
+  isSlowStabilization: boolean  // 코호트 대비 안정화 지연
+}
+
+// 코칭 경보
+export type AlertType =
+  | 'deterioration'     // 주간 오류율 급등
+  | 'no_improvement'    // 2주간 미개선
+  | 'new_issue'         // 신규 오류 카테고리 발생
+  | 'coaching_overdue'  // 코칭 미실시
+  | 'new_hire_slow'     // 신입 안정화 지연
+
+export interface CoachingAlert {
+  alertId: string
+  alertType: AlertType
+  agentId: string
+  agentName: string
+  center: string
+  severity: 'warning' | 'critical'
+  message: string
+  detail: string
+  createdAt: string
+  acknowledged: boolean
+}
+
+// 코칭 효과 측정
+export interface CoachingEffectiveness {
+  month: string
+  totalCoached: number
+  improvedCount: number
+  improvementRate: number // %
+  categoryBreakdown: Array<{
+    categoryId: CoachingCategoryId
+    label: string
+    coached: number
+    improved: number
+    rate: number
+  }>
+  newHireStabilizationRate: number // 2개월 내 관찰 이하 도달 비율
+  avgSessionsPerAgent: number
+}
+
+// 베이지안 조정 QC 오류율
+export interface BayesianQcRate {
+  rawRate: number
+  adjustedRate: number
+  evalCount: number
+  confidence: 'low' | 'moderate' | 'high'
+  priorRate: number       // 그룹 평균 (사전분포)
+}
+
+// 추세 분석 결과
+export interface TrendAnalysis {
+  direction: 'improving' | 'stable' | 'deteriorating'
+  slope: number           // WLS 회귀 기울기
+  pValue: number
+  isSignificant: boolean
+  recentWeeks: number     // 분석 기간 (주)
+}
+
+// ============================================================
+// 미흡상담사 관리 (24.04.01~ 시행)
+// ============================================================
+
+// 미흡상담사 선정 항목 4가지
+export type UnderperformingCriterionId =
+  | 'qa_knowledge'        // QA 업무지식 ≤7점 (월)
+  | 'qc_attitude'         // QC 상담태도 ≥15% (주, 검수 10건↑)
+  | 'qc_ops'              // QC 오상담/오처리 ≥10% (주, 검수 10건↑)
+  | 'csat_low_score'      // 상담평가 저점(1·2점) ≥12건(월)/≥3건(주)
+
+// 개별 항목 판정 결과
+export interface UnderperformingCriterionResult {
+  criterionId: UnderperformingCriterionId
+  label: string
+  period: 'weekly' | 'monthly'
+  flagged: boolean        // 선정 기준 충족 여부
+  value: number           // 실측값 (오류율 %, 점수, 건수)
+  threshold: number       // 기준값
+  evalCount?: number      // 검수 건수 (QC 항목용)
+  minEvals?: number       // 최소 검수 건수 요건
+  excluded?: boolean      // 제외 사유 (1개월 미만, 검수 부족 등)
+  excludeReason?: string
+}
+
+// 상담사 미흡상담사 종합 판정
+export interface UnderperformingStatus {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  tenureMonths: number
+  // 판정 결과
+  criteria: UnderperformingCriterionResult[]
+  flaggedCount: number          // 적발 항목 수 (0~4)
+  isFlagged: boolean            // 1개 이상 적발
+  // 연속 적발 추적 (저품질 판정용)
+  consecutiveWeeks: number      // 연속 주 적발 횟수
+  isLowQuality: boolean         // 저품질 상담사 여부 (3주 연속 or 3항목 동시)
+  lowQualityReason?: string     // 저품질 판정 사유
+  isNewHireExempt: boolean      // 신입 유예 여부 (3개월 미만: 전배/배제 유예)
+  // 해소 판정
+  resolvedCriteria: UnderperformingCriterionId[]  // 해소된 항목
+  allResolved: boolean          // 모든 항목 해소됨
+}
+
+// 미흡상담사 기준 설정
+export interface UnderperformingCriterionConfig {
+  id: UnderperformingCriterionId
+  label: string
+  category: string              // QA / QC / CSAT
+  period: 'weekly' | 'monthly'
+  threshold: number             // 선정 기준값
+  direction: 'gte' | 'lte'     // gte=이상이면 적발, lte=이하이면 적발
+  minEvals?: number             // 최소 검수 건수 (QC: 10건)
+  minTenureMonths?: number      // 최소 근속 (QA: 1개월)
+  resolution: {
+    threshold: number           // 해소 기준값
+    consecutiveWeeks?: number   // 해소에 필요한 연속 주수 (QC: 2주)
+    nextMonth?: boolean         // M+1 기준 (QA: true)
+  }
+}
+
+// ============================================================
+// 생산성 (Productivity) 타입
+// ============================================================
+
+/** 버티컬(서비스) 분류 */
+export type ProductivityVertical = "택시" | "대리" | "바이크" | "주차" | "퀵" | "배송" | "퀵/배송" | "내비" | "비즈" | "기타"
+
+/** 채널 분류 */
+export type ProductivityChannel = "유선" | "채팅"
+
+/** 센터 분류 */
+export type CenterName = "용산" | "광주"
+
+/** 생산성 KPI 요약 */
+export interface ProductivityOverview {
+  center: CenterName | "전체"
+  channel: ProductivityChannel
+  responseRate: number          // 응대율 (%)
+  totalIncoming: number         // 총 인입
+  totalAnswered: number         // 총 응답
+  totalOutbound: number         // 총 OB
+  avgCPH: number                // 평균 CPH/TPH (시간당 처리건)
+  avgCPD: number                // 평균 CPD/TPD (일 처리건)
+  headcount: number             // 실투입 인원
+  prevResponseRate?: number     // 전기간 응대율
+  responseTrend?: number        // 응대율 증감 (pp)
+}
+
+/** 버티컬별 생산성 통계 */
+export interface ProductivityVerticalStats {
+  vertical: ProductivityVertical
+  center: CenterName | "전체"
+  channel: ProductivityChannel
+  responseRate: number          // 응대율 (%)
+  incoming: number              // 인입
+  answered: number              // 응답
+  outbound: number              // OB
+  cpd: number                   // 인당 일 처리량
+  headcount: number             // 실투입
+  prevResponseRate?: number
+}
+
+/** 처리시간 통계 */
+export interface ProductivityProcessingTime {
+  vertical: ProductivityVertical
+  center: CenterName | "전체"
+  channel: ProductivityChannel
+  avgWaitTime: number           // 평균 대기시간 (초) - ATW
+  avgTalkTime: number           // 평균 통화/채팅시간 (초) - ATT
+  avgAfterWork: number          // 평균 후처리시간 (초) - ACW
+  avgHandlingTime: number       // 상담처리시간 ATT+ACW (초) - SLA 핵심
+  prevHandlingTime?: number
+}
+
+/** 일별 생산성 추이 */
+export interface ProductivityDailyTrend {
+  date: string                  // YYYY-MM-DD
+  channel: ProductivityChannel
+  center: CenterName | "전체"
+  incoming: number
+  answered: number
+  outbound: number
+  responseRate: number
+}
+
+/** 주간 생산성 추이 */
+export interface ProductivityWeeklyTrend {
+  weekStart: string             // YYYY-MM-DD (목요일)
+  period: string                // "02/13-02/19"
+  channel: ProductivityChannel
+  center: CenterName | "전체"
+  incoming: number
+  answered: number
+  outbound: number
+  responseRate: number
+  avgHandlingTime: number
+}
+
+/** 게시판 현황 */
+export interface BoardStats {
+  date: string
+  center: CenterName | "전체"
+  received: number              // 접수
+  processed: number             // 처리
+  remaining: number             // 잔여
+}
+
+/** 주간 요약 행 (3주 추이 테이블용) */
+export interface WeeklySummaryRow {
+  weekStart: string        // YYYY-MM-DD (목요일)
+  weekEnd: string          // YYYY-MM-DD (수요일)
+  weekLabel: string        // "01/29-02/04"
+  channel: "유선" | "채팅"
+  center: CenterName
+  responseRate: number
+  incoming: number
+  answered: number
+  outbound: number
+  dayCount: number         // 해당 주 실제 데이터 일수 (7 미만이면 진행중)
+}
+
+/** 외국어 응대율 일별 통계 */
+export interface ForeignLangStats {
+  date: string
+  center: CenterName
+  incoming: number
+  answered: number
+  responseRate: number
+}
+
+/** 생산성 대시보드 전체 데이터 */
+export interface ProductivityDashboardData {
+  overview: ProductivityOverview[]
+  verticalStats: ProductivityVerticalStats[]
+  processingTime: ProductivityProcessingTime[]
+  dailyTrend: ProductivityDailyTrend[]
+  weeklyTrend: ProductivityWeeklyTrend[]
+  boardStats: BoardStats[]
+}
+
+// ============================================================
+// SLA 평가 타입
+// ============================================================
+
+/** SLA 등급 */
+export type SLAGrade = "S" | "A" | "B" | "C" | "D" | "E"
+
+/** SLA 배점 구간 */
+export interface SLATier {
+  label: string                 // "85% 초과", "280초 이하" 등
+  minValue?: number             // 이 값 이상이면 적용 (응대율 등)
+  maxValue?: number             // 이 값 이하이면 적용 (처리시간 등)
+  score: number                 // 획득 점수
+}
+
+/** SLA 개별 지표 설정 */
+export interface SLAMetric {
+  id: string                    // "voice_response_rate"
+  name: string                  // "응대율(유선)"
+  category: "생산성" | "품질" | "인력관리"
+  maxScore: number              // 배점 (15, 10, 9 등)
+  tiers: SLATier[]              // 구간별 점수 (높은 점수부터)
+  unit: "%" | "초" | "점"       // 단위
+  direction: "higher_better" | "lower_better"  // 응대율=높을수록, 처리시간=낮을수록
+}
+
+/** SLA 가감점 항목 */
+export interface SLADeduction {
+  id: string                    // "turnover_rate"
+  name: string                  // "퇴사율"
+  score: number                 // 가감 점수 (+, -)
+  reason?: string               // 사유
+}
+
+/** 센터별 SLA 설정 */
+export interface SLAConfig {
+  center: CenterName
+  year: number
+  productivity: SLAMetric[]     // 생산성 60점
+  quality: SLAMetric[]          // 품질 40점
+  personnel: SLAMetric[]        // 인력관리 (상담사 퇴사율 등)
+  deductions: SLADeduction[]    // 가감점 (관리자 퇴사, 오처리, 보안)
+}
+
+/** SLA 항목별 점수 상세 */
+export interface SLAScoreDetail {
+  metricId: string
+  name: string
+  category: "생산성" | "품질" | "인력관리"
+  maxScore: number              // 배점
+  actualValue: number           // 실적값
+  score: number                 // 획득 점수
+  unit: string
+  achievementRate: number       // 달성률 (%)
+  direction: "higher_better" | "lower_better"
+}
+
+/** SLA 산정 결과 */
+export interface SLAResult {
+  center: CenterName
+  month: string                 // YYYY-MM
+  productivityScore: number     // 생산성 소계 (60점 만점)
+  qualityScore: number          // 품질 소계 (40점 만점)
+  personnelScore: number        // 인력관리 소계 (상담사 퇴사율 등)
+  deductionScore: number        // 가감점 합계 (관리자 퇴사, 오처리, 보안)
+  totalScore: number            // 총점
+  grade: SLAGrade               // 등급
+  rate: number                  // 요율 (1.03 ~ 0.97)
+  details: SLAScoreDetail[]     // 항목별 상세
+  deductions: SLADeduction[]    // 가감점 내역
+}
+
+/** SLA 월별 추이 */
+export interface SLAMonthlyTrend {
+  month: string                 // YYYY-MM
+  center: CenterName
+  totalScore: number
+  grade: SLAGrade
+  productivityScore: number
+  qualityScore: number
+}
+
+/** 일별 SLA 누적 데이터 포인트 */
+export interface SLADailyPoint {
+  date: string                  // YYYY-MM-DD
+  center: CenterName
+  totalScore: number
+  productivityScore: number
+  qualityScore: number
+  grade: SLAGrade
+  voiceResponseRate: number     // 누적 응대율(유선)
+  chatResponseRate: number      // 누적 응대율(채팅)
+  voiceIncoming: number         // 누적 인입
+  voiceAnswered: number         // 누적 응답
+  chatIncoming: number
+  chatAnswered: number
+}
+
+/** 데일리 트래킹 전체 응답 */
+export interface SLADailyTrackingData {
+  center: CenterName
+  month: string
+  dailyPoints: SLADailyPoint[]
+  projection: { date: string; score: number; grade: SLAGrade }[]
+  prevMonthScore: number
+  prevMonthGrade: SLAGrade
+  latestScore: number
+  latestGrade: SLAGrade
+  projectedEndScore: number
+  projectedEndGrade: SLAGrade
+  elapsedDays: number
+  totalDays: number
+  atRiskMetrics: {
+    metricId: string
+    name: string
+    currentValue: number
+    prevValue: number
+    currentScore: number
+    maxScore: number
+    direction: "higher_better" | "lower_better"
+    trend: "improving" | "stable" | "declining"
+  }[]
 }

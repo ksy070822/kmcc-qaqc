@@ -9,9 +9,10 @@ import { QADashboard } from "@/components/qc/qa-dashboard"
 import { CSATDashboard } from "@/components/qc/csat-dashboard"
 import { QuizDashboard } from "@/components/qc/quiz-dashboard"
 import { IntegratedDashboard } from "@/components/qc/integrated-dashboard"
+import { CoachingDashboard } from "@/components/qc/coaching"
 import { cn, getThursdayWeek, formatDate } from "@/lib/utils"
 
-type TabValue = "qa" | "qc" | "csat" | "quiz" | "integrated"
+type TabValue = "qa" | "qc" | "csat" | "quiz" | "integrated" | "coaching"
 type PeriodMode = "weekly" | "monthly" | "custom"
 
 const TABS: Array<{ value: TabValue; label: string }> = [
@@ -20,6 +21,7 @@ const TABS: Array<{ value: TabValue; label: string }> = [
   { value: "csat", label: "상담평점" },
   { value: "quiz", label: "직무테스트" },
   { value: "integrated", label: "통합분석" },
+  { value: "coaching", label: "코칭" },
 ]
 
 const DAILY_TABS: TabValue[] = ["qc", "csat"]
@@ -58,8 +60,7 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
   const [monthlyMonth, setMonthlyMonth] = useState(() => subMonths(new Date(), 1))
   // 일간 탭(QC/CSAT): 당월 기본 (전주차 자동 선택)
   const [dailyMonth, setDailyMonth] = useState(() => new Date())
-  // 방문한 탭 추적 (keep-alive: 한번 마운트되면 display:none으로 유지)
-  const [visitedTabs, setVisitedTabs] = useState<Set<TabValue>>(() => new Set(["qa"]))
+  // visitedTabs 제거 — display:none keep-alive 패턴이 Recharts removeChild 에러 유발
 
   // QC/CSAT 기간 모드
   const [periodMode, setPeriodMode] = useState<PeriodMode>("weekly")
@@ -67,13 +68,8 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
 
-  // 탭 방문 추적
   const handleTabChange = (tab: TabValue) => {
     setActiveTab(tab)
-    setVisitedTabs(prev => {
-      if (prev.has(tab)) return prev
-      return new Set([...prev, tab])
-    })
   }
 
   const isDailyTab = DAILY_TABS.includes(activeTab)
@@ -264,33 +260,24 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
         </div>
       </div>
 
-      {/* 탭 콘텐츠 (keep-alive: 방문한 탭은 display:none으로 유지) */}
-      <div style={{ display: activeTab === "qa" ? undefined : "none" }}>
-        {visitedTabs.has("qa") && <QADashboard externalMonth={monthStr} />}
-      </div>
-      <div style={{ display: activeTab === "qc" ? undefined : "none" }}>
-        {visitedTabs.has("qc") && (
-          <Dashboard
-            onNavigateToFocus={onNavigateToFocus}
-            externalStartDate={dateRange.start}
-            externalEndDate={dateRange.end}
-          />
-        )}
-      </div>
-      <div style={{ display: activeTab === "csat" ? undefined : "none" }}>
-        {visitedTabs.has("csat") && (
-          <CSATDashboard
-            externalStartDate={dateRange.start}
-            externalEndDate={dateRange.end}
-          />
-        )}
-      </div>
-      <div style={{ display: activeTab === "quiz" ? undefined : "none" }}>
-        {visitedTabs.has("quiz") && <QuizDashboard externalMonth={monthStr} />}
-      </div>
-      <div style={{ display: activeTab === "integrated" ? undefined : "none" }}>
-        {visitedTabs.has("integrated") && <IntegratedDashboard externalMonth={monthStr} />}
-      </div>
+      {/* 탭 콘텐츠 — 조건부 렌더링 (display:none은 Recharts removeChild 에러 유발) */}
+      {activeTab === "qa" && <QADashboard externalMonth={monthStr} />}
+      {activeTab === "qc" && (
+        <Dashboard
+          onNavigateToFocus={onNavigateToFocus}
+          externalStartDate={dateRange.start}
+          externalEndDate={dateRange.end}
+        />
+      )}
+      {activeTab === "csat" && (
+        <CSATDashboard
+          externalStartDate={dateRange.start}
+          externalEndDate={dateRange.end}
+        />
+      )}
+      {activeTab === "quiz" && <QuizDashboard externalMonth={monthStr} />}
+      {activeTab === "integrated" && <IntegratedDashboard externalMonth={monthStr} />}
+      {activeTab === "coaching" && <CoachingDashboard externalMonth={monthStr} />}
     </div>
   )
 }

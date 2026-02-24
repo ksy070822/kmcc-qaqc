@@ -9,7 +9,7 @@ import type { QATrendData } from "@/lib/types"
 
 // MODI Design System Colors
 const MODI = {
-  brandPrimary: "#337FFF",
+  brandPrimary: "#2c6edb",
   backgroundTertiary: "#B3B3B3",
   brandWarning: "#DD2222",
   textSecondary: "#4D4D4D",

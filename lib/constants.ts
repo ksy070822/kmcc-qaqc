@@ -299,3 +299,267 @@ export const DOMAIN_LABELS: Record<string, string> = {
 
 // QC 오류율 정규화 상한 (20% → 100점 환산)
 export const QC_RATE_CAP = 20
+
+// ============================================================
+// 코칭 시스템 상수
+// ============================================================
+
+import type {
+  CoachingCategoryDef,
+  CoachingCategoryId,
+  CoachingTierConfig,
+  TenureBand,
+  ChannelRiskWeights,
+} from "./types"
+
+// 8개 코칭 카테고리 매핑 (QC 오류항목 ↔ QA 채점항목)
+export const COACHING_CATEGORIES: CoachingCategoryDef[] = [
+  {
+    id: 'greeting',
+    label: '인사/예절',
+    qcItems: ['첫인사끝인사누락', '추가문의누락'],
+    qaItems: ['greetingScore'],
+    qcWeight: 0.6,
+    qaWeight: 0.4,
+  },
+  {
+    id: 'empathy',
+    label: '공감/감성케어',
+    qcItems: ['공감표현누락', '사과표현누락', '불친절'],
+    qaItems: ['empathyCare', 'listeningFocus', 'responseExpression'],
+    qcWeight: 0.5,
+    qaWeight: 0.5,
+  },
+  {
+    id: 'inquiry',
+    label: '문의파악/탐색',
+    qcItems: ['본인확인누락', '필수탐색누락'],
+    qaItems: ['identityCheck', 'requiredSearch', 'inquiryComprehension'],
+    qcWeight: 0.5,
+    qaWeight: 0.5,
+  },
+  {
+    id: 'knowledge',
+    label: '업무지식/안내',
+    qcItems: ['오안내', '가이드미준수'],
+    qaItems: ['businessKnowledge', 'explanationAbility'],
+    qcWeight: 0.4,
+    qaWeight: 0.4,
+    otherWeight: 0.2,
+    otherSource: 'quiz',
+  },
+  {
+    id: 'processing',
+    label: '전산처리',
+    qcItems: ['전산처리누락', '전산처리미흡정정', '전산조작미흡오류', '콜픽트립ID매핑누락오기재'],
+    qaItems: ['systemProcessing'],
+    qcWeight: 0.6,
+    qaWeight: 0.4,
+  },
+  {
+    id: 'records',
+    label: '이력/기록관리',
+    qcItems: ['상담이력기재미흡', '플래그키워드누락오기재', '상담유형오설정'],
+    qaItems: ['consultationHistory'],
+    qcWeight: 0.6,
+    qaWeight: 0.4,
+  },
+  {
+    id: 'satisfaction',
+    label: '체감만족/신속성',
+    qcItems: [],
+    qaItems: ['perceivedSatisfaction', 'promptness'],
+    qcWeight: 0,
+    qaWeight: 0.6,
+    otherWeight: 0.4,
+    otherSource: 'csat',
+  },
+  {
+    id: 'communication',
+    label: '의사소통',
+    qcItems: [],
+    qaItems: ['languageExpression', 'voicePerformance', 'spelling'],
+    qcWeight: 0,
+    qaWeight: 1.0,
+  },
+]
+
+// 카테고리 빠른 조회용 맵
+export const COACHING_CATEGORY_MAP: Record<CoachingCategoryId, CoachingCategoryDef> =
+  Object.fromEntries(COACHING_CATEGORIES.map(c => [c.id, c])) as Record<CoachingCategoryId, CoachingCategoryDef>
+
+// QC 오류 columnKey → 코칭 카테고리 역매핑
+export const QC_ERROR_TO_CATEGORY: Record<string, CoachingCategoryId> = {}
+for (const cat of COACHING_CATEGORIES) {
+  for (const item of cat.qcItems) {
+    QC_ERROR_TO_CATEGORY[item] = cat.id
+  }
+}
+
+// 코칭 티어 설정
+export const COACHING_TIERS: CoachingTierConfig[] = [
+  { tier: '자립', minRisk: 0, maxRisk: 30, frequency: '월 1회', monthlySessions: 0 },
+  { tier: '관찰', minRisk: 30, maxRisk: 50, frequency: '격주', monthlySessions: 2 },
+  { tier: '집중', minRisk: 50, maxRisk: 70, frequency: '주 1회', monthlySessions: 4 },
+  { tier: '긴급', minRisk: 70, maxRisk: 100, frequency: '주 2회', monthlySessions: 8 },
+]
+
+// 근속 구간 판정
+export function getTenureBand(months: number): TenureBand {
+  if (months < 2) return 'new_hire'
+  if (months < 6) return 'early'
+  if (months < 12) return 'standard'
+  return 'experienced'
+}
+
+// 근속별 리스크 증폭 계수 (신입=강화 관리)
+export const TENURE_RISK_MULTIPLIER: Record<TenureBand, number> = {
+  new_hire: 1.2,      // <2개월: QC가 유일한 품질 신호, 관리 강도 상향
+  early: 1.1,         // 2~6개월: 여전히 불안정
+  standard: 1.0,      // 6~12개월: 기준
+  experienced: 1.05,  // 12개월+: 높은 기대치, 부진 시 더 심각
+}
+
+// 채널별 리스크 가중치 (일반)
+export const RISK_WEIGHTS_V2: Record<'voice' | 'chat', ChannelRiskWeights> = {
+  voice: { qa: 0.45, qc: 0.35, csat: 0.00, quiz: 0.20 },
+  chat:  { qa: 0.35, qc: 0.25, csat: 0.20, quiz: 0.20 },
+}
+
+// 신입 전용 가중치 (<2개월, 직무테스트 제외)
+export const RISK_WEIGHTS_NEW_HIRE: Record<'voice' | 'chat', ChannelRiskWeights> = {
+  voice: { qa: 0.50, qc: 0.50, csat: 0.00, quiz: 0.00 },
+  chat:  { qa: 0.40, qc: 0.35, csat: 0.25, quiz: 0.00 },
+}
+
+// 베이지안 축소 파라미터
+export const BAYESIAN_CONFIG = {
+  minEvalsForHigh: 15,     // 고신뢰
+  minEvalsForModerate: 5,  // 중신뢰
+  // shrinkage: adjustedRate = (n * rawRate + k * priorRate) / (n + k)
+  shrinkageStrength: 5,    // k: 사전분포 가중치
+}
+
+// 추세 분석 설정
+export const TREND_CONFIG = {
+  minWeeks: 3,             // 최소 분석 기간
+  decayFactor: 0.85,       // 지수 감쇠 (최근 데이터 가중)
+  significanceLevel: 0.10, // p-value 임계값
+}
+
+// 경보 임계값
+export const ALERT_THRESHOLDS = {
+  deterioration: 0.50,     // 주간 오류율 전주 대비 50%↑
+  csatDrop: 0.3,           // CSAT 주간평균 0.3점↓
+  noImprovementWeeks: 2,   // 미개선 판정 주수
+  coachingOverdueDays: 3,  // 코칭 미실시 일수
+  cohortDelayWeeks: 2,     // 코호트 평균 대비 지연 주수
+}
+
+// 근속별 리포트 유형
+export type ReportCadence = 'daily' | 'weekly' | 'monthly'
+
+// 주간 리포트 주차별 구성
+export type WeeklyReportPhase = 'month_start' | 'week2' | 'week3' | 'month_end'
+
+export const WEEKLY_REPORT_PHASES: Record<WeeklyReportPhase, { label: string; focus: string }> = {
+  month_start: { label: '월초 (1주차)', focus: '전월 평가 기반 이번달 개선 포인트' },
+  week2:       { label: '2주차', focus: '활동계획 대비 실제 성과 점검' },
+  week3:       { label: '3주차', focus: '활동계획 대비 성과 추적 + 중간 보정' },
+  month_end:   { label: '월말 (4주차)', focus: '위험도 예측 + 월말 전망' },
+}
+
+// 근속별 모니터링 정책
+export const TENURE_MONITORING_POLICY: Record<TenureBand, {
+  cadence: ReportCadence
+  description: string
+}> = {
+  new_hire:    { cadence: 'daily',   description: '1개월 미만: 데일리 QC + CSAT(채팅) 취약점 밀접 모니터링' },
+  early:       { cadence: 'weekly',  description: '1~2개월: 부진 대상 1개월차 리포트 유지, 양호하면 주간 전환' },
+  standard:    { cadence: 'weekly',  description: '3개월+: 주간(주차별 구성) + 월간 리포트' },
+  experienced: { cadence: 'weekly',  description: '12개월+: 주간(주차별 구성) + 월간 리포트' },
+}
+
+// ============================================================
+// 미흡상담사 관리 기준 (24.04.01~ 시행, 개요 시트 기준)
+// ============================================================
+
+import type { UnderperformingCriterionConfig, UnderperformingCriterionId } from "./types"
+
+// 4개 선정 기준
+export const UNDERPERFORMING_CRITERIA: UnderperformingCriterionConfig[] = [
+  {
+    id: 'qa_knowledge',
+    label: 'QA 업무지식',
+    category: 'QA',
+    period: 'monthly',
+    threshold: 7,
+    direction: 'lte',           // ≤7점이면 적발
+    minTenureMonths: 1,         // 투입 후 1개월 미만 제외
+    resolution: {
+      threshold: 7,             // M+1 ≥7점이면 해소
+      nextMonth: true,
+    },
+  },
+  {
+    id: 'qc_attitude',
+    label: 'QC 상담태도',
+    category: 'QC',
+    period: 'weekly',
+    threshold: 15,
+    direction: 'gte',           // ≥15%이면 적발
+    minEvals: 10,               // QC검수 10건 이상
+    resolution: {
+      threshold: 15,            // ≤15%이면 해소
+      consecutiveWeeks: 2,      // 2주 연속
+    },
+  },
+  {
+    id: 'qc_ops',
+    label: 'QC 오상담/오처리',
+    category: 'QC',
+    period: 'weekly',
+    threshold: 10,
+    direction: 'gte',           // ≥10%이면 적발
+    minEvals: 10,               // QC검수 10건 이상
+    resolution: {
+      threshold: 10,            // ≤10%이면 해소
+      consecutiveWeeks: 2,      // 2주 연속
+    },
+  },
+  {
+    id: 'csat_low_score',
+    label: '상담평가 저점(1·2점)',
+    category: 'CSAT',
+    period: 'weekly',           // 주/월 모두 (주: ≥3건, 월: ≥12건)
+    threshold: 3,               // 주 단위 기준
+    direction: 'gte',           // ≥3건이면 적발
+    resolution: {
+      threshold: 3,             // 2주 연속 ≤3건
+      consecutiveWeeks: 2,
+      nextMonth: true,          // 또는 M+1 ≤12건
+    },
+  },
+]
+
+// 월 단위 기준값 (주 단위와 다른 항목)
+export const UNDERPERFORMING_MONTHLY_THRESHOLDS: Partial<Record<UnderperformingCriterionId, number>> = {
+  csat_low_score: 12,           // 월 ≥12건이면 적발 (주 ≥3건과 별도)
+}
+
+// 월 단위 해소 기준값
+export const UNDERPERFORMING_MONTHLY_RESOLUTION: Partial<Record<UnderperformingCriterionId, number>> = {
+  csat_low_score: 12,           // M+1 ≤12건이면 해소
+}
+
+// 저품질 상담사 판정 규칙
+export const LOW_QUALITY_RULES = {
+  consecutiveWeeksForLowQuality: 3,   // 3주 연속 적발 → 저품질
+  simultaneousCriteriaForImmediate: 3, // 3개 항목 당월 동시 적발 → 즉시 저품질
+  newHireExemptMonths: 3,             // 신입 전배/배제 유예 기간 (개월)
+  actions: ['전배', '업무배제', '업무시간 변경'] as const,
+}
+
+// 미흡상담사 기준 빠른 조회용 맵
+export const UNDERPERFORMING_CRITERIA_MAP: Record<UnderperformingCriterionId, UnderperformingCriterionConfig> =
+  Object.fromEntries(UNDERPERFORMING_CRITERIA.map(c => [c.id, c])) as Record<UnderperformingCriterionId, UnderperformingCriterionConfig>

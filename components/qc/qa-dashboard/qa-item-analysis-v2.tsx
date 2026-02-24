@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Fragment } from "react"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -35,17 +35,17 @@ const isBonus = (d: ItemData) => d.itemName === "칭찬접수"
 const isPenalty = (d: ItemData) => d.maxScore < 0
 const isSpecial = (d: ItemData) => isBonus(d) || isPenalty(d)
 
-// MODI 색상 토큰
+// MODI 색상 토큰 (brandPrimary = 앱 통일 블루 #2c6edb)
 const MODI = {
-  brandPrimary: "#005FFF",
+  brandPrimary: "#2c6edb",
   brandWarning: "#DD2222",
   textPrimary: "#121212",
   textSecondary: "#4D4D4D",
   textTertiary: "#666666",
   textPlaceholder: "#808080",
   bgSecondary: "#F7F7F7",
-  bgAccentBlue: "#F0F5FF",
-  bgAccentBlueOp: "#005FFF14",
+  bgAccentBlue: "#EBF2FC",
+  bgAccentBlueOp: "#2c6edb14",
   stroke: "#D9D9D9",
 }
 
@@ -153,9 +153,9 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
           </thead>
           <tbody>
             {grouped.map(({ category, items }, gi) => (
-              <>
+              <Fragment key={`group-${gi}`}>
                 {/* 카테고리 구분 행 */}
-                <tr key={`cat-${gi}`}>
+                <tr>
                   <td
                     colSpan={5}
                     className="pt-4 pb-1.5 px-3"
@@ -199,7 +199,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                       <td className="py-2.5 px-2">
                         <div className="flex items-center gap-1.5">
                           <div
-                            className="flex-1 h-[6px] rounded-full overflow-hidden"
+                            className="flex-1 h-[10px] rounded-full overflow-hidden"
                             style={{ backgroundColor: MODI.bgSecondary }}
                           >
                             <div
@@ -247,9 +247,9 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                           className="text-xs tabular-nums"
                           style={{
                             color: deduction >= 2 ? MODI.brandWarning
-                              : deduction >= 0.5 ? MODI.textTertiary
-                              : MODI.stroke,
-                            fontWeight: deduction >= 2 ? 700 : 400,
+                              : deduction >= 0.5 ? MODI.textPrimary
+                              : MODI.textSecondary,
+                            fontWeight: deduction >= 2 ? 700 : deduction >= 0.5 ? 500 : 400,
                           }}
                         >
                           {deduction >= 0.01 ? `-${deduction.toFixed(1)}` : "-"}
@@ -258,7 +258,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                     </tr>
                   )
                 })}
-              </>
+              </Fragment>
             ))}
 
             {/* 가점/감점 특수 항목 */}
@@ -280,7 +280,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                     <span className="text-xs font-medium" style={{ color: MODI.brandPrimary }}>칭찬접수</span>
                   </td>
                   <td className="py-2.5 px-2" colSpan={2}>
-                    <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.praiseBonus.count}건 접수</span>
+                    <span className="text-xs" style={{ color: MODI.textSecondary }}>{special.praiseBonus.count}건 접수</span>
                   </td>
                   <td className="py-2.5 px-2 text-center" colSpan={2}>
                     <span className="text-xs font-semibold" style={{ color: MODI.brandPrimary }}>+{special.praiseBonus.sum.toFixed(1)}</span>
@@ -290,13 +290,13 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                 {channelView === "유선" && (
                   <tr>
                     <td className="py-2.5 px-3 text-left">
-                      <span className="text-xs" style={{ color: MODI.textSecondary }}>호칭오류</span>
+                      <span className="text-xs font-medium" style={{ color: MODI.textPrimary }}>호칭오류</span>
                     </td>
                     <td className="py-2.5 px-2" colSpan={2}>
-                      <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.honorificError.count}건</span>
+                      <span className="text-xs" style={{ color: MODI.textSecondary }}>{special.honorificError.count}건</span>
                     </td>
                     <td className="py-2.5 px-2 text-center" colSpan={2}>
-                      <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.honorificError.sum.toFixed(1)}</span>
+                      <span className="text-xs font-medium" style={{ color: MODI.textSecondary }}>{special.honorificError.sum.toFixed(1)}</span>
                     </td>
                   </tr>
                 )}
@@ -305,24 +305,24 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                   <>
                     <tr>
                       <td className="py-2.5 px-3 text-left">
-                        <span className="text-xs" style={{ color: MODI.textSecondary }}>복사오류</span>
+                        <span className="text-xs font-medium" style={{ color: MODI.textPrimary }}>복사오류</span>
                       </td>
                       <td className="py-2.5 px-2" colSpan={2}>
-                        <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.copyError.count}건</span>
+                        <span className="text-xs" style={{ color: MODI.textSecondary }}>{special.copyError.count}건</span>
                       </td>
                       <td className="py-2.5 px-2 text-center" colSpan={2}>
-                        <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.copyError.sum.toFixed(1)}</span>
+                        <span className="text-xs font-medium" style={{ color: MODI.textSecondary }}>{special.copyError.sum.toFixed(1)}</span>
                       </td>
                     </tr>
                     <tr>
                       <td className="py-2.5 px-3 text-left">
-                        <span className="text-xs" style={{ color: MODI.textSecondary }}>조작오류</span>
+                        <span className="text-xs font-medium" style={{ color: MODI.textPrimary }}>조작오류</span>
                       </td>
                       <td className="py-2.5 px-2" colSpan={2}>
-                        <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.operationError.count}건</span>
+                        <span className="text-xs" style={{ color: MODI.textSecondary }}>{special.operationError.count}건</span>
                       </td>
                       <td className="py-2.5 px-2 text-center" colSpan={2}>
-                        <span className="text-xs" style={{ color: MODI.textTertiary }}>{special.operationError.sum.toFixed(1)}</span>
+                        <span className="text-xs font-medium" style={{ color: MODI.textSecondary }}>{special.operationError.sum.toFixed(1)}</span>
                       </td>
                     </tr>
                   </>

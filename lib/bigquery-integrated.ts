@@ -1,11 +1,22 @@
 import { getBigQueryClient } from "@/lib/bigquery"
-import { RISK_WEIGHTS, RISK_THRESHOLDS, QC_RATE_CAP } from "@/lib/constants"
+import {
+  RISK_WEIGHTS,
+  RISK_THRESHOLDS,
+  QC_RATE_CAP,
+  RISK_WEIGHTS_V2,
+  RISK_WEIGHTS_NEW_HIRE,
+  TENURE_RISK_MULTIPLIER,
+  getTenureBand,
+} from "@/lib/constants"
 import type {
   AgentMonthlySummary,
   AgentIntegratedProfile,
   CrossAnalysisResult,
   IntegratedDashboardStats,
+  ChannelRiskWeights,
+  TenureBand,
 } from "@/lib/types"
+import { bayesianShrinkage } from "@/lib/statistics"
 
 // ── Cross-project 테이블 참조 ──
 const EVALUATIONS = "`csopp-25f2.KMCC_QC.evaluations`"
@@ -16,6 +27,8 @@ const REVIEW_REQUEST = "`dataanalytics-25f2.dw_review.review_request`"
 const REVIEW = "`dataanalytics-25f2.dw_review.review`"
 const CONSULT = "`dataanalytics-25f2.dw_cems.consult`"
 const CEMS_USER = "`dataanalytics-25f2.dw_cems.user`"
+const HR_YONGSAN = "`csopp-25f2.kMCC_HR.HR_Yongsan_Snapshot`"
+const HR_GWANGJU = "`csopp-25f2.kMCC_HR.HR_Gwangju_Snapshot`"
 
 // Quiz 센터 정규화
 const QUIZ_CENTER_SQL = `CASE
@@ -24,43 +37,80 @@ const QUIZ_CENTER_SQL = `CASE
     ELSE s.center
   END`
 
-// ── 리스크 점수 계산 (TypeScript) ──
+// ── 리스크 점수 계산 v2 (채널별/근속별 가중치, 베이지안 QC) ──
 
-function calculateRiskScore(summary: AgentMonthlySummary): number {
+function calculateRiskScore(
+  summary: AgentMonthlySummary,
+  options?: {
+    channel?: '유선' | '채팅' | string
+    tenureMonths?: number
+    groupQcAvgRate?: number  // 그룹 평균 QC 오류율 (베이지안 사전분포)
+  },
+): number {
+  const channel = options?.channel ?? summary.channel
+  const tenureMonths = options?.tenureMonths ?? summary.tenureMonths
+  const tenureBand: TenureBand = tenureMonths != null ? getTenureBand(tenureMonths) : 'standard'
+
+  // 채널별 가중치 선택
+  let weights: ChannelRiskWeights
+  const channelKey = channel === '채팅' ? 'chat' : 'voice'
+
+  if (tenureBand === 'new_hire') {
+    weights = RISK_WEIGHTS_NEW_HIRE[channelKey]
+  } else {
+    weights = RISK_WEIGHTS_V2[channelKey]
+  }
+
   let totalWeight = 0
   let weightedScore = 0
 
   // QA: (100 - score) * weight — QA는 SLA 핵심 지표
-  if (summary.qaScore != null) {
+  if (summary.qaScore != null && weights.qa > 0) {
     const qaRisk = 100 - summary.qaScore
-    weightedScore += qaRisk * RISK_WEIGHTS.qa
-    totalWeight += RISK_WEIGHTS.qa
+    weightedScore += qaRisk * weights.qa
+    totalWeight += weights.qa
   }
 
-  // QC: 오류율 정규화 — QC 미평가 = 정상 (페널티 없음)
-  if (summary.qcTotalRate != null && summary.qcEvalCount && summary.qcEvalCount > 0) {
-    const qcNorm = Math.min((summary.qcTotalRate / QC_RATE_CAP) * 100, 100)
-    weightedScore += qcNorm * RISK_WEIGHTS.qc
-    totalWeight += RISK_WEIGHTS.qc
+  // QC: 베이지안 보정 오류율 사용 (편향 보정)
+  if (summary.qcTotalRate != null && summary.qcEvalCount && summary.qcEvalCount > 0 && weights.qc > 0) {
+    let qcRate = summary.qcTotalRate
+    // 베이지안 축소: 그룹 평균이 있으면 보정
+    if (options?.groupQcAvgRate != null) {
+      const bayesian = bayesianShrinkage(
+        summary.qcTotalRate / 100,
+        summary.qcEvalCount,
+        options.groupQcAvgRate / 100,
+      )
+      qcRate = bayesian.adjustedRate * 100
+    }
+    const qcNorm = Math.min((qcRate / QC_RATE_CAP) * 100, 100)
+    weightedScore += qcNorm * weights.qc
+    totalWeight += weights.qc
   }
 
-  // CSAT: (5 - score) / 4 * 100 — 참고지표, 단독 고위험 판정 안 함
-  if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0) {
+  // CSAT: (5 - score) / 4 * 100 — 유선은 weight=0이므로 자동 제외
+  if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0 && weights.csat > 0) {
     const csatRisk = ((5 - summary.csatAvgScore) / 4) * 100
-    weightedScore += csatRisk * RISK_WEIGHTS.csat
-    totalWeight += RISK_WEIGHTS.csat
+    weightedScore += csatRisk * weights.csat
+    totalWeight += weights.csat
   }
 
-  // Quiz: (100 - score) * weight
-  if (summary.knowledgeScore != null) {
+  // Quiz: (100 - score) * weight — 신입(<2개월)은 weight=0이므로 제외
+  if (summary.knowledgeScore != null && weights.quiz > 0) {
     const quizRisk = 100 - summary.knowledgeScore
-    weightedScore += quizRisk * RISK_WEIGHTS.knowledge
-    totalWeight += RISK_WEIGHTS.knowledge
+    weightedScore += quizRisk * weights.quiz
+    totalWeight += weights.quiz
   }
 
   // 가중치 재분배: 데이터 없는 도메인은 제외
   if (totalWeight === 0) return 0
-  return weightedScore / totalWeight
+  let baseScore = weightedScore / totalWeight
+
+  // 근속별 리스크 증폭 (신입 강화 관리)
+  const multiplier = TENURE_RISK_MULTIPLIER[tenureBand]
+  baseScore = Math.min(100, baseScore * multiplier)
+
+  return baseScore
 }
 
 function getRiskLevel(score: number): "low" | "medium" | "high" | "critical" {
@@ -201,26 +251,78 @@ export async function getAgentMonthlySummaries(
           AND s.month = @month
         GROUP BY s.user_id
       ),
+      hr_agents AS (
+        SELECT DISTINCT TRIM(LOWER(id)) as agent_id, name as hr_name, \`group\` as hr_group, position as hr_position, hire_date
+        FROM ${HR_YONGSAN}
+        WHERE type = '상담사' AND id IS NOT NULL
+        UNION ALL
+        SELECT DISTINCT TRIM(LOWER(id)) as agent_id, name as hr_name, \`group\` as hr_group, position as hr_position, hire_date
+        FROM ${HR_GWANGJU}
+        WHERE type = '상담사' AND id IS NOT NULL
+      ),
+      hr_dedup AS (
+        SELECT agent_id, ANY_VALUE(hr_name) as hr_name, ANY_VALUE(hr_group) as hr_group, ANY_VALUE(hr_position) as hr_position, ANY_VALUE(hire_date) as hire_date
+        FROM hr_agents
+        GROUP BY agent_id
+      ),
+      qc_watch_history AS (
+        SELECT DISTINCT agent_id
+        FROM (
+          SELECT
+            e.agent_id,
+            FORMAT_DATE('%Y-%m', e.evaluation_date) AS eval_month,
+            SAFE_DIVIDE(
+              SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END
+                + CASE WHEN e.empathy_error THEN 1 ELSE 0 END
+                + CASE WHEN e.apology_error THEN 1 ELSE 0 END
+                + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END
+                + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
+              COUNT(*) * 5) AS att_rate,
+            SAFE_DIVIDE(
+              SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END
+                + CASE WHEN e.guide_error THEN 1 ELSE 0 END
+                + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END
+                + CASE WHEN e.required_search_error THEN 1 ELSE 0 END
+                + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END
+                + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END
+                + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END
+                + CASE WHEN e.system_error THEN 1 ELSE 0 END
+                + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END
+                + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END
+                + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
+              COUNT(*) * 11) AS ops_rate
+          FROM ${EVALUATIONS} e
+          WHERE e.evaluation_date >= DATE_SUB(PARSE_DATE('%Y-%m-01', @month), INTERVAL 3 MONTH)
+            AND e.evaluation_date < PARSE_DATE('%Y-%m-01', @month)
+          GROUP BY e.agent_id, FORMAT_DATE('%Y-%m', e.evaluation_date)
+        )
+        WHERE att_rate > 5.0 OR ops_rate > 6.0
+      ),
       combined AS (
         SELECT
           COALESCE(qa.agent_id, qc.agent_id, qz.agent_id) AS agent_id,
-          COALESCE(qa.agent_name, qc.agent_name, qz.user_name) AS agent_name,
+          COALESCE(qa.agent_name, qc.agent_name, qz.user_name, hr.hr_name) AS agent_name,
           COALESCE(qa.center, qc.center, qz.center) AS center,
-          COALESCE(qa.service, qc.service) AS service,
-          COALESCE(qa.channel, qc.channel) AS channel,
+          COALESCE(qa.service, qc.service, hr.hr_group) AS service,
+          COALESCE(qa.channel, qc.channel, hr.hr_position) AS channel,
           qa.avg_score AS qa_score,
           qa.eval_count AS qa_eval_count,
           SAFE_DIVIDE(qc.att_errors * 100.0, qc.eval_count * 5) AS qc_att_rate,
           SAFE_DIVIDE(qc.ops_errors * 100.0, qc.eval_count * 11) AS qc_ops_rate,
           qc.eval_count AS qc_eval_count,
           qz.avg_score AS quiz_score,
-          qz.test_count AS quiz_test_count
+          qz.test_count AS quiz_test_count,
+          hr.hire_date,
+          CASE WHEN wh.agent_id IS NOT NULL THEN TRUE ELSE FALSE END AS was_watched
         FROM qa_monthly qa
         FULL OUTER JOIN qc_monthly qc ON qa.agent_id = qc.agent_id
         FULL OUTER JOIN quiz_monthly qz ON COALESCE(qa.agent_id, qc.agent_id) = qz.agent_id
+        LEFT JOIN hr_dedup hr ON COALESCE(qa.agent_id, qc.agent_id, qz.agent_id) = hr.agent_id
+        LEFT JOIN qc_watch_history wh ON COALESCE(qa.agent_id, qc.agent_id, qz.agent_id) = wh.agent_id
       )
       SELECT * FROM combined
       WHERE agent_id IS NOT NULL
+        AND agent_id IN (SELECT agent_id FROM hr_dedup)
       ${filters.center ? "AND center = @center" : ""}
       ORDER BY agent_id
     `
@@ -256,10 +358,22 @@ export async function getAgentMonthlySummaries(
     }
 
     // 통합 summaries 생성
+    const now = new Date()
     const summaries: AgentMonthlySummary[] = (mainRows as Record<string, unknown>[]).map(row => {
       const agentId = String(row.agent_id)
       const center = String(row.center || "")
       const csat = csatMap.get(agentId)
+
+      // 입사 개월수 계산
+      let tenureMonths: number | undefined
+      if (row.hire_date) {
+        const hd = row.hire_date instanceof Date ? row.hire_date
+          : typeof (row.hire_date as { value?: string }).value === "string" ? new Date((row.hire_date as { value: string }).value)
+          : new Date(String(row.hire_date))
+        if (!isNaN(hd.getTime())) {
+          tenureMonths = Math.max(0, (now.getFullYear() - hd.getFullYear()) * 12 + (now.getMonth() - hd.getMonth()))
+        }
+      }
 
       const qcAttRate = row.qc_att_rate != null ? Number(row.qc_att_rate) : undefined
       const qcOpsRate = row.qc_ops_rate != null ? Number(row.qc_ops_rate) : undefined
@@ -284,6 +398,8 @@ export async function getAgentMonthlySummaries(
         csatReviewCount: csat?.reviewCount,
         knowledgeScore: row.quiz_score != null ? Number(row.quiz_score) : undefined,
         knowledgeTestCount: row.quiz_test_count != null ? Number(row.quiz_test_count) : undefined,
+        tenureMonths,
+        watchTags: row.was_watched ? ["집중관리이력"] : undefined,
       }
 
       summary.compositeRiskScore = calculateRiskScore(summary)
@@ -306,6 +422,28 @@ export async function getAgentMonthlySummaries(
         summary.compositeRiskScore = calculateRiskScore(summary)
         summary.riskLevel = getRiskLevel(summary.compositeRiskScore)
         summaries.push(summary)
+      }
+    }
+
+    // 2-pass: 그룹 평균 QC 오류율로 베이지안 보정 후 리스크 재계산
+    const groupQcRates = new Map<string, { sum: number; count: number }>()
+    for (const s of summaries) {
+      if (s.qcTotalRate != null && s.qcEvalCount && s.qcEvalCount > 0) {
+        const key = `${s.service || ''}_${s.channel || ''}`
+        const g = groupQcRates.get(key) || { sum: 0, count: 0 }
+        g.sum += s.qcTotalRate
+        g.count++
+        groupQcRates.set(key, g)
+      }
+    }
+    for (const s of summaries) {
+      const key = `${s.service || ''}_${s.channel || ''}`
+      const g = groupQcRates.get(key)
+      if (g && g.count > 1) {
+        s.compositeRiskScore = calculateRiskScore(s, {
+          groupQcAvgRate: g.sum / g.count,
+        })
+        s.riskLevel = getRiskLevel(s.compositeRiskScore)
       }
     }
 
@@ -383,7 +521,8 @@ export async function getAgentMonthlySummaries(
 
 export async function getAgentIntegratedProfile(
   agentId: string,
-  months = 6
+  months = 6,
+  selectedMonth?: string
 ): Promise<{ success: boolean; data?: AgentIntegratedProfile; error?: string }> {
   try {
     const bq = getBigQueryClient()
@@ -506,6 +645,7 @@ export async function getAgentIntegratedProfile(
       // 리스크 점수 계산
       const tempSummary: AgentMonthlySummary = {
         summaryId: "", summaryMonth: month, agentId, center,
+        channel: channel ? String(channel) : undefined,
         qaScore, qcTotalRate: qcRate,
         qcEvalCount: row.qc_eval_count ? Number(row.qc_eval_count) : undefined,
         csatAvgScore: csatScore, csatReviewCount: csatScore != null ? 1 : undefined,
@@ -516,8 +656,11 @@ export async function getAgentIntegratedProfile(
       return { month, qaScore, qcRate, csatScore, quizScore, riskScore }
     })
 
-    // 최신월 데이터로 current 구성
-    const latestMonth = monthlyTrend[monthlyTrend.length - 1]
+    // 선택된 월 또는 가장 데이터가 풍부한 최신월로 current 구성
+    const targetMonth = selectedMonth
+      ? monthlyTrend.find(m => m.month === selectedMonth) || monthlyTrend[monthlyTrend.length - 1]
+      : monthlyTrend[monthlyTrend.length - 1]
+    const latestMonth = targetMonth
     const targets = getCenterTargets(center)
 
     const current: AgentMonthlySummary = {

@@ -42,11 +42,32 @@ CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.evaluations` (
   attitude_error_count INT64,
   business_error_count INT64,
   total_error_count INT64,
+  -- 상담유형 뎁스 (수정 전: 상담사 원래 설정)
+  consult_type_orig_depth1 STRING,    -- 1뎁스 (서비스명)
+  consult_type_orig_depth2 STRING,    -- 2뎁스 (문의유형)
+  consult_type_orig_depth3 STRING,    -- 3뎁스 (세부유형)
+  consult_type_orig_depth4 STRING,    -- 4뎁스 (상세)
+  -- 상담유형 뎁스 (수정 후: QC 검수자 정정, NULL이면 원래 설정이 정상)
+  consult_type_corrected_depth1 STRING,
+  consult_type_corrected_depth2 STRING,
+  consult_type_corrected_depth3 STRING,
+  consult_type_corrected_depth4 STRING,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP(),
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 PARTITION BY evaluation_date
 CLUSTER BY center, service, channel;
+
+-- evaluations 테이블 상담유형 뎁스 컬럼 추가 (기존 테이블 마이그레이션용)
+ALTER TABLE `csopp-25f2.KMCC_QC.evaluations`
+  ADD COLUMN IF NOT EXISTS consult_type_orig_depth1 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_orig_depth2 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_orig_depth3 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_orig_depth4 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_corrected_depth1 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_corrected_depth2 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_corrected_depth3 STRING,
+  ADD COLUMN IF NOT EXISTS consult_type_corrected_depth4 STRING;
 
 -- 테이블 2: agents (상담사 마스터)
 CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.agents` (
@@ -312,4 +333,49 @@ CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.agent_monthly_summary` (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 PARTITION BY summary_date
+CLUSTER BY center, agent_id;
+
+-- ============================================================
+-- 미흡상담사(집중관리) 주간 적발 이력 테이블
+-- 2025년 7월~ 용산 미흡상담사 관리현황 Excel에서 추출
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.weekly_underperformers` (
+  -- 주차 식별
+  week_label STRING NOT NULL,            -- "2025년 7월 1주차"
+  week_year INT64 NOT NULL,              -- 2025
+  week_month INT64 NOT NULL,             -- 7
+  week_number INT64 NOT NULL,            -- 1
+
+  -- 상담사 정보
+  agent_id STRING NOT NULL,              -- 영문이름 (LDAP)
+  agent_name STRING NOT NULL,            -- 한글이름
+  center STRING NOT NULL,                -- 용산/광주
+  service STRING,                        -- 버티컬 (Maas A / 유선 등)
+  hire_date DATE,                        -- 입사일
+  tenure_months FLOAT64,                 -- 근속개월
+
+  -- 미흡 판정 원시값
+  qa_knowledge_value STRING,             -- QA 업무지식 (Y/빈값)
+  qc_attitude_value FLOAT64,             -- QC 상담태도 오류율 (소수)
+  qc_ops_value FLOAT64,                  -- QC 오상담 오류율 (소수)
+  csat_low_weekly_value STRING,          -- 상담평가 주단위 (Y/빈값)
+  csat_low_monthly_count FLOAT64,        -- 상담평가 월 누적 건수
+
+  -- 미흡 판정 플래그
+  qa_knowledge_flagged BOOL DEFAULT FALSE,
+  qc_attitude_flagged BOOL DEFAULT FALSE,
+  qc_ops_flagged BOOL DEFAULT FALSE,
+  csat_low_weekly_flagged BOOL DEFAULT FALSE,
+
+  -- 종합
+  flagged_count INT64,                   -- 적발 항목 수 (0~4)
+  is_low_quality BOOL DEFAULT FALSE,     -- 저품질 상담사 여부 (W열)
+  note STRING,                           -- 비고 (X열)
+
+  -- 메타
+  source_file STRING,
+  source_sheet STRING,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
+)
 CLUSTER BY center, agent_id;

@@ -73,11 +73,12 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
           <Tooltip
             contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }}
             labelStyle={{ color: "#000000", fontWeight: 600 }}
-            formatter={(value: number | null, name: string) => {
+            formatter={(value, name: string) => {
               if (value == null) return ["-", name]
-              if (name === "QC 오류율") return [`${value.toFixed(1)}%`, name]
-              if (name === "상담 평점") return [value.toFixed(2), name]
-              return [`${value.toFixed(1)}점`, name]
+              const v = Number(value)
+              if (name === "QC 오류율") return [`${v.toFixed(1)}%`, name]
+              if (name === "상담 평점") return [v.toFixed(2), name]
+              return [`${v.toFixed(1)}점`, name]
             }}
           />
           <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />

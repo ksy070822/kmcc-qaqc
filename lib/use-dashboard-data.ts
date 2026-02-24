@@ -100,13 +100,8 @@ export function useDashboardData(
     setError(null)
 
     try {
-      // trend API 호출 시 날짜 범위 파라미터 추가
-      let trendUrl = `${API_BASE}?type=trend`;
-      if (startDate && endDate) {
-        trendUrl += `&startDate=${startDate}&endDate=${endDate}`;
-      } else {
-        trendUrl += `&days=30`; // 기본값: 최근 1개월
-      }
+      // trend API: 일간 추이는 항상 최근 14일 고정
+      const trendUrl = `${API_BASE}?type=trend&days=14`;
 
       // 센터 API에 목~수 주간 범위 전달 (단일 날짜 대신)
       const thursdayWeek = getThursdayWeek(selectedDate)

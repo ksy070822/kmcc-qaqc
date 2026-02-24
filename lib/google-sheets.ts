@@ -146,6 +146,16 @@ export function parseSheetRowsToEvaluations(
       const serviceIdx = getColumnIndex(['서비스', 'service']);
       const serviceGroupIdx = getColumnIndex(['서비스 그룹', '서비스그룹']);
       const depth1Idx = getColumnIndex(['상담유형 1depth', '상담유형1', '상담유형', 'consult_type']);
+      // 상담유형 수정 전 (상담사 원래 설정) 1~4뎁스
+      const origDepth1Idx = getColumnIndex(['상담유형-수정 전 1depth', '상담유형 수정 전 1depth', '수정 전 1depth', '상담유형 1depth', '상담유형1', '상담유형']);
+      const origDepth2Idx = getColumnIndex(['상담유형-수정 전 2depth', '상담유형 수정 전 2depth', '수정 전 2depth', '상담유형 2depth', '상담유형2']);
+      const origDepth3Idx = getColumnIndex(['상담유형-수정 전 3depth', '상담유형 수정 전 3depth', '수정 전 3depth', '상담유형 3depth', '상담유형3']);
+      const origDepth4Idx = getColumnIndex(['상담유형-수정 전 4depth', '상담유형 수정 전 4depth', '수정 전 4depth', '상담유형 4depth', '상담유형4']);
+      // 상담유형 수정 후 (QC 검수자 정정) 1~4뎁스
+      const corrDepth1Idx = getColumnIndex(['상담유형-수정 후 1depth', '상담유형 수정 후 1depth', '수정 후 1depth']);
+      const corrDepth2Idx = getColumnIndex(['상담유형-수정 후 2depth', '상담유형 수정 후 2depth', '수정 후 2depth']);
+      const corrDepth3Idx = getColumnIndex(['상담유형-수정 후 3depth', '상담유형 수정 후 3depth', '수정 후 3depth']);
+      const corrDepth4Idx = getColumnIndex(['상담유형-수정 후 4depth', '상담유형 수정 후 4depth', '수정 후 4depth']);
       const channelTypeIdx = getColumnIndex(['유선/채팅', '유선채팅']); // 실제 채널
       const channelIdx = channelTypeIdx ?? getColumnIndex(['채널', 'channel']); // 폴백
       const hireDateIdx = getColumnIndex(['입사일', 'hire_date', 'hiredate']);
@@ -227,6 +237,16 @@ export function parseSheetRowsToEvaluations(
       // 개별 오류 항목 추출
       const errorDetails = extractIndividualErrors(row, headerMap);
 
+      // 상담유형 뎁스 추출 (수정 전/후)
+      const consultTypeOrigDepth1 = origDepth1Idx !== null ? row[origDepth1Idx]?.toString().trim() || null : null;
+      const consultTypeOrigDepth2 = origDepth2Idx !== null ? row[origDepth2Idx]?.toString().trim() || null : null;
+      const consultTypeOrigDepth3 = origDepth3Idx !== null ? row[origDepth3Idx]?.toString().trim() || null : null;
+      const consultTypeOrigDepth4 = origDepth4Idx !== null ? row[origDepth4Idx]?.toString().trim() || null : null;
+      const consultTypeCorrectedDepth1 = corrDepth1Idx !== null ? row[corrDepth1Idx]?.toString().trim() || null : null;
+      const consultTypeCorrectedDepth2 = corrDepth2Idx !== null ? row[corrDepth2Idx]?.toString().trim() || null : null;
+      const consultTypeCorrectedDepth3 = corrDepth3Idx !== null ? row[corrDepth3Idx]?.toString().trim() || null : null;
+      const consultTypeCorrectedDepth4 = corrDepth4Idx !== null ? row[corrDepth4Idx]?.toString().trim() || null : null;
+
       // 고유 ID 생성 (중복 방지)
       const evaluationId = consultId
         ? `${agentId}_${normalizedDate}_${consultId}`
@@ -247,6 +267,15 @@ export function parseSheetRowsToEvaluations(
         businessErrors,
         totalErrors,
         ...errorDetails, // 개별 오류 항목 포함
+        // 상담유형 뎁스 (수정 전/후)
+        consultTypeOrigDepth1,
+        consultTypeOrigDepth2,
+        consultTypeOrigDepth3,
+        consultTypeOrigDepth4,
+        consultTypeCorrectedDepth1,
+        consultTypeCorrectedDepth2,
+        consultTypeCorrectedDepth3,
+        consultTypeCorrectedDepth4,
         rawRow: row, // 디버깅용
       });
     } catch (error) {

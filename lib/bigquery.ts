@@ -124,11 +124,11 @@ function getHrAgentsCte(): string {
   return `
     hr_agents AS (
       SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
-      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Snapshot\`
       WHERE type = '상담사' AND hire_date IS NOT NULL
       UNION ALL
       SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
-      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+      FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Snapshot\`
       WHERE type = '상담사' AND hire_date IS NOT NULL
     )`;
 }
@@ -156,11 +156,11 @@ async function getHrAgentsMap(): Promise<Map<string, string>> {
 
   const query = `
     SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
-    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Snapshot\`
     WHERE type = '상담사' AND hire_date IS NOT NULL
     UNION ALL
     SELECT DISTINCT TRIM(LOWER(id)) as agent_id, hire_date
-    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Snapshot\`
     WHERE type = '상담사' AND hire_date IS NOT NULL
   `;
 
@@ -226,7 +226,7 @@ export async function getHrAgentsList(centerFilter?: string): Promise<HrAgentRaw
       name,
       hire_date,
       '용산' AS center
-    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Live\`
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Yongsan_Snapshot\`
     WHERE type = '상담사' AND id IS NOT NULL
     UNION ALL
     SELECT DISTINCT
@@ -234,7 +234,7 @@ export async function getHrAgentsList(centerFilter?: string): Promise<HrAgentRaw
       name,
       hire_date,
       '광주' AS center
-    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Live\`
+    FROM \`csopp-25f2.${HR_DATASET_ID}.HR_Gwangju_Snapshot\`
     WHERE type = '상담사' AND id IS NOT NULL
   `;
 
@@ -1222,7 +1222,7 @@ export async function getAgents(filters?: {
         id: row.id,
         name: row.name,
         center: row.center,
-        service: mapServiceName(row.service, row.center),
+        service: mapServiceName(row.service, row.center) || '',
         channel: row.channel,
         tenureMonths,
         tenureGroup,
@@ -1494,7 +1494,7 @@ export async function getWatchList(filters?: {
         agentId: row.agent_id,
         agentName: row.agent_name,
         center: row.center,
-        service: mapServiceName(row.service, row.center),
+        service: mapServiceName(row.service, row.center) || '',
         channel: row.channel,
         attitudeRate: attRate,
         opsRate: opsRate,
@@ -1666,6 +1666,16 @@ export async function saveEvaluationsToBigQuery(evaluations: any[]): Promise<{ s
       attitude_error_count: evalData.attitudeErrors || 0,
       business_error_count: evalData.businessErrors || 0,
       total_error_count: (evalData.attitudeErrors || 0) + (evalData.businessErrors || 0),
+      // 상담유형 뎁스 (수정 전: 상담사 원래 설정)
+      consult_type_orig_depth1: evalData.consultTypeOrigDepth1 || null,
+      consult_type_orig_depth2: evalData.consultTypeOrigDepth2 || null,
+      consult_type_orig_depth3: evalData.consultTypeOrigDepth3 || null,
+      consult_type_orig_depth4: evalData.consultTypeOrigDepth4 || null,
+      // 상담유형 뎁스 (수정 후: QC 검수자 정정, null이면 정상)
+      consult_type_corrected_depth1: evalData.consultTypeCorrectedDepth1 || null,
+      consult_type_corrected_depth2: evalData.consultTypeCorrectedDepth2 || null,
+      consult_type_corrected_depth3: evalData.consultTypeCorrectedDepth3 || null,
+      consult_type_corrected_depth4: evalData.consultTypeCorrectedDepth4 || null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       };
@@ -3073,7 +3083,7 @@ export async function getAgentAnalysisData(
       agentId: row.agent_id,
       agentName: row.agent_name,
       center: row.center,
-      service: mapServiceName(row.service, row.center),
+      service: mapServiceName(row.service, row.center) || '',
       channel: row.channel,
       tenureMonths: 0, // TODO: 실제 tenure 데이터 조회
       tenureGroup: '',
@@ -3143,7 +3153,7 @@ export async function getGroupAnalysisData(
     
     const context: GroupAnalysisContext = {
       center: row.center,
-      service: mapServiceName(row.service, row.center),
+      service: mapServiceName(row.service, row.center) || '',
       channel: row.channel,
       totalAgents: Number(row.total_agents) || 0,
       totalEvaluations: Number(row.total_evaluations) || 0,

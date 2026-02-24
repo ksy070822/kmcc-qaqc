@@ -23,6 +23,18 @@ interface ItemAnalysisProps {
 const NAVY = "#6B93D6"
 const KAKAO = "#9E9E9E"
 
+// MODI 색상 토큰 (QA V2와 통일)
+const MODI = {
+  brandPrimary: "#2c6edb",
+  brandWarning: "#DD2222",
+  textPrimary: "#121212",
+  textSecondary: "#4D4D4D",
+  textTertiary: "#666666",
+  bgSecondary: "#F7F7F7",
+  bgAccentBlueOp: "#2c6edb14",
+  stroke: "#D9D9D9",
+}
+
 /* ── 14일 미니 막대 스파크라인 ── */
 function MiniBarChart({ values, color, globalMax }: { values: number[]; color: string; globalMax?: number }) {
   if (values.length === 0) return <span className="text-slate-300 text-[10px]">—</span>
@@ -326,64 +338,121 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
             renderTrendTable(processItems, KAKAO, "오상담/오처리 (11개 항목)")}
         </TabsContent>
 
-        {/* ── 차트 (민원 대시보드 CSS 바 스타일) ── */}
+        {/* ── 차트 (QA V2 MODI 인라인 미니바 스타일) ── */}
         <TabsContent value="chart">
-          <div className="space-y-8">
-            {(selectedCategory === "all" || selectedCategory === "상담태도") && (() => {
-              const maxRate = Math.max(...attitudeItems.map((i) => i.errorRate), 0.1)
-              return (
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#6B93D6]" />
-                    상담태도 (5개 항목)
-                  </h4>
-                  <div className="space-y-3">
-                    {attitudeItems.map((item) => {
-                      const w = Math.max((item.errorRate / maxRate) * 100, item.errorRate > 0 ? 2 : 0)
-                      return (
-                        <div key={item.id} className="flex items-center gap-3">
-                          <span className="w-28 shrink-0 text-right text-[12px] text-slate-600">{item.shortName}</span>
-                          <div className="flex-1 h-5 bg-slate-100 rounded">
-                            <div className="h-full rounded transition-all" style={{ width: `${w}%`, backgroundColor: "#6B93D6" }} />
-                          </div>
-                          <span className="w-16 shrink-0 text-right text-xs font-medium text-slate-700 tabular-nums">
-                            {item.errorRate > 0 ? `${item.errorRate.toFixed(2)}%` : "-"}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+              <thead>
+                <tr style={{ borderBottom: `2px solid ${MODI.stroke}` }}>
+                  <th className="text-left py-2 px-3 text-xs font-semibold" style={{ color: MODI.textTertiary, width: 100 }}>항목</th>
+                  <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 200 }}>오류율 현황</th>
+                  <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 56 }}>건수</th>
+                  <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 64 }}>오류율</th>
+                  <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 64 }}>전주대비</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { label: "상담태도", items: attitudeItems, show: selectedCategory === "all" || selectedCategory === "상담태도" },
+                  { label: "오상담/오처리", items: processItems, show: selectedCategory === "all" || selectedCategory === "오상담/오처리" },
+                ].filter(g => g.show).map((group, gi) => {
+                  const maxRate = Math.max(...group.items.map(i => i.errorRate), 0.1)
+                  return (
+                    <>
+                      {/* 카테고리 구분 행 */}
+                      <tr key={`cat-${gi}`}>
+                        <td
+                          colSpan={5}
+                          className="pt-4 pb-1.5 px-3"
+                          style={{ borderBottom: `1px solid ${MODI.stroke}` }}
+                        >
+                          <span className="text-xs font-semibold" style={{ color: MODI.textSecondary }}>
+                            {group.label}
                           </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
+                          <span className="text-[10px] ml-2" style={{ color: MODI.textTertiary }}>
+                            {group.items.length}개 항목
+                          </span>
+                        </td>
+                      </tr>
 
-            {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && (() => {
-              const maxRate = Math.max(...processItems.map((i) => i.errorRate), 0.1)
-              return (
-                <div>
-                  <h4 className="text-sm font-semibold text-slate-700 mb-4 flex items-center gap-2">
-                    <span className="w-3 h-3 rounded-full bg-[#9E9E9E]" />
-                    오상담/오처리 (11개 항목)
-                  </h4>
-                  <div className="space-y-3">
-                    {processItems.map((item) => {
-                      const w = Math.max((item.errorRate / maxRate) * 100, item.errorRate > 0 ? 2 : 0)
-                      return (
-                        <div key={item.id} className="flex items-center gap-3">
-                          <span className="w-28 shrink-0 text-right text-[12px] text-slate-600">{item.shortName}</span>
-                          <div className="flex-1 h-5 bg-slate-100 rounded">
-                            <div className="h-full rounded transition-all" style={{ width: `${w}%`, backgroundColor: "#9E9E9E" }} />
-                          </div>
-                          <span className="w-16 shrink-0 text-right text-xs font-medium text-slate-700 tabular-nums">
-                            {item.errorRate > 0 ? `${item.errorRate.toFixed(2)}%` : "-"}
-                          </span>
-                        </div>
-                      )
-                    })}
-                  </div>
-                </div>
-              )
-            })()}
+                      {group.items
+                        .sort((a, b) => b.errorRate - a.errorRate)
+                        .map((item, i) => {
+                        const pct = Math.min((item.errorRate / maxRate) * 100, 100)
+                        const isWarn = item.errorRate >= 1
+
+                        return (
+                          <tr
+                            key={`${gi}-${i}`}
+                            className="group transition-colors"
+                            style={{ borderBottom: `1px solid ${i === group.items.length - 1 ? "transparent" : "#F0F0F0"}` }}
+                            onMouseEnter={e => e.currentTarget.style.backgroundColor = MODI.bgAccentBlueOp}
+                            onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+                          >
+                            {/* 항목명 */}
+                            <td className="py-2.5 px-3 text-left">
+                              <span
+                                className={cn("text-[12px]", isWarn ? "font-semibold" : "font-normal")}
+                                style={{ color: isWarn ? MODI.textPrimary : MODI.textSecondary }}
+                              >
+                                {item.shortName}
+                              </span>
+                            </td>
+
+                            {/* 인라인 미니바 */}
+                            <td className="py-2.5 px-2">
+                              <div className="flex items-center gap-1.5">
+                                <div
+                                  className="flex-1 h-[10px] rounded-full overflow-hidden"
+                                  style={{ backgroundColor: MODI.bgSecondary }}
+                                >
+                                  <div
+                                    className="h-full rounded-full transition-all"
+                                    style={{
+                                      width: `${pct}%`,
+                                      backgroundColor: isWarn ? MODI.brandPrimary : `${MODI.brandPrimary}80`,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* 건수 */}
+                            <td className="py-2.5 px-2 text-center">
+                              <span
+                                className="text-xs tabular-nums"
+                                style={{ color: MODI.textSecondary }}
+                              >
+                                {item.errorCount > 0 ? `${item.errorCount}` : "-"}
+                              </span>
+                            </td>
+
+                            {/* 오류율 */}
+                            <td className="py-2.5 px-2 text-center">
+                              <span
+                                className="text-xs font-medium tabular-nums"
+                                style={{ color: isWarn ? MODI.textPrimary : MODI.textSecondary }}
+                              >
+                                {item.errorRate > 0 ? `${item.errorRate.toFixed(2)}%` : "-"}
+                              </span>
+                            </td>
+
+                            {/* 전주대비 */}
+                            <td className="py-2.5 px-2 text-center">
+                              <span
+                                className={cn("text-xs tabular-nums font-medium", trendColor(item.trend))}
+                              >
+                                {item.trend !== 0 ? `${item.trend > 0 ? "+" : ""}${item.trend.toFixed(2)}%` : "-"}
+                              </span>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
         </TabsContent>
 

@@ -15,9 +15,11 @@ import {
   warmupHrCache,
 } from "@/lib/bigquery"
 import { getQADashboardStats, getQACenterStats, getQAScoreTrend, getQAItemStats, getQAMonthlyTable, getQAConsultTypeStats, getQAAgentPerformance, getQAUnderperformerCount } from "@/lib/bigquery-qa"
-import { getCSATDashboardStats, getCSATScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats } from "@/lib/bigquery-csat"
+import { getCSATDashboardStats, getCSATLowScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats, getCSATWeeklyTable, getCSATLowScoreDetail } from "@/lib/bigquery-csat"
 import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizServiceTrend } from "@/lib/bigquery-quiz"
 import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
+import { getVoiceProductivity, getVoiceHandlingTime, getVoiceDailyTrend, getChatProductivity, getChatDailyTrend, getBoardProductivity, getWeeklySummary, getForeignLanguageProductivity } from "@/lib/bigquery-productivity"
+import { getSLAScorecard, getSLAMonthlyTrend, getSLADailyTracking } from "@/lib/bigquery-sla"
 import { getCorsHeaders } from "@/lib/cors"
 
 const bq = new BigQuery({
@@ -532,7 +534,7 @@ export async function GET(request: Request) {
 
       case "csat-trend": {
         const csatDays = parseInt(searchParams.get("days") || "30")
-        result = await getCSATScoreTrend(csatDays)
+        result = await getCSATLowScoreTrend(csatDays)
         break
       }
 
@@ -560,6 +562,14 @@ export async function GET(request: Request) {
           startDate: searchParams.get("startDate") || undefined,
           endDate: searchParams.get("endDate") || undefined,
         })
+        break
+
+      case "csat-weekly":
+        result = await getCSATWeeklyTable()
+        break
+
+      case "csat-low-score":
+        result = await getCSATLowScoreDetail()
         break
 
       // ── 직무테스트(Quiz) ──
@@ -609,7 +619,8 @@ export async function GET(request: Request) {
           )
         }
         const profileMonths = parseInt(searchParams.get("months") || "6")
-        result = await getAgentIntegratedProfile(profileAgentId, profileMonths)
+        const profileSelectedMonth = searchParams.get("selectedMonth") || undefined
+        result = await getAgentIntegratedProfile(profileAgentId, profileMonths, profileSelectedMonth)
         break
       }
 
@@ -618,6 +629,54 @@ export async function GET(request: Request) {
           month: searchParams.get("month") || new Date().toISOString().slice(0, 7),
           center: searchParams.get("center") || undefined,
         })
+        break
+
+      // ── 생산성 (Productivity) ──
+      case "productivity-voice":
+        result = await getVoiceProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-voice-time":
+        result = await getVoiceHandlingTime(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-voice-trend":
+        result = await getVoiceDailyTrend(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-chat":
+        result = await getChatProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-chat-trend":
+        result = await getChatDailyTrend(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-board":
+        result = await getBoardProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-foreign":
+        result = await getForeignLanguageProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "productivity-weekly-summary": {
+        const wsCh = (searchParams.get("channel") || "voice") as "voice" | "chat"
+        const wsWeeks = parseInt(searchParams.get("weeks") || "3")
+        result = await getWeeklySummary(wsCh, wsWeeks)
+        break
+      }
+
+      case "sla-scorecard":
+        result = await getSLAScorecard(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        break
+
+      case "sla-trend":
+        result = await getSLAMonthlyTrend(6)
+        break
+
+      case "sla-daily-tracking":
+        result = await getSLADailyTracking(searchParams.get("month"))
         break
 
       default:
