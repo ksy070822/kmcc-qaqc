@@ -9,8 +9,8 @@
 
 | 담당자 | 도메인 | 상태 | 브랜치 |
 |--------|--------|------|--------|
-| **콥** | 생산성 (Productivity) | 신규 개발 | `feature/productivity-cop` |
-| **딘** | SLA 평가 | 신규 개발 | `feature/sla-din` |
+| **Cobb** | 생산성 (Productivity) | 신규 개발 | `feature/productivity-cobb` |
+| **Dean** | SLA 평가 | 신규 개발 | `feature/sla-dean` |
 | **리샬** | QA 상담평점 | 기존 코드 있음 | `feature/qa-rishal` |
 | **메이** | QC + 직무테스트 | 기존 코드 있음 | `feature/qc-may` |
 

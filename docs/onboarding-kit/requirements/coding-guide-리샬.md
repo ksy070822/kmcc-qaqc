@@ -230,7 +230,7 @@ git push origin feature/리샬-qa-수정사항
 ### 3-4. PR 생성
 
 GitHub에서 PR(Pull Request) 만들기:
-1. https://github.com/ksy070822/kmcc-qaqc 접속
+1. https://github.kakaocorp.com/csopp/komi 접속
 2. "Compare & pull request" 버튼 클릭
 3. 제목: 변경 내용 요약
 4. 본문: 왜 변경했는지 설명

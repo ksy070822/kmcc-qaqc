@@ -46,10 +46,10 @@ gcloud --version
 cd ~/Desktop
 
 # 코드 받기
-git clone https://github.com/ksy070822/kmcc-qaqc.git
+git clone https://github.kakaocorp.com/csopp/komi.git
 
 # 프로젝트 폴더로 이동
-cd kmcc-qaqc
+cd komi
 ```
 
 > GitHub 접근 권한이 없다면 메이에게 GitHub 아이디를 알려주세요.
@@ -181,7 +181,7 @@ Access Denied: ... User does not have bigquery.jobs.create permission
 ### Q. Git push가 안 돼요
 
 ```
-remote: Permission to ksy070822/kmcc-qaqc.git denied
+remote: Permission to csopp/komi.git denied
 ```
 → 메이에게 GitHub Collaborator 초대를 요청하세요.
 

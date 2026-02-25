@@ -31,16 +31,16 @@
 
 ```bash
 # 프로젝트 폴더로 이동
-cd ~/Desktop/kmcc-qaqc
+cd ~/Desktop/komi
 
 # 최신 코드 받기
 git pull origin main
 
 # 내 브랜치 만들기 (아래에서 본인 브랜치를 선택)
-git checkout -b feature/productivity-cop    # 콥
-git checkout -b feature/sla-din             # 딘
-git checkout -b feature/qa-rishal           # 리샬
-git checkout -b feature/qc-may             # 메이
+git checkout -b feature/productivity-cobb   # Cobb
+git checkout -b feature/sla-dean            # Dean
+git checkout -b feature/qa-rishal           # Rishal
+git checkout -b feature/qc-may             # May
 ```
 
 ### Git 사용자 설정 (한 번만)
@@ -56,7 +56,7 @@ git config user.email "본인@이메일.com"
 
 ```bash
 # 1) 내 브랜치로 이동 (이미 있으면)
-git checkout feature/productivity-cop   # 본인 브랜치명
+git checkout feature/productivity-cobb  # 본인 브랜치명
 
 # 2) main의 최신 변경사항을 내 브랜치에 반영
 git pull origin main
@@ -108,12 +108,12 @@ git commit -m "SLA 대시보드 기본 구조 생성"
 
 ```bash
 # 내 브랜치를 원격에 올리기
-git push origin feature/sla-din   # 본인 브랜치명
+git push origin feature/sla-dean   # 본인 브랜치명
 ```
 
 처음 push할 때는:
 ```bash
-git push -u origin feature/sla-din
+git push -u origin feature/sla-dean
 ```
 
 ---
@@ -124,7 +124,7 @@ git push -u origin feature/sla-din
 
 ### GitHub 웹에서 만들기
 
-1. https://github.com/ksy070822/kmcc-qaqc 접속
+1. https://github.kakaocorp.com/csopp/komi 접속
 2. 상단에 "Compare & pull request" 노란 버튼 클릭
 3. 제목과 설명 작성:
    ```
