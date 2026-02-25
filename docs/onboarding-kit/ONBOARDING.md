@@ -17,6 +17,32 @@
 
 ---
 
+## 0. 터미널 여는 법 (처음이라면 여기부터!)
+
+터미널은 컴퓨터에게 명령어를 입력하는 검은 화면입니다. 아래 중 하나를 사용하면 됩니다.
+
+### 방법 1: Mac 터미널 (기본 앱)
+
+1. **Cmd + Space** (Spotlight 검색) → "터미널" 입력 → Enter
+2. 검은 화면이 뜨면 성공!
+
+### 방법 2: VS Code 내장 터미널 (권장)
+
+1. VS Code 실행 → 상단 메뉴 **Terminal** → **New Terminal**
+2. 또는 단축키: **Ctrl + `** (백틱)
+3. 하단에 터미널 창이 열립니다
+
+### 방법 3: Cursor 내장 터미널
+
+1. Cursor 실행 → 상단 메뉴 **Terminal** → **New Terminal**
+2. 또는 단축키: **Ctrl + `** (백틱)
+3. VS Code와 동일한 방식입니다
+
+> 터미널이 열렸으면 아래 명령어를 **복사(Cmd+C) → 붙여넣기(Cmd+V) → Enter** 하면 됩니다.
+> 한 줄씩 실행하세요.
+
+---
+
 ## 1. 사전 준비물
 
 | 도구 | 버전 | 설치 방법 |
@@ -28,7 +54,7 @@
 
 ### 설치 확인
 
-터미널(또는 명령 프롬프트)에서 아래 명령어를 실행하세요:
+터미널에서 아래 명령어를 **한 줄씩** 실행하세요:
 
 ```bash
 node -v      # v18.x.x 이상이면 OK
@@ -128,12 +154,39 @@ npm run dev
 
 브라우저에서 http://localhost:3000 접속하면 대시보드가 보입니다.
 
+### 한 줄로 끝내기 (클론부터 서버 실행까지)
+
+데스크탑에 클론하는 경우, 터미널에 아래 한 줄을 붙여넣으세요:
+
+```bash
+cd ~/Desktop && git clone https://github.kakaocorp.com/csopp/komi.git && cd komi && chmod +x scripts/setup-dev.sh && ./scripts/setup-dev.sh
+```
+
+셋업 완료 후 서버 실행:
+
+```bash
+cd ~/Desktop/komi && npm run dev
+```
+
+### VS Code / Cursor에서 실행하기
+
+1. VS Code(또는 Cursor) 실행
+2. **File** → **Open Folder** → `Desktop/komi` 폴더 선택
+3. **Terminal** → **New Terminal** (또는 Ctrl + `)
+4. 터미널에 입력:
+   ```bash
+   npm run dev
+   ```
+5. 브라우저에서 http://localhost:3000 접속
+
+> 서버를 끄려면 터미널에서 **Ctrl + C**
+
 ### 주요 명령어
 
 | 명령어 | 설명 |
 |--------|------|
 | `npm run dev` | 로컬 개발 서버 (코드 수정 시 자동 반영) |
-| `npm run build` | 프로덕션 빌드 (배포 전 테스트용) |
+| `npm run build -- --webpack` | 프로덕션 빌드 (배포 전 테스트용) |
 | `npm run lint` | 코드 문법 검사 |
 
 ---
