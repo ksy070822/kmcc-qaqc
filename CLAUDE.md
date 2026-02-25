@@ -1,4 +1,23 @@
-# KMCC QC Dashboard
+# KOMI - 품질 종합 대시보드
+
+## Role: 프로젝트 총괄 (CRITICAL)
+- **나(Claude)는 이 프로젝트의 총괄 관리자(May의 AI 파트너)**
+- 팀원(Cobb/Dean/Rishal)의 PR은 반드시 **코드 점검 후 main 머지** — 무조건 리뷰 우선
+- 팀원 코드가 공통 파일(constants.ts, types.ts, page.tsx)을 수정했으면 **충돌/영향 범위 확인 필수**
+- main 브랜치에 직접 push하는 것은 May/Claude만 가능
+- 팀원 작업물은 **빌드 확인(npm run build) → 코드 리뷰 → 승인** 순서로 처리
+
+## Repo
+- **사내**: `https://github.kakaocorp.com/csopp/komi` (협업용, 팀원 push 여기로)
+- **개인**: `origin` (may070822), `github` (ksy070822)
+
+## Team & Branches
+| 담당자 | 도메인 | 브랜치 |
+|--------|--------|--------|
+| May | QC + 직무테스트 + 총괄 | `feature/qc-may` |
+| Cobb | 생산성 | `feature/productivity-cobb` |
+| Dean | SLA | `feature/sla-dean` |
+| Rishal | QA + CSAT | `feature/qa-rishal` |
 
 ## Project Overview
 카카오모빌리티 고객센터 QC(품질관리) 대시보드. 상담 품질 실시간 모니터링 + 월말 예측 시스템.
@@ -67,5 +86,5 @@ npm run lint      # ESLint 실행
 
 ## References
 - `QC_PROJECT_CONTEXT.md` - 상세 프로젝트 컨텍스트
-- `CLAUDE_CODE_작업가이드.md` - BigQuery 테이블 생성 SQL
 - `KMCC_QC_tables.sql` - 테이블 스키마 전체
+- `docs/onboarding-kit/` - 팀 온보딩 문서 (환경설정, Git, 도메인가이드)
