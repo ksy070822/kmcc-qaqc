@@ -59,3 +59,13 @@ next-env.d.ts
 
 # Agit data
 아지트글취합 /
+
+# Office files
+*.xlsx
+*.xls
+*.docx
+*.pptx
+
+# Unnecessary root scripts (deploy/setup)
+pnpm-lock.yaml
+predictions_api.ts
