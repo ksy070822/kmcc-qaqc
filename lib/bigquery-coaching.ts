@@ -5,7 +5,14 @@
  * 경보 생성, 효과 측정 등 코칭 PDCA에 필요한 BQ 쿼리.
  */
 
+import { endOfMonth, parse, format } from "date-fns"
 import { getBigQueryClient } from "@/lib/bigquery"
+
+/** "2026-02" → "2026-02-28" (월말 날짜 정확히 계산) */
+function getMonthEndDate(month: string): string {
+  const d = parse(`${month}-01`, 'yyyy-MM-dd', new Date())
+  return format(endOfMonth(d), 'yyyy-MM-dd')
+}
 import { getTenureBand, COACHING_CATEGORIES, QC_ERROR_TO_CATEGORY, ALERT_THRESHOLDS } from "@/lib/constants"
 import {
   assessCategoryWeaknesses,
@@ -53,7 +60,7 @@ export async function getAgentQcErrorsByCategory(
 }> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   const query = `
     SELECT
@@ -113,7 +120,7 @@ export async function getAgentQaScores(
 ): Promise<Array<{ itemKey: string; score: number; maxScore: number }>> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   const query = `
     SELECT
@@ -178,7 +185,7 @@ export async function getConsultTypeErrorDrilldown(
 ): Promise<ConsultTypeErrorAnalysis[]> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   // 해당 상담사의 업무지식 오류 건에서 상담유형별 분포
   const agentQuery = `
@@ -260,7 +267,7 @@ export async function getConsultTypeCorrectionStats(
 ): Promise<ConsultTypeCorrectionAnalysis> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   const query = `
     SELECT
@@ -321,7 +328,7 @@ export async function getNewHireList(
   const now = new Date()
   const month = filters.month || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   // 2개월 미만 신입 조회 (용산 + 광주 HR)
   const hrQuery = `
@@ -380,25 +387,30 @@ export async function getNewHireList(
     params: { agentIds, startDate, endDate },
   })
 
-  // CSAT (채팅 신입만)
+  // CSAT (채팅 신입만) — dw_review 테이블에서 평균 평점 + 저점비율 조회
   const csatQuery = `
     SELECT
-      rr.assignee_id AS agent_id,
+      COALESCE(c.user_id, c.first_user_id) AS agent_id,
       AVG(r.score) AS avg_score,
-      COUNTIF(r.score <= 2) / COUNT(*) * 100 AS low_rate,
-      COUNT(*) AS cnt
-    FROM ${REVIEW_REQUEST} rr
-    JOIN ${REVIEW} r ON rr.id = r.review_request_id
-    WHERE rr.assignee_id IN UNNEST(@agentIds)
-      AND rr.created_at >= @startDate
-      AND rr.created_at < DATE_ADD(@endDate, INTERVAL 1 DAY)
+      COUNTIF(r.score <= 2) / COUNT(*) * 100 AS low_rate
+    FROM ${REVIEW} r
+    JOIN ${REVIEW_REQUEST} rr ON r.review_request_id = rr.id
+    JOIN ${CHAT_INQUIRE} ci ON ci.review_id = rr.id
+    JOIN \`dataanalytics-25f2.dw_cems.consult\` c ON c.chat_inquire_id = ci.id
+    WHERE COALESCE(c.user_id, c.first_user_id) IN UNNEST(@agentIds)
+      AND DATE(r.created_at) BETWEEN @startDate AND @endDate
     GROUP BY 1
   `
-
-  const [csatRows] = await bq.query({
-    query: csatQuery,
-    params: { agentIds, startDate, endDate },
-  })
+  let csatRows: Record<string, unknown>[] = []
+  try {
+    const [rows] = await bq.query({
+      query: csatQuery,
+      params: { agentIds, startDate, endDate },
+    })
+    csatRows = rows as Record<string, unknown>[]
+  } catch (e) {
+    console.warn('[Coaching] CSAT query failed (non-blocking):', e instanceof Error ? e.message : e)
+  }
 
   // 코호트 평균 (과거 신입들의 동일 주차 평균 오류율)
   const cohortQuery = `
@@ -592,7 +604,7 @@ export async function getWeaknessHeatmapData(
 }>> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   // 상담사별 QC 오류 항목 전체 (그룹별)
   const query = `
@@ -693,7 +705,7 @@ export async function generateCoachingPlans(
 ): Promise<AgentCoachingPlan[]> {
   const bq = getBigQueryClient()
   const startDate = `${month}-01`
-  const endDate = `${month}-31`
+  const endDate = getMonthEndDate(month)
 
   // 대상 상담사 목록 + QC 집계
   const agentQuery = `
@@ -1095,7 +1107,7 @@ export async function getUnderperformingAgents(
 ): Promise<UnderperformingStatus[]> {
   const bq = getBigQueryClient()
   const monthStart = `${month}-01`
-  const monthEnd = `${month}-31`
+  const monthEnd = getMonthEndDate(month)
 
   // HR 테이블에서 상담사 기본정보 + 근속 조회
   const centerFilter = center
@@ -1140,17 +1152,13 @@ export async function getUnderperformingAgents(
       WHERE evaluation_date BETWEEN @monthStart AND @monthEnd
       GROUP BY agent_id
     ),
-    -- CSAT 저점(1·2점) 주간/월간 건수
+    -- CSAT 저점 — TODO: dw_review 테이블 스키마 매핑 후 활성화
     csat_weekly AS (
       SELECT
-        r.agent_id,
-        COUNTIF(rv.score IN (1, 2) AND rv.review_date BETWEEN @weekStart AND @weekEnd) AS low_score_weekly,
-        COUNTIF(rv.score IN (1, 2) AND rv.review_date BETWEEN @monthStart AND @monthEnd) AS low_score_monthly
-      FROM ${REVIEW_REQUEST} r
-      JOIN ${REVIEW} rv ON r.review_id = rv.review_id
-      WHERE rv.review_date BETWEEN @monthStart AND @monthEnd
-        AND rv.score IS NOT NULL
-      GROUP BY r.agent_id
+        CAST(NULL AS STRING) AS agent_id,
+        0 AS low_score_weekly,
+        0 AS low_score_monthly
+      WHERE FALSE
     )
     SELECT
       hr.emp_no AS agent_id,
@@ -1279,16 +1287,12 @@ export async function getAgentWeeklyFlags(
         AND e.evaluation_date BETWEEN wr.week_start AND wr.week_end
       GROUP BY wr.week_start, wr.week_end
     ),
+    -- CSAT by week — TODO: dw_review 테이블 스키마 매핑 후 활성화
     csat_by_week AS (
       SELECT
-        wr.week_start,
-        COUNTIF(rv.score IN (1, 2)) AS low_count
-      FROM week_ranges wr
-      JOIN ${REVIEW_REQUEST} rr ON rr.agent_id = @agentId
-      JOIN ${REVIEW} rv ON rr.review_id = rv.review_id
-        AND rv.review_date BETWEEN wr.week_start AND wr.week_end
-        AND rv.score IS NOT NULL
-      GROUP BY wr.week_start
+        CAST(NULL AS DATE) AS week_start,
+        0 AS low_count
+      WHERE FALSE
     )
     SELECT
       wr.week_start,

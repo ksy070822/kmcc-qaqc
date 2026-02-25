@@ -28,7 +28,7 @@
 - **Data**: Google BigQuery (`csopp-25f2.KMCC_QC`) + Google Sheets 연동
 - **Charts**: Recharts
 - **Deploy**: GCP Cloud Run (asia-northeast3) via Cloud Build (GitHub push → 자동 배포)
-- **URL**: https://qc-dashboard-wlof52lhea-du.a.run.app
+- **URL**: https://qc-dashboard-290375504169.asia-northeast3.run.app
 - **AI**: Vertex AI / Google Generative AI (상담사 분석 챗봇)
 
 ## Architecture
@@ -69,6 +69,12 @@ npm run lint      # ESLint 실행
 | 용산 | 3.3% | 3.9% |
 | 광주 | 2.7% | 1.7% |
 | 전체 | 3.0% | 3.0% |
+
+## GCP Region (IMPORTANT)
+- **리전은 항상 `asia-northeast3` (서울)**
+- Cloud Run, Cloud Build, BigQuery, Artifact Registry 모두 서울 리전
+- Cloud Build 배포 시 반드시 `--region=asia-northeast3` + `--default-buckets-behavior=regional-user-owned-bucket` 사용
+- 조직 정책(`constraints/gcp.resourceLocations`)으로 US 리전 사용 불가
 
 ## Coding Rules
 - Path alias: `@/*` maps to project root

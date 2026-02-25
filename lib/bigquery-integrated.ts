@@ -292,8 +292,8 @@ export async function getAgentMonthlySummaries(
                 + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
               COUNT(*) * 11) AS ops_rate
           FROM ${EVALUATIONS} e
-          WHERE e.evaluation_date >= DATE_SUB(PARSE_DATE('%Y-%m-01', @month), INTERVAL 3 MONTH)
-            AND e.evaluation_date < PARSE_DATE('%Y-%m-01', @month)
+          WHERE e.evaluation_date >= DATE_SUB(PARSE_DATE('%Y-%m-%d', CONCAT(@month, '-01')), INTERVAL 3 MONTH)
+            AND e.evaluation_date < PARSE_DATE('%Y-%m-%d', CONCAT(@month, '-01'))
           GROUP BY e.agent_id, FORMAT_DATE('%Y-%m', e.evaluation_date)
         )
         WHERE att_rate > 5.0 OR ops_rate > 6.0

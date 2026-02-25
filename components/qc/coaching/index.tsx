@@ -7,6 +7,8 @@ import { NewHireDashboard } from "./new-hire-dashboard"
 import { WeaknessHeatmap } from "./weakness-heatmap"
 import { AlertDashboard } from "./alert-dashboard"
 import { AgentCoachingCard } from "./agent-coaching-card"
+import { Card, CardContent } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 import type {
   AgentCoachingPlan,
   NewHireProfile,
@@ -105,57 +107,65 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
   return (
     <div className="space-y-6">
       {/* 필터 바 */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {!externalMonth && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-600">월</label>
-            <select
-              value={month}
-              onChange={e => setMonth(e.target.value)}
-              className="border rounded-md px-3 py-1.5 text-sm"
-            >
-              {monthOptions.map(m => (
-                <option key={m} value={m}>{m}</option>
-              ))}
-            </select>
+      <Card className="border shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex items-center gap-4 flex-wrap">
+            {!externalMonth && (
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-muted-foreground">월</label>
+                <select
+                  value={month}
+                  onChange={e => setMonth(e.target.value)}
+                  className="border rounded-md px-3 py-1.5 text-sm bg-background"
+                >
+                  {monthOptions.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-muted-foreground">센터</label>
+              <select
+                value={center}
+                onChange={e => setCenter(e.target.value)}
+                className="border rounded-md px-3 py-1.5 text-sm bg-background"
+              >
+                <option value="">전체</option>
+                <option value="용산">용산</option>
+                <option value="광주">광주</option>
+              </select>
+            </div>
           </div>
-        )}
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-600">센터</label>
-          <select
-            value={center}
-            onChange={e => setCenter(e.target.value)}
-            className="border rounded-md px-3 py-1.5 text-sm"
-          >
-            <option value="">전체</option>
-            <option value="용산">용산</option>
-            <option value="광주">광주</option>
-          </select>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* 탭 */}
-      <div className="border-b">
-        <div className="flex gap-1">
-          {TABS.map(tab => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+      <div className="flex gap-1">
+        {TABS.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "px-4 py-2 text-sm font-medium rounded-md border transition-colors",
+              activeTab === tab.id
+                ? "bg-[#2c6edb] text-white border-[#2c6edb]"
+                : "bg-background text-muted-foreground border-border hover:bg-accent"
+            )}
+          >
+            {tab.label}
+            {tab.id === "alerts" && alerts.length > 0 && (
+              <span className={cn(
+                "ml-1.5 px-1.5 py-0.5 text-xs rounded-full",
                 activeTab === tab.id
-                  ? "border-blue-500 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {tab.label}
-              {tab.id === "alerts" && alerts.length > 0 && (
-                <span className="ml-1.5 px-1.5 py-0.5 text-xs bg-red-100 text-red-600 rounded-full">
-                  {alerts.length}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
+                  ? "bg-white/20 text-white"
+                  : "bg-red-100 text-red-600"
+              )}>
+                {alerts.length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* 에러 표시 */}

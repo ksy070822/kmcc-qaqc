@@ -1,12 +1,21 @@
 "use client"
 
 import type { AgentCoachingPlan, CoachingTier } from "@/lib/types"
+import { StatsCard } from "@/components/qc/stats-card"
+import { AlertTriangle, Eye, Search, CheckCircle } from "lucide-react"
+
+const TIER_CONFIG: Record<CoachingTier, { variant: "destructive" | "warning" | "default" | "success"; icon: React.ReactNode }> = {
+  "긴급": { variant: "destructive", icon: <AlertTriangle className="h-4 w-4" /> },
+  "집중": { variant: "warning", icon: <Eye className="h-4 w-4" /> },
+  "관찰": { variant: "default", icon: <Search className="h-4 w-4" /> },
+  "자립": { variant: "success", icon: <CheckCircle className="h-4 w-4" /> },
+}
 
 const TIER_BADGE: Record<CoachingTier, { bg: string; text: string }> = {
-  "자립": { bg: "bg-green-100", text: "text-green-700" },
-  "관찰": { bg: "bg-yellow-100", text: "text-yellow-700" },
-  "집중": { bg: "bg-orange-100", text: "text-orange-700" },
-  "긴급": { bg: "bg-red-100", text: "text-red-700" },
+  "자립": { bg: "bg-emerald-50", text: "text-emerald-700" },
+  "관찰": { bg: "bg-gray-100", text: "text-gray-700" },
+  "집중": { bg: "bg-amber-50", text: "text-amber-700" },
+  "긴급": { bg: "bg-red-50", text: "text-red-700" },
 }
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -43,12 +52,13 @@ export function MonthlyPlanView({ plans, onSelectAgent }: MonthlyPlanViewProps) 
       {/* 티어 요약 카드 */}
       <div className="grid grid-cols-4 gap-3">
         {tierOrder.map(tier => (
-          <div key={tier} className={`rounded-lg p-3 ${TIER_BADGE[tier].bg}`}>
-            <div className={`text-2xl font-bold ${TIER_BADGE[tier].text}`}>
-              {tierStats[tier]}
-            </div>
-            <div className={`text-sm ${TIER_BADGE[tier].text}`}>{tier}</div>
-          </div>
+          <StatsCard
+            key={tier}
+            title={tier}
+            value={tierStats[tier]}
+            subtitle={`${tier} 코칭 대상`}
+            variant={TIER_CONFIG[tier].variant}
+          />
         ))}
       </div>
 

@@ -2,7 +2,7 @@
 # GitHub 연동 또는 수동 빌드에 사용
 #
 # 수동 배포 명령어:
-#   gcloud builds submit --config cloudbuild.yaml --region=asia-northeast3 .
+#   gcloud builds submit --config cloudbuild.yaml --region=asia-northeast3 --default-buckets-behavior=regional-user-owned-bucket --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD) .
 #
 # 필요한 substitution 변수:
 #   _SERVICE_NAME: Cloud Run 서비스 이름 (기본: qc-dashboard)
@@ -56,7 +56,9 @@ steps:
       - '--max-instances'
       - '10'
       - '--service-account'
-      - 'kmcc-qc@$PROJECT_ID.iam.gserviceaccount.com'
+      - '290375504169-compute@developer.gserviceaccount.com'
+      - '--set-env-vars'
+      - 'BIGQUERY_PROJECT_ID=csopp-25f2,BIGQUERY_DATASET_ID=KMCC_QC,GCP_LOCATION=asia-northeast3,GOOGLE_SHEETS_ID=14pXr3QNz_xY3vm9QNaF2yOtle1M4dqAuGb7Z5ebpi2o,GOOGLE_AI_MODEL=gemini-2.5-flash,USE_VERTEX_AI=false,VERTEX_AI_PROJECT_ID=csopp-25f2,VERTEX_AI_LOCATION=asia-northeast3,VERTEX_AI_MODEL=gemini-2.5-flash'
 
 # 대체 변수 기본값
 substitutions:

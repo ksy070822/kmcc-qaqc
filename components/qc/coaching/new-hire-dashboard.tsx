@@ -1,6 +1,7 @@
 "use client"
 
 import type { NewHireProfile } from "@/lib/types"
+import { StatsCard } from "@/components/qc/stats-card"
 
 interface NewHireDashboardProps {
   newHires: NewHireProfile[]
@@ -13,20 +14,22 @@ export function NewHireDashboard({ newHires }: NewHireDashboardProps) {
     <div className="space-y-4">
       {/* 요약 */}
       <div className="grid grid-cols-3 gap-3">
-        <div className="bg-blue-50 rounded-lg p-3">
-          <div className="text-2xl font-bold text-blue-700">{newHires.length}</div>
-          <div className="text-sm text-blue-600">신입 상담사 (2개월 미만)</div>
-        </div>
-        <div className="bg-orange-50 rounded-lg p-3">
-          <div className="text-2xl font-bold text-orange-700">{slowCount}</div>
-          <div className="text-sm text-orange-600">안정화 지연</div>
-        </div>
-        <div className="bg-green-50 rounded-lg p-3">
-          <div className="text-2xl font-bold text-green-700">
-            {newHires.length - slowCount}
-          </div>
-          <div className="text-sm text-green-600">정상 적응</div>
-        </div>
+        <StatsCard
+          title="신입 상담사"
+          value={newHires.length}
+          subtitle="2개월 미만"
+          variant="default"
+        />
+        <StatsCard
+          title="안정화 지연"
+          value={slowCount}
+          variant="warning"
+        />
+        <StatsCard
+          title="정상 적응"
+          value={newHires.length - slowCount}
+          variant="success"
+        />
       </div>
 
       {/* 신입 목록 */}

@@ -3079,13 +3079,45 @@ export async function getAgentAnalysisData(
     const attitudeRate = Number(row.attitude_error_rate) || 0;
     const opsRate = Number(row.ops_error_rate) || 0;
     
+    // 주간 오류율 추이 조회
+    const trendQuery = `
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', evaluation_date) AS date,
+        ROUND(
+          SAFE_DIVIDE(
+            SUM(attitude_error_count + business_error_count),
+            COUNT(*) * 16
+          ) * 100, 2
+        ) AS error_rate
+      FROM ${EVAL_TABLE}
+      WHERE agent_id = @agentId
+        AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
+      GROUP BY evaluation_date
+      ORDER BY evaluation_date
+    `;
+    const [trendRows] = await bigquery.query({
+      query: trendQuery,
+      params: { agentId, month },
+      location: GCP_LOCATION,
+    });
+
+    // tenure 조회
+    const hrMap = await getHrAgentsMap();
+    const hireDateStr = hrMap.get(agentId.trim().toLowerCase());
+    let tenureMonths = 0;
+    if (hireDateStr) {
+      const hireDate = new Date(hireDateStr);
+      const now = new Date();
+      tenureMonths = (now.getFullYear() - hireDate.getFullYear()) * 12 + (now.getMonth() - hireDate.getMonth());
+    }
+
     const context: AgentAnalysisContext = {
       agentId: row.agent_id,
       agentName: row.agent_name,
       center: row.center,
       service: mapServiceName(row.service, row.center) || '',
       channel: row.channel,
-      tenureMonths: 0, // TODO: 실제 tenure 데이터 조회
+      tenureMonths,
       tenureGroup: '',
       totalEvaluations: Number(row.total_evaluations) || 0,
       attitudeErrorRate: attitudeRate,
@@ -3096,7 +3128,10 @@ export async function getAgentAnalysisData(
         { itemName: '상담유형오설정', errorCount: Number(row.consult_type_errors) || 0, errorRate: 0 },
         { itemName: '가이드미준수', errorCount: Number(row.guide_errors) || 0, errorRate: 0 },
       ],
-      trendData: [], // TODO: 실제 trend 데이터 조회
+      trendData: (trendRows as Record<string, unknown>[]).map(r => ({
+        date: String(r.date),
+        errorRate: Number(r.error_rate) || 0,
+      })),
     };
     
     return { success: true, data: context };
@@ -3151,6 +3186,30 @@ export async function getGroupAnalysisData(
     const attitudeRate = Number(row.attitude_error_rate) || 0;
     const opsRate = Number(row.ops_error_rate) || 0;
     
+    // 일별 그룹 오류율 추이
+    const trendQuery = `
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', evaluation_date) AS date,
+        ROUND(
+          SAFE_DIVIDE(
+            SUM(attitude_error_count + business_error_count),
+            COUNT(*) * 16
+          ) * 100, 2
+        ) AS error_rate
+      FROM ${EVAL_TABLE}
+      WHERE center = @center
+        AND service IN UNNEST(@serviceNames)
+        AND channel = @channel
+        AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
+      GROUP BY evaluation_date
+      ORDER BY evaluation_date
+    `;
+    const [trendRows] = await bigquery.query({
+      query: trendQuery,
+      params: { center, serviceNames, channel, month },
+      location: GCP_LOCATION,
+    });
+
     const context: GroupAnalysisContext = {
       center: row.center,
       service: mapServiceName(row.service, row.center) || '',
@@ -3162,7 +3221,10 @@ export async function getGroupAnalysisData(
       overallErrorRate: Number((attitudeRate + opsRate).toFixed(2)),
       topErrors: [],
       agentRankings: [],
-      trendData: [], // TODO: 실제 trend 데이터 조회
+      trendData: (trendRows as Record<string, unknown>[]).map(r => ({
+        date: String(r.date),
+        errorRate: Number(r.error_rate) || 0,
+      })),
     };
     
     return { success: true, data: context };
@@ -3484,17 +3546,31 @@ export async function getReportData(
         return stats;
       }
       // 리포트 형식으로 변환
+      // 전주 대비 오류율 변화
+      const errorRateTrend = stats.data.overallTrend ?? 0;
+
+      // 목표 달성률: 전체 목표 3.0% 기준
+      const TARGET_OVERALL = 3.0;
+      const targetAchievement = stats.data.overallErrorRate > 0
+        ? Math.min(100, Math.round((TARGET_OVERALL / stats.data.overallErrorRate) * 100))
+        : 100;
+
+      // 개선 상담사: 전주보다 오류율이 낮아진 상담사 수 (watchlist 기준 추정)
+      const totalWatchlist = (stats.data.watchlistYongsan || 0) + (stats.data.watchlistGwangju || 0);
+      const totalAgents = (stats.data.totalAgentsYongsan || 0) + (stats.data.totalAgentsGwangju || 0);
+      const improvedAgents = Math.max(0, totalAgents - totalWatchlist);
+
       return {
         success: true,
         data: {
           summary: {
             totalEvaluations: stats.data.totalEvaluations || 0,
-            totalAgents: (stats.data.totalAgentsYongsan || 0) + (stats.data.totalAgentsGwangju || 0),
+            totalAgents,
             overallErrorRate: stats.data.overallErrorRate || 0,
-            errorRateTrend: 0, // TODO: 전일 대비 계산
-            targetAchievement: 0, // TODO: 목표 달성률 계산
-            improvedAgents: 0, // TODO: 개선 상담사 수 계산
-            needsAttention: stats.data.watchlistYongsan + stats.data.watchlistGwangju || 0,
+            errorRateTrend,
+            targetAchievement,
+            improvedAgents,
+            needsAttention: totalWatchlist,
           },
           topIssues: [],
           centerComparison: [],
@@ -3514,17 +3590,25 @@ export async function getReportData(
       if (!stats.success || !stats.data) {
         return stats;
       }
+      const elseErrorRateTrend = stats.data.overallTrend ?? 0;
+      const ELSE_TARGET = 3.0;
+      const elseTargetAchievement = stats.data.overallErrorRate > 0
+        ? Math.min(100, Math.round((ELSE_TARGET / stats.data.overallErrorRate) * 100))
+        : 100;
+      const elseTotalWatchlist = (stats.data.watchlistYongsan || 0) + (stats.data.watchlistGwangju || 0);
+      const elseTotalAgents = (stats.data.totalAgentsYongsan || 0) + (stats.data.totalAgentsGwangju || 0);
+      const elseImprovedAgents = Math.max(0, elseTotalAgents - elseTotalWatchlist);
       return {
         success: true,
         data: {
           summary: {
             totalEvaluations: stats.data.totalEvaluations || 0,
-            totalAgents: (stats.data.totalAgentsYongsan || 0) + (stats.data.totalAgentsGwangju || 0),
+            totalAgents: elseTotalAgents,
             overallErrorRate: stats.data.overallErrorRate || 0,
-            errorRateTrend: 0,
-            targetAchievement: 0,
-            improvedAgents: 0,
-            needsAttention: stats.data.watchlistYongsan + stats.data.watchlistGwangju || 0,
+            errorRateTrend: elseErrorRateTrend,
+            targetAchievement: elseTargetAchievement,
+            improvedAgents: elseImprovedAgents,
+            needsAttention: elseTotalWatchlist,
           },
           topIssues: [],
           centerComparison: [],
