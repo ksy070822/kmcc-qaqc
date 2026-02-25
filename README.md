@@ -9,7 +9,7 @@
 | **May** | QC + 직무테스트 + 총괄 | `feature/qc-may` |
 | **Cobb** | 생산성 (Productivity) | `feature/productivity-cobb` |
 | **Dean** | SLA 평가 | `feature/sla-dean` |
-| **Rishal** | QA 상담평점 + CSAT | `feature/qa-rishal` |
+| **Rishal** | QA + 상담평점 CSAT | `feature/qa-rishal` |
 
 ## 빠른 시작
 
