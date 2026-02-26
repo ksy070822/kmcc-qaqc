@@ -18,6 +18,8 @@ interface ItemAnalysisProps {
   selectedChannel: string
   selectedTenure: string
   selectedDate?: string
+  startDate?: string
+  endDate?: string
 }
 
 const NAVY = "#6B93D6"
@@ -88,18 +90,20 @@ function MiniLineChart({ values, color, globalMax }: { values: number[]; color: 
   )
 }
 
-export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure, selectedDate }: ItemAnalysisProps) {
+export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure, selectedDate, startDate: propStartDate, endDate: propEndDate }: ItemAnalysisProps) {
   const [selectedCategory, setSelectedCategory] = useState<string>("all")
 
-  // 날짜 범위
-  const baseDate = selectedDate ? new Date(selectedDate) : new Date()
-  const endDate = baseDate.toISOString().split("T")[0]
-
-  const dailyStart = new Date(baseDate)
-  dailyStart.setDate(dailyStart.getDate() - 14)
-  const dailyStartStr = dailyStart.toISOString().split("T")[0]
-
-  const weeklyStart = new Date(baseDate)
+  // 날짜 범위: filter(주차 선택) 우선, 없으면 selectedDate, 없으면 오늘
+  const endDate = propEndDate ?? (selectedDate ? new Date(selectedDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
+  const dailyStartStr = propStartDate ?? (() => {
+    const base = selectedDate ? new Date(selectedDate) : new Date()
+    const d = new Date(base)
+    d.setDate(d.getDate() - 14)
+    return d.toISOString().split("T")[0]
+  })()
+  // 6주 추이: endDate 기준 56일 전
+  const endDateObj = new Date(endDate)
+  const weeklyStart = new Date(endDateObj)
   weeklyStart.setDate(weeklyStart.getDate() - 56)
   const weeklyStartStr = weeklyStart.toISOString().split("T")[0]
 

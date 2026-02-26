@@ -250,3 +250,4 @@ remote: Permission to csopp/komi.git denied
 
 1. **[DOMAIN_GUIDE.md](./DOMAIN_GUIDE.md)** — 내가 담당하는 영역과 수정할 파일 확인
 2. **[GIT_WORKFLOW.md](./GIT_WORKFLOW.md)** — 브랜치 만들기, 커밋, PR 올리는 방법
+3. **생산성**: 뼈대 완료. 요구사항서 [requirements/productivity-콥.md](./requirements/productivity-콥.md) 참고

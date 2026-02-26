@@ -89,7 +89,7 @@ export function ChatDashboard({ overview, verticalStats, processingTime, weeklyS
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-5 gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">응대율</p>
                     <p className={`text-xl font-bold ${met ? "" : "text-red-500"}`}>{o ? `${o.responseRate}%` : "--"}</p>
@@ -107,6 +107,10 @@ export function ChatDashboard({ overview, verticalStats, processingTime, weeklyS
                     <p className="text-xs text-muted-foreground">TPD</p>
                     <p className="text-xl font-bold">{o ? fmt(o.avgCPD) : "--"}</p>
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">투입인원</p>
+                    <p className="text-xl font-bold">{o && o.headcount > 0 ? `${fmt(o.headcount)}명` : "--"}</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -115,9 +119,10 @@ export function ChatDashboard({ overview, verticalStats, processingTime, weeklyS
       </div>
 
       {/* 전체 합산 KPI */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: "전체 응대율", value: `${totalRate}%`, trend: <TrendBadge current={totalRate} prev={prevTotalRate > 0 ? prevTotalRate : undefined} /> },
+          { label: "목표 달성률", value: totalRate > 0 ? `${Math.round((totalRate / target.responseRate) * 1000) / 10}%` : "--", trend: totalRate >= target.responseRate ? <span className="text-xs text-green-600">달성</span> : <span className="text-xs text-red-500">미달</span> },
           { label: "전체 인입", value: `${fmt(totalIncoming)}건`, trend: null },
           { label: "전체 응답", value: `${fmt(totalAnswered)}건`, trend: null },
         ].map((kpi) => (

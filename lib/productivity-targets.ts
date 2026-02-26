@@ -1,4 +1,5 @@
 // 생산성 목표 설정 (2026년 기준)
+// 요구사항: docs/onboarding-kit/requirements/productivity-콥.md
 
 export const PRODUCTIVITY_TARGETS = {
   voice: {
@@ -8,6 +9,7 @@ export const PRODUCTIVITY_TARGETS = {
       대리: 185,
       퀵: 200,
       "퀵/배송": 200,
+      // 바이크, 주차: 목표 미정 (광주 전용, UI에 "-" 표시)
     } as Record<string, number>, // 초
   },
   chat: {
@@ -18,6 +20,7 @@ export const PRODUCTIVITY_TARGETS = {
       대리: 492,
       퀵: 1770,
       "퀵/배송": 1770,
+      // 바이크, 주차: 목표 미정 (광주 전용, UI에 "-" 표시)
     } as Record<string, number>, // 초
   },
 }

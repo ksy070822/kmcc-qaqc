@@ -9,7 +9,7 @@
 
 | 담당자 | 도메인 | 상태 | 브랜치 |
 |--------|--------|------|--------|
-| **Cobb** | 생산성 (Productivity) | 신규 개발 | `feature/productivity-cobb` |
+| **Cobb** | 생산성 (Productivity) | 뼈대 완료 | `feature/productivity-cobb` |
 | **Dean** | SLA 평가 | 신규 개발 | `feature/sla-dean` |
 | **리샬** | QA 상담평점 | 기존 코드 있음 | `feature/qa-rishal` |
 | **메이** | QC + 직무테스트 | 기존 코드 있음 | `feature/qc-may` |
@@ -47,73 +47,58 @@ kmcc-qc-dashbord/
 
 ## 콥 - 생산성 (Productivity)
 
-### 만들어야 할 파일
+### 이미 있는 파일 (수정 대상)
 
 ```
 lib/
-  bigquery-productivity.ts     # BigQuery 쿼리 (생산성 지표 조회)
+  bigquery-productivity.ts     # BigQuery 쿼리 (DW IPCC/CEMS 연동)
+  productivity-targets.ts      # 목표값, 센터-버티컬 매핑
 
 components/qc/
   productivity-dashboard/
-    index.tsx                  # 대시보드 컨테이너
-    productivity-overview.tsx  # KPI 카드 (처리건수, 시간당 처리량 등)
-    productivity-trend.tsx     # 추이 차트
-    productivity-table.tsx     # 상세 테이블
+    index.tsx                  # 대시보드 컨테이너 (5개 탭)
+    call-dashboard.tsx        # 콜(유선) KPI·차트·테이블
+    chat-dashboard.tsx        # 톡(채팅) KPI·차트·테이블
+    board-dashboard.tsx       # 게시판
+    foreign-dashboard.tsx     # 외국어
+    trend-dashboard.tsx       # 전채널 추이
+
+hooks/
+  use-productivity-data.ts    # 데이터 fetch (기간·월 기준)
 
 app/api/
-  productivity/
-    route.ts                   # API 엔드포인트
+  data/route.ts               # type=productivity-* 분기 (별도 /api/productivity 없음)
 ```
 
 ### 참고할 기존 코드
 
 - `lib/bigquery-qa.ts` — BigQuery 쿼리 작성 패턴 참고
+- `lib/bigquery-productivity.ts` — DW 테이블 조회 패턴 (IPCC grp_call, CEMS consult 등)
 - `components/qc/qa-dashboard/index.tsx` — 대시보드 구조 참고
-- `lib/types.ts` — 타입 정의 시 여기에 추가
+- `lib/types.ts` — Productivity* 타입 정의
 
-### BigQuery에서 필요한 것
+### BigQuery / 데이터 소스
 
-- 생산성 데이터가 담길 테이블이 필요합니다
-- 테이블 설계가 필요하면 메이에게 요청하세요
-- 쿼리 예시:
-```sql
-SELECT
-  agent_name,
-  service,
-  DATE(work_date) as work_date,
-  total_calls,
-  avg_handle_time
-FROM `csopp-25f2.KMCC_QC.productivity`
-WHERE work_date BETWEEN @start AND @end
-```
+- **KMCC_QC.productivity 테이블 없음** — dataanalytics-25f2 DW 테이블 직접 조회
+- 유선: `dw_ipcc_iprondb.tb_stat_ic_grp_call_dd`, `tb_stat_ic_que_skill_agt_dd`, `tb_stat_ic_agt_state_dd`
+- 채팅/게시판: `dw_cems.consult`, `chat_inquire`, `consult_status`, `user`
+- 외국어: grp_call에서 `group_name LIKE '%외국어%'`
+- KMCC_QC 뷰/마트가 필요하면 메이에게 협의 요청
 
 ### AI(Gemini/Cursor) 프롬프트 예시
 
-**1단계: BigQuery 쿼리 파일 만들기**
-> "이 프로젝트의 lib/bigquery-qa.ts 파일을 참고해서 lib/bigquery-productivity.ts를 만들어줘.
-> BigQuery 테이블은 csopp-25f2.KMCC_QC.productivity이고,
-> agent_name, service, center, work_date, total_calls, avg_handle_time 컬럼이 있어.
-> 날짜 범위(startDate, endDate)와 센터별(용산/광주) 필터링이 가능해야 해.
-> 함수 이름은 getProductivityData로 해줘."
+**기존 쿼리 수정하기**
+> "lib/bigquery-productivity.ts를 열어줘.
+> getVoiceProductivity에서 서비스(버티컬) 필터를 추가해줘.
+> searchParams에서 vertical 파라미터를 받아서 WHERE 조건에 넣어줘."
 
-**2단계: API 엔드포인트 만들기**
-> "app/api/data/route.ts 파일의 패턴을 참고해서
-> app/api/productivity/route.ts를 만들어줘.
-> lib/bigquery-productivity.ts의 getProductivityData 함수를 호출하고,
-> searchParams에서 startDate, endDate, center를 받아서 넘겨줘."
+**KPI 카드에 전월 대비 추가**
+> "components/qc/productivity-dashboard/call-dashboard.tsx를 열어서
+> 응대율 카드에 전월 대비 증감을 표시해줘.
+> prevOverview를 사용해서 비교하고, 증가면 초록색, 감소면 빨간색으로."
 
-**3단계: 대시보드 UI 만들기**
-> "components/qc/qa-dashboard/index.tsx 구조를 참고해서
-> components/qc/productivity-dashboard/index.tsx를 만들어줘.
-> /api/productivity에서 데이터를 fetch하고,
-> 상단에 KPI 카드 3개(총 처리건수, 시간당 처리량, 평균 처리시간),
-> 아래에 Recharts로 일별 추이 라인 차트를 넣어줘.
-> shadcn/ui의 Card 컴포넌트를 사용하고, 기존 프로젝트 스타일을 따라가줘."
-
-**4단계: 차트/테이블 추가**
-> "productivity-dashboard 폴더에 productivity-table.tsx를 추가해줘.
-> 상담사별 생산성 테이블이고, 컬럼은: 상담사명, 서비스, 처리건수, 시간당 처리량.
-> shadcn/ui의 Table 컴포넌트를 사용하고, 정렬 기능도 넣어줘.
+**차트/테이블 추가**
+> "productivity-dashboard 폴더에 상담사별 생산성 테이블을 추가해줘.
 > components/qc/qa-dashboard/qa-monthly-table.tsx를 참고해."
 
 **에러가 났을 때**
@@ -357,7 +342,7 @@ lib/use-{도메인}-dashboard-data.ts
 | `agents` | 상담사 마스터 | 공통 |
 | `targets` | 센터 목표 | 메이 |
 | `qa_evaluations` | QA 평가 데이터 | 리샬 |
-| `productivity` | 생산성 지표 (생성 필요) | 콥 |
+| `productivity` | 생산성 지표 (DW 연동: IPCC/CEMS) | 콥 |
 | `sla_metrics` | SLA 지표 (생성 필요) | 딘 |
 
 새 테이블이 필요하면 메이에게 요청하세요. DDL을 만들어서 BigQuery에 생성해드립니다.

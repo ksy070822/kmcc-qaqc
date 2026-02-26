@@ -26,6 +26,20 @@ const CEMS_TYPE_SERVICE = "`dataanalytics-25f2.dw_cems.type_service`"
 const CEMS_CSI = "`dataanalytics-25f2.dw_cems.chatbot_survey_inquire`"
 const CEMS_CST = "`dataanalytics-25f2.dw_cems.chatbot_survey_template`"
 
+// ── HR 스냅샷 테이블 (실투입 인원 산출) ──
+const HR_YONGSAN = "`csopp-25f2.kMCC_HR.HR_Yongsan_Snapshot`"
+const HR_GWANGJU = "`csopp-25f2.kMCC_HR.HR_Gwangju_Snapshot`"
+
+/** HR group → productivity vertical 매핑 SQL */
+const HR_VERTICAL_SQL = `CASE
+  WHEN \`group\` IN ('퀵', '화물') THEN '퀵/배송'
+  WHEN \`group\` = '바이크/마스' THEN '바이크'
+  WHEN \`group\` = '주차/카오너' THEN '주차'
+  WHEN \`group\` = '택시' THEN '택시'
+  WHEN \`group\` = '대리' THEN '대리'
+  ELSE NULL
+END`
+
 // ── group_name → center 매핑 SQL ──
 const GRP_CENTER_SQL = `CASE
   WHEN group_name LIKE '%광주%' THEN '광주'
@@ -84,6 +98,65 @@ export function resolveDateRange(
 }
 
 // ============================================================
+// HR 스냅샷 기반 실투입 인원 산출
+// ============================================================
+
+/**
+ * 기간 내 최신 스냅샷 날짜 기준으로 센터/버티컬/채널별 재직 상담사 수 조회
+ * @returns Map<"센터_버티컬_채널", headcount>
+ */
+export async function getHrHeadcount(
+  startDate: string,
+  endDate: string,
+): Promise<Map<string, number>> {
+  try {
+    const bq = getBigQueryClient()
+
+    const query = `
+      WITH snapshot_date AS (
+        SELECT MAX(date) AS snap_date
+        FROM ${HR_YONGSAN}
+        WHERE date <= @endDate AND date >= @startDate
+      ),
+      hr_union AS (
+        SELECT '용산' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
+        FROM ${HR_YONGSAN}
+        WHERE date = (SELECT snap_date FROM snapshot_date)
+          AND type = '상담사'
+          AND (resign_date IS NULL OR resign_date > @endDate)
+          AND position IN ('유선', '채팅')
+        UNION ALL
+        SELECT '광주' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
+        FROM ${HR_GWANGJU}
+        WHERE date = (SELECT snap_date FROM snapshot_date)
+          AND type = '상담사'
+          AND (resign_date IS NULL OR resign_date > @endDate)
+          AND position IN ('유선', '채팅')
+      )
+      SELECT center, vertical, position AS channel, COUNT(DISTINCT id) AS headcount
+      FROM hr_union
+      WHERE vertical IS NOT NULL
+      GROUP BY center, vertical, channel
+    `
+
+    const [rows] = await bq.query({
+      query,
+      params: { startDate, endDate },
+    })
+
+    const map = new Map<string, number>()
+    for (const r of rows as Record<string, unknown>[]) {
+      const key = `${r.center}_${r.vertical}_${r.channel}`
+      map.set(key, Number(r.headcount) || 0)
+    }
+    return map
+  } catch (error) {
+    console.error("[Productivity] HR headcount error:", error)
+    return new Map()
+  }
+}
+
+// ============================================================
 // 유선(콜) 생산성 — IPCC grp_call 테이블
 // ============================================================
 
@@ -136,10 +209,11 @@ export async function getVoiceProductivity(
       ORDER BY center, vertical
     `
 
-    const [rows] = await bq.query({
-      query,
-      params: { startDate, endDate },
-    })
+    // BQ 쿼리 + HR headcount 병렬 조회
+    const [[rows], hcMap] = await Promise.all([
+      bq.query({ query, params: { startDate, endDate } }),
+      getHrHeadcount(startDate, endDate),
+    ])
 
     // 센터별 유효 버티컬만 필터
     const rawRows = (rows as Record<string, unknown>[]).filter((r) =>
@@ -147,17 +221,20 @@ export async function getVoiceProductivity(
     )
 
     // 버티컬별 통계
-    const verticalStats: ProductivityVerticalStats[] = rawRows.map((r) => ({
-      vertical: String(r.vertical) as ProductivityVerticalStats["vertical"],
-      center: String(r.center) as CenterName,
-      channel: "유선",
-      responseRate: Math.round(Number(r.response_rate) * 10) / 10,
-      incoming: Number(r.ib_offered),
-      answered: Number(r.ib_answered),
-      outbound: Number(r.ob_count),
-      cpd: Number(r.work_days) > 0 ? Math.round(Number(r.ib_answered) / Number(r.work_days)) : 0,
-      headcount: 0, // agent count는 별도 쿼리 필요
-    }))
+    const verticalStats: ProductivityVerticalStats[] = rawRows.map((r) => {
+      const hc = hcMap.get(`${r.center}_${r.vertical}_유선`) ?? 0
+      return {
+        vertical: String(r.vertical) as ProductivityVerticalStats["vertical"],
+        center: String(r.center) as CenterName,
+        channel: "유선",
+        responseRate: Math.round(Number(r.response_rate) * 10) / 10,
+        incoming: Number(r.ib_offered),
+        answered: Number(r.ib_answered),
+        outbound: Number(r.ob_count),
+        cpd: Number(r.work_days) > 0 ? Math.round(Number(r.ib_answered) / Number(r.work_days)) : 0,
+        headcount: hc,
+      }
+    })
 
     // 센터별 KPI 요약
     const centers = ["용산", "광주"] as CenterName[]
@@ -167,6 +244,7 @@ export async function getVoiceProductivity(
       const totalAnswered = centerRows.reduce((s, r) => s + Number(r.ib_answered), 0)
       const totalOB = centerRows.reduce((s, r) => s + Number(r.ob_count), 0)
       const workDays = Math.max(...centerRows.map((r) => Number(r.work_days)), 1)
+      const centerHc = verticalStats.filter((v) => v.center === center).reduce((s, v) => s + v.headcount, 0)
       return {
         center,
         channel: "유선" as const,
@@ -176,7 +254,7 @@ export async function getVoiceProductivity(
         totalOutbound: totalOB,
         avgCPH: 0,
         avgCPD: Math.round(totalAnswered / workDays),
-        headcount: 0,
+        headcount: centerHc,
       }
     })
 
@@ -274,6 +352,8 @@ export async function getVoiceHandlingTime(
         ${GRP_VERTICAL_SQL} AS vertical,
         -- 평균 대기시간(ASA) = 총 대기시간 / 응답건수
         SAFE_DIVIDE(SUM(grp_1570), SUM(grp_1160)) AS avg_wait_sec,
+        -- 평균 포기시간(ABA) = 총 포기대기시간 / 포기건수
+        SAFE_DIVIDE(SUM(grp_1150), GREATEST(SUM(grp_1090) - SUM(grp_1160), 1)) AS avg_abandon_sec,
         -- 포기건수 = offered - answered
         SUM(grp_1090) - SUM(grp_1160) AS abandon_cnt
       FROM ${IPCC_GRP}
@@ -295,11 +375,12 @@ export async function getVoiceHandlingTime(
     ])
 
     // 대기시간 맵 구축
-    const waitMap = new Map<string, { wait: number; abandonCnt: number }>()
+    const waitMap = new Map<string, { wait: number; abandonTime: number; abandonCnt: number }>()
     for (const wr of waitRows as Record<string, unknown>[]) {
       const key = `${wr.center}_${wr.vertical}`
       waitMap.set(key, {
         wait: Math.round(Number(wr.avg_wait_sec) || 0),
+        abandonTime: Math.round(Number(wr.avg_abandon_sec) || 0),
         abandonCnt: Number(wr.abandon_cnt) || 0,
       })
     }
@@ -314,6 +395,7 @@ export async function getVoiceHandlingTime(
           center: String(r.center) as CenterName,
           channel: "유선",
           avgWaitTime: wt?.wait ?? 0,
+          avgAbandonTime: wt?.abandonTime ?? 0,
           avgTalkTime: Math.round(Number(r.avg_talk_sec)),
           avgAfterWork: Math.round(Number(r.avg_wrap_sec)),
           avgHandlingTime: Math.round(Number(r.avg_handling_sec)),
@@ -484,10 +566,10 @@ export async function getChatProductivity(
       ORDER BY i.center, i.vertical
     `
 
-    const [rows] = await bq.query({
-      query,
-      params: { startDate, endDate },
-    })
+    const [[rows], hcMap] = await Promise.all([
+      bq.query({ query, params: { startDate, endDate } }),
+      getHrHeadcount(startDate, endDate),
+    ])
 
     // 센터별 유효 버티컬만 필터
     const rawRows = (rows as Record<string, unknown>[]).filter((r) =>
@@ -504,7 +586,7 @@ export async function getChatProductivity(
       answered: Number(r.total_answered),
       outbound: 0,
       cpd: Number(r.work_days) > 0 ? Math.round(Number(r.total_answered) / Number(r.work_days)) : 0,
-      headcount: 0,
+      headcount: hcMap.get(`${String(r.center)}_${String(r.vertical)}_채팅`) ?? 0,
     }))
 
     // 처리시간
@@ -515,6 +597,7 @@ export async function getChatProductivity(
         center: String(r.center) as CenterName,
         channel: "채팅",
         avgWaitTime: Math.round(Number(r.avg_wait_sec) || 0),
+        avgAbandonTime: 0, // 채팅은 포기시간 미산출
         avgTalkTime: Math.round(Number(r.avg_chat_sec) || 0),
         avgAfterWork: Math.round(Number(r.avg_wrapup_sec) || 0),
         avgHandlingTime: Math.round((Number(r.avg_chat_sec) || 0) + (Number(r.avg_wrapup_sec) || 0)),
@@ -536,7 +619,7 @@ export async function getChatProductivity(
         totalOutbound: 0,
         avgCPH: 0,
         avgCPD: Math.round(totalAnswered / workDays),
-        headcount: 0,
+        headcount: verticalStats.filter((v) => v.center === center).reduce((s, v) => s + v.headcount, 0),
       }
     })
 

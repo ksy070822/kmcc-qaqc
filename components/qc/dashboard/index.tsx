@@ -240,12 +240,26 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
             selectedChannel={selectedChannel}
             selectedTenure={selectedTenure}
             selectedDate={selectedDate}
+            startDate={filterStartDate}
+            endDate={filterEndDate}
           />
         )}
 
-        {activeTab === "daily" && <DailyErrorTable selectedCenter={selectedCenter} />}
+        {activeTab === "daily" && (
+          <DailyErrorTable
+            selectedCenter={selectedCenter}
+            startDate={filterStartDate}
+            endDate={filterEndDate}
+          />
+        )}
 
-        {activeTab === "weekly" && <WeeklyErrorTable selectedCenter={selectedCenter} />}
+        {activeTab === "weekly" && (
+          <WeeklyErrorTable
+            selectedCenter={selectedCenter}
+            startDate={filterStartDate}
+            endDate={filterEndDate}
+          />
+        )}
 
         {activeTab === "tenure" && <TenureErrorTable />}
 
@@ -254,6 +268,8 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
             selectedCenter={selectedCenter}
             selectedService={selectedService}
             selectedChannel={selectedChannel}
+            startDate={filterStartDate}
+            endDate={filterEndDate}
           />
         )}
       </div>

@@ -12,16 +12,22 @@ const KAKAO = "#9E9E9E"
 
 interface DailyErrorTableProps {
   selectedCenter?: string
+  startDate?: string
+  endDate?: string
 }
 
-export function DailyErrorTable({ selectedCenter }: DailyErrorTableProps) {
+export function DailyErrorTable({ selectedCenter, startDate: propStartDate, endDate: propEndDate }: DailyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
 
-  // 최근 14일 데이터 가져오기
-  const endDate = new Date().toISOString().split("T")[0]
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 14)
-  const startDateStr = startDate.toISOString().split("T")[0]
+  // 필터 날짜 우선, 없으면 최근 14일
+  const defaultEnd = new Date().toISOString().split("T")[0]
+  const defaultStart = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 14)
+    return d.toISOString().split("T")[0]
+  })()
+  const startDateStr = propStartDate ?? defaultStart
+  const endDate = propEndDate ?? defaultEnd
 
   const { data: dailyErrorsData, loading, error } = useDailyErrors({
     startDate: startDateStr,

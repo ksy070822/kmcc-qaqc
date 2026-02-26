@@ -92,7 +92,7 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-0">
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-5 gap-3">
                   <div>
                     <p className="text-xs text-muted-foreground">응대율</p>
                     <p className={`text-xl font-bold ${met ? "" : "text-red-500"}`}>{o ? `${o.responseRate}%` : "--"}</p>
@@ -110,6 +110,10 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
                     <p className="text-xs text-muted-foreground">OB</p>
                     <p className="text-xl font-bold">{o ? fmt(o.totalOutbound) : "--"}</p>
                   </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">투입인원</p>
+                    <p className="text-xl font-bold">{o && o.headcount > 0 ? `${fmt(o.headcount)}명` : "--"}</p>
+                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -118,9 +122,10 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
       </div>
 
       {/* 전체 합산 KPI */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         {[
           { label: "전체 응대율", value: `${totalRate}%`, trend: <TrendBadge current={totalRate} prev={prevTotalRate > 0 ? prevTotalRate : undefined} /> },
+          { label: "목표 달성률", value: totalRate > 0 ? `${Math.round((totalRate / target.responseRate) * 1000) / 10}%` : "--", trend: totalRate >= target.responseRate ? <span className="text-xs text-green-600">달성</span> : <span className="text-xs text-red-500">미달</span> },
           { label: "전체 인입", value: `${fmt(totalIncoming)}건`, trend: null },
           { label: "전체 응답", value: `${fmt(totalAnswered)}건`, trend: null },
           { label: "전체 OB", value: `${fmt(totalOB)}건`, trend: null },
@@ -263,6 +268,7 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
                 <TableHead className="text-xs">센터</TableHead>
                 <TableHead className="text-xs">버티컬</TableHead>
                 <TableHead className="text-xs text-right">대기(ASA)</TableHead>
+                <TableHead className="text-xs text-right">포기(ABA)</TableHead>
                 <TableHead className="text-xs text-right">통화(ATT)</TableHead>
                 <TableHead className="text-xs text-right">후처리(ACW)</TableHead>
                 <TableHead className="text-xs text-right">AHT</TableHead>
@@ -272,7 +278,7 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
             <TableBody>
               {processingTime.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground text-xs py-8">
+                  <TableCell colSpan={8} className="text-center text-muted-foreground text-xs py-8">
                     데이터가 없습니다
                   </TableCell>
                 </TableRow>
@@ -285,6 +291,7 @@ export function CallDashboard({ overview, verticalStats, processingTime, weeklyS
                       <TableCell className="text-xs">{row.center}</TableCell>
                       <TableCell className="text-xs">{row.vertical}</TableCell>
                       <TableCell className="text-xs text-right">{fmtSec(row.avgWaitTime)}</TableCell>
+                      <TableCell className="text-xs text-right">{row.avgAbandonTime > 0 ? fmtSec(row.avgAbandonTime) : <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell className="text-xs text-right">{fmtSec(row.avgTalkTime)}</TableCell>
                       <TableCell className="text-xs text-right">{fmtSec(row.avgAfterWork)}</TableCell>
                       <TableCell className={`text-xs text-right font-medium ${met === false ? "text-red-500" : ""}`}>

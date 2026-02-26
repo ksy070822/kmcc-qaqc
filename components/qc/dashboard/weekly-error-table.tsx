@@ -12,16 +12,22 @@ const businessItems = evaluationItems.filter((item) => item.category === "오상
 
 interface WeeklyErrorTableProps {
   selectedCenter?: string
+  startDate?: string
+  endDate?: string
 }
 
-export function WeeklyErrorTable({ selectedCenter }: WeeklyErrorTableProps) {
+export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, endDate: propEndDate }: WeeklyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
 
-  // 최근 6주 데이터 가져오기
-  const endDate = new Date().toISOString().split("T")[0]
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 42)
-  const startDateStr = startDate.toISOString().split("T")[0]
+  // 필터 날짜 우선, 없으면 최근 6주
+  const defaultEnd = new Date().toISOString().split("T")[0]
+  const defaultStart = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 42)
+    return d.toISOString().split("T")[0]
+  })()
+  const startDateStr = propStartDate ?? defaultStart
+  const endDate = propEndDate ?? defaultEnd
 
   const { data: weeklyErrorsData, loading, error } = useWeeklyErrors({
     startDate: startDateStr,

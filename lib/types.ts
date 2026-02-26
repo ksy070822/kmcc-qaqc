@@ -1189,7 +1189,8 @@ export interface ProductivityProcessingTime {
   vertical: ProductivityVertical
   center: CenterName | "전체"
   channel: ProductivityChannel
-  avgWaitTime: number           // 평균 대기시간 (초) - ATW
+  avgWaitTime: number           // 평균 대기시간 (초) - ASA
+  avgAbandonTime: number        // 평균 포기시간 (초) - ABA (포기자 평균 대기시간)
   avgTalkTime: number           // 평균 통화/채팅시간 (초) - ATT
   avgAfterWork: number          // 평균 후처리시간 (초) - ACW
   avgHandlingTime: number       // 상담처리시간 ATT+ACW (초) - SLA 핵심

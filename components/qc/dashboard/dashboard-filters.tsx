@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -64,6 +64,18 @@ export function DashboardFilters({
   )
   const [startDateOpen, setStartDateOpen] = useState(false)
   const [endDateOpen, setEndDateOpen] = useState(false)
+
+  // QualityDashboard 주차 선택 시 props 변경 → 필터 캘린더 state 동기화
+  useEffect(() => {
+    if (propStartDate && propEndDate) {
+      const newStart = new Date(propStartDate)
+      const newEnd = new Date(propEndDate)
+      if (!isNaN(newStart.getTime()) && !isNaN(newEnd.getTime())) {
+        setStartDate(newStart)
+        setEndDate(newEnd)
+      }
+    }
+  }, [propStartDate, propEndDate])
 
   // 센터에 따른 서비스 목록
   const getServices = () => {

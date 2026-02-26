@@ -12,21 +12,27 @@ interface ServiceWeeklyTableProps {
   selectedCenter: string
   selectedService: string
   selectedChannel: string
+  startDate?: string
+  endDate?: string
 }
 
 const attitudeItems = evaluationItems.filter((item) => item.category === "상담태도")
 const businessItems = evaluationItems.filter((item) => item.category === "오상담/오처리")
 
-export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedService: parentService, selectedChannel }: ServiceWeeklyTableProps) {
+export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedService: parentService, selectedChannel, startDate: propStartDate, endDate: propEndDate }: ServiceWeeklyTableProps) {
   // 자체 필터 상태 (센터/서비스)
   const [center, setCenter] = useState(parentCenter || "all")
   const [service, setService] = useState(parentService || "all")
 
-  // 최근 6주 데이터 가져오기
-  const endDate = new Date().toISOString().split("T")[0]
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - 42)
-  const startDateStr = startDate.toISOString().split("T")[0]
+  // 필터 날짜 우선, 없으면 최근 6주
+  const defaultEnd = new Date().toISOString().split("T")[0]
+  const defaultStart = (() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 42)
+    return d.toISOString().split("T")[0]
+  })()
+  const startDateStr = propStartDate ?? defaultStart
+  const endDate = propEndDate ?? defaultEnd
 
   const { data: weeklyData, loading, error } = useWeeklyErrors({
     startDate: startDateStr,
