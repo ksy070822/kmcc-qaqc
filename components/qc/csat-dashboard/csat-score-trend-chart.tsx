@@ -43,8 +43,8 @@ export function CSATScoreTrendChart({ data }: Props) {
             />
             <Legend />
             <Line type="monotone" dataKey="전체" stroke="#2c6edb" strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="용산" stroke="#6B93D6" strokeWidth={1.5} strokeDasharray="5 5" />
-            <Line type="monotone" dataKey="광주" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="용산" stroke="#3b82f6" strokeWidth={1.5} strokeDasharray="5 5" />
+            <Line type="monotone" dataKey="광주" stroke="#1e3a5f" strokeWidth={1.5} strokeDasharray="5 5" />
           </LineChart>
         </ResponsiveContainer>
       </CardContent>

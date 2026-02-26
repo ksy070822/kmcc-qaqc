@@ -20,8 +20,8 @@ interface Props {
 }
 
 const COLORS = {
-  yongsan: "#6B93D6",
-  gwangju: "#9E9E9E",
+  yongsan: "#3b82f6",
+  gwangju: "#1e3a5f",
 }
 
 const GRADE_LINES = [

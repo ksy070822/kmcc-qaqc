@@ -43,13 +43,12 @@ export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, end
 
     // 주차 정보 생성 — 과거→최신 순으로 정렬
     const sortedWeeks = [...weeklyErrorsData].sort((a, b) => {
-      // week 문자열 비교 (YYYY-Wxx 형식)
       return (a.week || '').localeCompare(b.week || '')
-    })
+    }).slice(-6)
 
     const weeksList = sortedWeeks.map((weekData, idx) => ({
       id: `w${idx + 1}`,
-      label: weekData.weekLabel,
+      label: weekData.dateRange || weekData.weekLabel,
       dateRange: weekData.dateRange || '',
       week: weekData.week,
     }))
@@ -117,7 +116,7 @@ export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, end
 
   // 증감 색상 + 아이콘 헬퍼
   const trendColor = (val: number) =>
-    val > 0 ? "text-red-600" : val < 0 ? "text-emerald-600" : "text-slate-500"
+    val > 0 ? "text-red-600" : val < 0 ? "text-blue-600" : "text-slate-500"
 
   // 항목 행 렌더링 함수
   const renderItemRow = (item: typeof evaluationItems[0], idx: number) => {
@@ -218,7 +217,6 @@ export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, end
                 {weeks.map((week) => (
                   <th key={week.id} colSpan={2}>
                     <div>{week.label}</div>
-                    {week.dateRange && <div className="text-[10px] text-gray-400 font-normal">{week.dateRange}</div>}
                   </th>
                 ))}
                 <th colSpan={3} className="bg-blue-50">전주비교</th>

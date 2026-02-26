@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { evaluationItems, serviceGroups } from "@/lib/constants"
 import { cn } from "@/lib/utils"
-import { TrendingUp, TrendingDown, Minus, Loader2 } from "lucide-react"
+import { Loader2 } from "lucide-react"
 import { useWeeklyErrors } from "@/hooks/use-weekly-errors"
 
 interface ServiceWeeklyTableProps {
@@ -48,7 +48,7 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
     }
 
     // 과거→최신 정렬
-    const sorted = [...weeklyData].sort((a, b) => (a.week || '').localeCompare(b.week || ''))
+    const sorted = [...weeklyData].sort((a, b) => (a.week || '').localeCompare(b.week || '')).slice(-6)
 
     const weeksList = sorted.map((wd, idx) => ({
       id: `w${idx + 1}`,
@@ -98,7 +98,7 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
   }
 
   const trendColor = (val: number) =>
-    val > 0 ? "text-red-600" : val < 0 ? "text-emerald-600" : "text-slate-500"
+    val > 0 ? "text-red-600" : val < 0 ? "text-blue-600" : "text-slate-500"
 
   // 서비스 목록 (센터 선택에 따라)
   const serviceOptions = useMemo(() => {
@@ -130,13 +130,10 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
           {weeks.reduce((sum, week) => sum + (data[item.id]?.[week.id]?.count || 0), 0)}
         </td>
         <td className={cn("p-2 text-center font-semibold bg-blue-50/50 border-l-2 border-blue-200", trendColor(comp.countChange))}>
-          <div className="flex items-center justify-center gap-0.5">
-            {comp.countChange > 0 ? <TrendingUp className="w-3 h-3" /> : comp.countChange < 0 ? <TrendingDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />}
-            {comp.countChange > 0 ? "+" : ""}{comp.countChange}
-          </div>
+          {comp.countChange > 0 ? "▲" : comp.countChange < 0 ? "▼" : "-"}{comp.countChange !== 0 ? Math.abs(comp.countChange) : ""}
         </td>
         <td className={cn("p-2 text-center font-semibold bg-blue-50/50", trendColor(comp.rateChange))}>
-          {comp.rateChange > 0 ? "▲" : comp.rateChange < 0 ? "▼" : "-"}{Math.abs(comp.rateChange)}%
+          {comp.rateChange > 0 ? "▲" : comp.rateChange < 0 ? "▼" : "-"}{comp.rateChange !== 0 ? `${Math.abs(comp.rateChange)}%` : ""}
         </td>
       </tr>
     )
@@ -162,10 +159,10 @@ export function ServiceWeeklyTable({ selectedCenter: parentCenter, selectedServi
           {weeks.reduce((s, w) => s + items.reduce((s2, item) => s2 + (data[item.id]?.[w.id]?.count || 0), 0), 0)}
         </td>
         <td className={cn("p-2 text-center font-bold bg-blue-50/50 border-l-2 border-blue-200", trendColor(comp.countDiff))}>
-          {comp.countDiff > 0 ? "+" : ""}{comp.countDiff}
+          {comp.countDiff > 0 ? "▲" : comp.countDiff < 0 ? "▼" : "-"}{comp.countDiff !== 0 ? Math.abs(comp.countDiff) : ""}
         </td>
         <td className={cn("p-2 text-center font-bold bg-blue-50/50", trendColor(comp.rateDiff))}>
-          {comp.rateDiff > 0 ? "▲" : comp.rateDiff < 0 ? "▼" : "-"}{Math.abs(comp.rateDiff)}%
+          {comp.rateDiff > 0 ? "▲" : comp.rateDiff < 0 ? "▼" : "-"}{comp.rateDiff !== 0 ? `${Math.abs(comp.rateDiff)}%` : ""}
         </td>
       </tr>
     )

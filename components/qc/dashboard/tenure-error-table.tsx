@@ -69,7 +69,7 @@ export function TenureErrorTable() {
   }, [selectedCenter])
 
   // 데이터 변환
-  const tenureData = useMemo(() => {
+  const { data: tenureData, agentCounts: tenureAgentCounts } = useMemo(() => {
     const data: Record<string, Record<string, Record<string, number>>> = {}
 
     // 키별 빈 데이터 초기화
@@ -83,8 +83,17 @@ export function TenureErrorTable() {
       }
     }
 
+    // 근속기간별 인원수 집계
+    const agentCounts: Record<string, Record<string, number>> = {}
+    for (const { key } of allKeys) {
+      agentCounts[key] = {}
+      for (const tenure of tenureCategories) {
+        agentCounts[key][tenure] = 0
+      }
+    }
+
     // 실제 데이터 매핑
-    tenureStats.forEach((stat) => {
+    tenureStats.forEach((stat: any) => {
       const isMerged = MERGED_CHANNEL_SERVICES.includes(stat.service)
       const key = isMerged
         ? `${stat.center}-${stat.service}-통합`
@@ -96,10 +105,14 @@ export function TenureErrorTable() {
             data[key][stat.tenureGroup][itemId] += count as number
           }
         })
+        // 인원수
+        if (agentCounts[key]) {
+          agentCounts[key][stat.tenureGroup] = (agentCounts[key][stat.tenureGroup] || 0) + (stat.agentCount || 0)
+        }
       }
     })
 
-    return data
+    return { data, agentCounts }
   }, [tenureStats, allKeys])
 
   const services =
@@ -260,7 +273,12 @@ export function TenureErrorTable() {
                               {label}
                             </td>
                           )}
-                          <td className="p-2 text-slate-600 bg-slate-50">{tenure}</td>
+                          <td className="p-2 text-slate-600 bg-slate-50">
+                            {tenure}
+                            {(tenureAgentCounts[key]?.[tenure] || 0) > 0 && (
+                              <span className="ml-1 text-[10px] text-muted-foreground">({tenureAgentCounts[key][tenure]}명)</span>
+                            )}
+                          </td>
                           {evaluationItems.map((item) => (
                             <td
                               key={`${key}-${tenure}-${item.id}`}

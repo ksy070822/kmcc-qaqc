@@ -2691,6 +2691,7 @@ export interface TenureStatItem {
   channel: string;
   tenureGroup: string;
   items: Record<string, number>;
+  agentCount: number;
 }
 
 export async function getTenureStats(filters?: {
@@ -2765,6 +2766,7 @@ export async function getTenureStats(filters?: {
 
     // center-service-channel-tenureGroup 키별로 재집계
     const aggregated = new Map<string, Record<string, number>>();
+    const agentSets = new Map<string, Set<string>>();
 
     for (const row of rows) {
       const agentIdLower = String(row.agent_id || '').trim().toLowerCase();
@@ -2774,6 +2776,10 @@ export async function getTenureStats(filters?: {
 
       const key = `${row.center}|${mapServiceName(row.service, row.center)}|${row.channel}|${tenureGroup}`;
       const existing = aggregated.get(key);
+
+      // 인원수 추적
+      if (!agentSets.has(key)) agentSets.set(key, new Set());
+      agentSets.get(key)!.add(agentIdLower);
 
       if (existing) {
         for (const id of itemIds) {
@@ -2787,7 +2793,8 @@ export async function getTenureStats(filters?: {
     const data: TenureStatItem[] = [];
     for (const [key, items] of aggregated) {
       const [center, service, channel, tenureGroup] = key.split('|');
-      data.push({ center, service, channel, tenureGroup, items });
+      const agentCount = agentSets.get(key)?.size || 0;
+      data.push({ center, service, channel, tenureGroup, items, agentCount });
     }
     // 정렬: center → service → channel → tenureGroup
     data.sort((a, b) =>
