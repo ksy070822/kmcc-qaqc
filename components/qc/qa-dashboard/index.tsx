@@ -7,6 +7,8 @@ import { QACenterComparison } from "./qa-center-comparison"
 import { QAItemAnalysisV2 } from "./qa-item-analysis-v2"
 import { QAMonthlyTable } from "./qa-monthly-table"
 import { QAAgentAnalysis } from "./qa-agent-analysis"
+import { QARoundTable } from "./qa-round-table"
+import { QARoundTrendChart } from "./qa-round-trend-chart"
 import { DashboardFilters } from "@/components/qc/dashboard/dashboard-filters"
 import { useQADashboardData } from "@/lib/use-qa-dashboard-data"
 import { Loader2 } from "lucide-react"
@@ -97,6 +99,7 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
         <div className="flex gap-1 mb-4 border-b pb-2">
           {[
             { value: "item", label: "항목별 점수" },
+            { value: "round", label: "회차별 현황" },
             { value: "monthly", label: "월별 현황" },
             { value: "agent", label: "인원별 현황" },
           ].map((tab) => (
@@ -117,6 +120,12 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
 
         {activeTab === "item" && (
           <QAItemAnalysisV2 center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+        )}
+        {activeTab === "round" && (
+          <div className="space-y-4">
+            <QARoundTrendChart center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+            <QARoundTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+          </div>
         )}
         {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
         {activeTab === "agent" && <QAAgentAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}

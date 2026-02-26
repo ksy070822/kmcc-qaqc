@@ -7,6 +7,7 @@ import type {
   QAItemStats,
   QAMonthlyRow,
   QAConsultTypeStats,
+  QARoundStats,
 } from "@/lib/types"
 
 const TABLE = "`csopp-25f2.KMCC_QC.qa_evaluations`"
@@ -745,6 +746,63 @@ export async function getQAUnderperformerCount(
     }
   } catch (error) {
     console.error("[bigquery-qa] getQAUnderperformerCount error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * QA 회차별 통계 (해당 월의 1~5회차)
+ */
+export async function getQARoundStats(
+  filters: {
+    center?: string
+    service?: string
+    channel?: string
+    tenure?: string
+    startMonth?: string
+    endMonth?: string
+  }
+): Promise<{ success: boolean; data?: QARoundStats[]; error?: string }> {
+  try {
+    const bq = getBigQueryClient()
+    const { where, params } = buildFilterClause(filters)
+
+    let baseFilter = "1=1"
+    if (!filters.startMonth && !filters.endMonth) {
+      baseFilter = "q.evaluation_month = @defaultMonth"
+      params.defaultMonth = new Date().toISOString().slice(0, 7)
+    }
+
+    const query = `
+      SELECT
+        q.round,
+        COUNT(*) AS evaluations,
+        AVG(q.total_score) AS avg_score,
+        AVG(CASE WHEN q.center = '용산' THEN q.total_score END) AS yongsan_avg,
+        AVG(CASE WHEN q.center = '광주' THEN q.total_score END) AS gwangju_avg,
+        AVG(CASE WHEN q.channel = '유선' THEN q.total_score END) AS voice_avg,
+        AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS chat_avg
+      FROM ${TABLE} q
+      WHERE ${baseFilter} ${where}
+        AND q.round IS NOT NULL
+      GROUP BY q.round
+      ORDER BY q.round
+    `
+
+    const [rows] = await bq.query({ query, params })
+    const data: QARoundStats[] = (rows as Record<string, unknown>[]).map(row => ({
+      round: Number(row.round) || 0,
+      evaluations: Number(row.evaluations) || 0,
+      avgScore: Math.round((Number(row.avg_score) || 0) * 10) / 10,
+      yongsanAvg: Math.round((Number(row.yongsan_avg) || 0) * 10) / 10,
+      gwangjuAvg: Math.round((Number(row.gwangju_avg) || 0) * 10) / 10,
+      voiceAvg: Math.round((Number(row.voice_avg) || 0) * 10) / 10,
+      chatAvg: Math.round((Number(row.chat_avg) || 0) * 10) / 10,
+    }))
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("[bigquery-qa] getQARoundStats error:", error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }

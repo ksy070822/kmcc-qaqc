@@ -14,7 +14,7 @@ import {
   getAgentDetail,
   warmupHrCache,
 } from "@/lib/bigquery"
-import { getQADashboardStats, getQACenterStats, getQAScoreTrend, getQAItemStats, getQAMonthlyTable, getQAConsultTypeStats, getQAAgentPerformance, getQAUnderperformerCount } from "@/lib/bigquery-qa"
+import { getQADashboardStats, getQACenterStats, getQAScoreTrend, getQAItemStats, getQAMonthlyTable, getQAConsultTypeStats, getQAAgentPerformance, getQAUnderperformerCount, getQARoundStats } from "@/lib/bigquery-qa"
 import { getCSATDashboardStats, getCSATLowScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats, getCSATWeeklyTable, getCSATLowScoreDetail } from "@/lib/bigquery-csat"
 import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizServiceTrend } from "@/lib/bigquery-quiz"
 import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
@@ -523,6 +523,17 @@ export async function GET(request: Request) {
           searchParams.get("startMonth"),
           searchParams.get("endMonth")
         )
+        break
+
+      case "qa-round-stats":
+        result = await getQARoundStats({
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+          channel: searchParams.get("channel") || undefined,
+          tenure: searchParams.get("tenure") || undefined,
+          startMonth: searchParams.get("startMonth") || undefined,
+          endMonth: searchParams.get("endMonth") || undefined,
+        })
         break
 
       // ── CSAT(상담평점) ──

@@ -507,6 +507,17 @@ export interface QAAgentPerformance {
   weakItems: string[]    // 그룹 평균 대비 취약 항목명
 }
 
+// QA 회차별 통계
+export interface QARoundStats {
+  round: number             // 1~5
+  evaluations: number       // 평가 건수
+  avgScore: number          // 평균 점수
+  yongsanAvg: number
+  gwangjuAvg: number
+  voiceAvg: number
+  chatAvg: number
+}
+
 // ============================================================
 // CSAT(상담평점) 관련 타입
 // ============================================================
