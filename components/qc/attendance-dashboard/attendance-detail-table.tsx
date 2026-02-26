@@ -1,6 +1,9 @@
 "use client"
 
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useMemo } from "react"
+import { Card, CardContent } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { AttendanceDetail } from "@/lib/types"
 
@@ -17,12 +20,82 @@ export function AttendanceDetailTable({
   channelFilter,
   serviceFilter,
 }: AttendanceDetailTableProps) {
+  // 필터 적용
+  const filtered = useMemo(() => {
+    if (!detail) return []
+    let result = detail
+    if (centerFilter !== "전체") result = result.filter((d) => d.center === centerFilter)
+    if (channelFilter !== "전체") result = result.filter((d) => d.channel === channelFilter)
+    if (serviceFilter !== "전체") result = result.filter((d) => d.vertical === serviceFilter)
+    return result
+  }, [detail, centerFilter, channelFilter, serviceFilter])
+
+  // 센터 > 채널 > 서비스 > Shift 순서로 정렬
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      if (a.center !== b.center) return a.center.localeCompare(b.center)
+      if (a.channel !== b.channel) return a.channel.localeCompare(b.channel)
+      if (a.vertical !== b.vertical) return a.vertical.localeCompare(b.vertical)
+      return a.shiftType.localeCompare(b.shiftType)
+    })
+  }, [filtered])
+
+  // rowspan 계산: 센터 / 채널 그룹핑
+  const centerSpans = useMemo(() => {
+    const spans = new Map<number, number>()
+    let i = 0
+    while (i < sorted.length) {
+      let end = i + 1
+      while (end < sorted.length && sorted[end].center === sorted[i].center) end++
+      spans.set(i, end - i)
+      i = end
+    }
+    return spans
+  }, [sorted])
+
+  const channelSpans = useMemo(() => {
+    const spans = new Map<number, number>()
+    let i = 0
+    while (i < sorted.length) {
+      // 센터 경계 찾기
+      let centerEnd = i + 1
+      while (centerEnd < sorted.length && sorted[centerEnd].center === sorted[i].center) centerEnd++
+      // 센터 내 채널 그룹핑
+      let j = i
+      while (j < centerEnd) {
+        let channelEnd = j + 1
+        while (channelEnd < centerEnd && sorted[channelEnd].channel === sorted[j].channel) channelEnd++
+        spans.set(j, channelEnd - j)
+        j = channelEnd
+      }
+      i = centerEnd
+    }
+    return spans
+  }, [sorted])
+
+  // 엑셀(CSV) 다운로드
+  const handleDownload = () => {
+    const headers = ["센터", "매체(채널)", "그룹(서비스)", "근무타입(Shift)", "계획인원", "출근인원", "미출근(편차)", "출근율"]
+    const rows = sorted.map((row) =>
+      [row.center, row.channel, row.vertical, row.shiftType, row.planned, row.actual, row.absent, `${row.attendanceRate}%`].join(",")
+    )
+    const csv = [headers.join(","), ...rows].join("\n")
+    const bom = "\uFEFF"
+    const blob = new Blob([bom + csv], { type: "text/csv;charset=utf-8;" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `근태현황_상세_${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   if (!detail || detail.length === 0) {
     return (
       <Card>
-        <CardHeader>
-          <CardTitle className="text-[14px]">센터/그룹별 상세 출근 데이터</CardTitle>
-        </CardHeader>
+        <div className="p-4 border-b flex justify-between items-center">
+          <h3 className="text-[14px] font-semibold leading-none tracking-tight">센터/그룹별 상세 출근 데이터</h3>
+        </div>
         <CardContent>
           <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
             데이터가 없습니다
@@ -32,73 +105,89 @@ export function AttendanceDetailTable({
     )
   }
 
-  // 필터 적용
-  let filtered = detail
-  if (centerFilter !== "전체") filtered = filtered.filter((d) => d.center === centerFilter)
-  if (channelFilter !== "전체") filtered = filtered.filter((d) => d.channel === channelFilter)
-  if (serviceFilter !== "전체") filtered = filtered.filter((d) => d.vertical === serviceFilter)
-
-  // 센터 > 채널 > 서비스 > Shift 순서로 정렬
-  const sorted = [...filtered].sort((a, b) => {
-    if (a.center !== b.center) return a.center.localeCompare(b.center)
-    if (a.channel !== b.channel) return a.channel.localeCompare(b.channel)
-    if (a.vertical !== b.vertical) return a.vertical.localeCompare(b.vertical)
-    return a.shiftType.localeCompare(b.shiftType)
-  })
-
   return (
     <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-[14px]">센터/그룹별 상세 출근 데이터</CardTitle>
-      </CardHeader>
+      <div className="p-4 border-b flex justify-between items-center">
+        <h3 className="text-[14px] font-semibold leading-none tracking-tight">센터/그룹별 상세 출근 데이터</h3>
+        <Button variant="outline" size="sm" onClick={handleDownload}>
+          <Download className="w-3 h-3 mr-1" />
+          엑셀 다운로드
+        </Button>
+      </div>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-center whitespace-nowrap">
             <thead className="bg-muted/50 text-muted-foreground font-bold text-[11px] uppercase tracking-wider border-b">
               <tr>
                 <th className="px-4 py-3 border-r text-left">센터</th>
-                <th className="px-4 py-3 border-r">채널</th>
-                <th className="px-4 py-3 border-r">서비스</th>
-                <th className="px-4 py-3 border-r">근무타입</th>
+                <th className="px-4 py-3 border-r">매체(채널)</th>
+                <th className="px-4 py-3 border-r">그룹(서비스)</th>
+                <th className="px-4 py-3 border-r">근무타입(Shift)</th>
                 <th className="px-4 py-3 border-r">계획인원</th>
                 <th className="px-4 py-3 border-r text-blue-600">출근인원</th>
-                <th className="px-4 py-3 border-r text-rose-500">미출근</th>
+                <th className="px-4 py-3 border-r text-rose-500">미출근(편차)</th>
                 <th className="px-6 py-3 w-48">출근율</th>
               </tr>
             </thead>
             <tbody className="divide-y text-muted-foreground font-medium">
-              {sorted.map((row, i) => (
-                <tr key={i} className="hover:bg-blue-50/30 transition-colors">
-                  <td className="px-4 py-3 border-r text-left font-bold">{row.center}</td>
-                  <td className="px-4 py-3 border-r font-bold">{row.channel}</td>
-                  <td className="px-4 py-3 border-r">{row.vertical}</td>
-                  <td className="px-4 py-3 border-r">{row.shiftType}</td>
-                  <td className="px-4 py-3 border-r">{row.planned}</td>
-                  <td className="px-4 py-3 border-r font-black text-blue-600">{row.actual}</td>
-                  <td className="px-4 py-3 border-r font-bold text-rose-500">{row.absent}</td>
-                  <td className="px-6 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <span
-                        className={cn(
-                          "w-12 text-right font-bold",
-                          row.attendanceRate >= 80 ? "text-emerald-600" : "text-foreground"
-                        )}
+              {sorted.map((row, idx) => {
+                const showCenter = centerSpans.has(idx)
+                const showChannel = channelSpans.has(idx)
+                const isGroupBoundary = showCenter && idx > 0
+
+                return (
+                  <tr
+                    key={idx}
+                    className={cn(
+                      "hover:bg-blue-50/30 transition-colors",
+                      isGroupBoundary && "border-t-2 border-slate-200"
+                    )}
+                  >
+                    {showCenter && (
+                      <td
+                        rowSpan={centerSpans.get(idx)}
+                        className="px-4 py-3 border-r text-left font-bold align-top bg-muted/20"
                       >
-                        {row.attendanceRate}%
-                      </span>
-                      <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                        <div
+                        {row.center}
+                      </td>
+                    )}
+                    {showChannel && (
+                      <td
+                        rowSpan={channelSpans.get(idx)}
+                        className="px-4 py-3 border-r font-bold align-top"
+                      >
+                        {row.channel}
+                      </td>
+                    )}
+                    <td className="px-4 py-3 border-r">{row.vertical}</td>
+                    <td className="px-4 py-3 border-r">{row.shiftType}</td>
+                    <td className="px-4 py-3 border-r">{row.planned}</td>
+                    <td className="px-4 py-3 border-r font-black text-blue-600">{row.actual}</td>
+                    <td className="px-4 py-3 border-r font-bold text-rose-500">{row.absent}</td>
+                    <td className="px-6 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <span
                           className={cn(
-                            "h-full rounded-full",
-                            row.attendanceRate >= 80 ? "bg-emerald-500" : "bg-blue-400"
+                            "w-12 text-right font-bold",
+                            row.attendanceRate >= 80 ? "text-emerald-600" : "text-foreground"
                           )}
-                          style={{ width: `${Math.min(row.attendanceRate, 100)}%` }}
-                        />
+                        >
+                          {row.attendanceRate}%
+                        </span>
+                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full rounded-full",
+                              row.attendanceRate >= 80 ? "bg-emerald-500" : "bg-blue-400"
+                            )}
+                            style={{ width: `${Math.min(row.attendanceRate, 100)}%` }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                  </tr>
+                )
+              })}
               {sorted.length === 0 && (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-muted-foreground">

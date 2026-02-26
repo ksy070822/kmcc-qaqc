@@ -1149,6 +1149,7 @@ export interface UnderperformingCriterionConfig {
 export interface AttendanceOverview {
   center: "용산" | "광주"
   date: string
+  total?: number            // 총인원 (재직 상담사 전체)
   planned: number           // 계획인원 (재직 상담사 중 근무예정)
   actual: number            // 출근인원
   absent: number            // 미출근
