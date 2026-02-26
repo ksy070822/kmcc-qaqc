@@ -12,6 +12,7 @@ import {
   Tooltip,
   Legend,
   ReferenceLine,
+  LabelList,
 } from "recharts"
 import { format } from "date-fns"
 import { ko } from "date-fns/locale"
@@ -72,7 +73,7 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
           <CardTitle className="text-[15px]">일자별 센터 출근율 추이 (최근 7일)</CardTitle>
           <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 bg-amber-400 rounded-full inline-block" />
+              <span className="w-3 h-0.5 bg-[#E6B422] rounded-full inline-block" />
               전체 평균
             </div>
             <div className="flex items-center gap-1.5">
@@ -90,6 +91,11 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
         <div className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+              <defs>
+                <filter id="lineShadow" x="-20%" y="-20%" width="140%" height="140%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#E6B422" floodOpacity="0.4" />
+                </filter>
+              </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis
@@ -109,15 +115,20 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
                 strokeWidth={1}
                 label={{ value: "목표 80%", position: "right", fill: "#f43f5e", fontSize: 10 }}
               />
-              <Bar dataKey="용산" fill="#3b82f6" stroke="#2563eb" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24} />
-              <Bar dataKey="광주" fill="#1e3a5f" stroke="#0f172a" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24} />
+              <Bar dataKey="용산" fill="#3b82f6" stroke="#2563eb" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
+                <LabelList dataKey="용산" position="top" formatter={(v: number) => `${v}%`} style={{ fontSize: 10, fontWeight: 700, fill: "#3b82f6" }} />
+              </Bar>
+              <Bar dataKey="광주" fill="#1e3a5f" stroke="#0f172a" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
+                <LabelList dataKey="광주" position="top" formatter={(v: number) => `${v}%`} style={{ fontSize: 10, fontWeight: 700, fill: "#1e3a5f" }} />
+              </Bar>
               <Line
                 type="linear"
                 dataKey="전체"
-                stroke="#f59e0b"
-                strokeWidth={2.5}
-                dot={{ fill: "#fff", stroke: "#f59e0b", strokeWidth: 2, r: 5 }}
-                activeDot={{ fill: "#f59e0b", stroke: "#fff", strokeWidth: 2, r: 6 }}
+                stroke="#E6B422"
+                strokeWidth={3}
+                style={{ filter: "url(#lineShadow)" }}
+                dot={{ fill: "#3A1D00", stroke: "#E6B422", strokeWidth: 2.5, r: 5 }}
+                activeDot={{ fill: "#E6B422", stroke: "#3A1D00", strokeWidth: 2, r: 7 }}
               />
             </ComposedChart>
           </ResponsiveContainer>
