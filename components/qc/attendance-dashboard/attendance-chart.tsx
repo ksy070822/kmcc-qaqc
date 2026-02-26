@@ -90,7 +90,7 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
       <CardContent>
         <div className="h-[320px]">
           <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <ComposedChart data={chartData} margin={{ top: 25, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <filter id="lineShadow" x="-20%" y="-20%" width="140%" height="140%">
                   <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#E6B422" floodOpacity="0.4" />
@@ -99,7 +99,7 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
               <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
               <XAxis dataKey="label" tick={{ fontSize: 12 }} />
               <YAxis
-                domain={[40, 100]}
+                domain={[40, 105]}
                 tick={{ fontSize: 12 }}
                 tickFormatter={(v: number) => `${v}%`}
               />
