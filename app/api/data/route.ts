@@ -20,7 +20,7 @@ import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizSer
 import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
 import { getVoiceProductivity, getVoiceHandlingTime, getVoiceDailyTrend, getChatProductivity, getChatDailyTrend, getBoardProductivity, getWeeklySummary, getForeignLanguageProductivity } from "@/lib/bigquery-productivity"
 import { getSLAScorecard, getSLAMonthlyTrend, getSLADailyTracking } from "@/lib/bigquery-sla"
-import { getAttendanceOverview, getAttendanceDetail, getAttendanceDailyTrend } from "@/lib/bigquery-attendance"
+import { getAttendanceOverview, getAttendanceDetail, getAttendanceDailyTrend, getAgentAbsenceList } from "@/lib/bigquery-attendance"
 import { getCorsHeaders } from "@/lib/cors"
 
 const bq = new BigQuery({
@@ -715,6 +715,19 @@ export async function GET(request: Request) {
           )
         }
         result = await getAttendanceDailyTrend(attStart, attEnd)
+        break
+      }
+
+      case "attendance-agents": {
+        const agentStart = searchParams.get("startDate")
+        const agentEnd = searchParams.get("endDate")
+        if (!agentStart || !agentEnd) {
+          return NextResponse.json(
+            { success: false, error: "startDate and endDate are required" },
+            { status: 400, headers: corsHeaders }
+          )
+        }
+        result = await getAgentAbsenceList(agentStart, agentEnd)
         break
       }
 

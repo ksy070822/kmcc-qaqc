@@ -1175,6 +1175,17 @@ export interface AttendanceDailyTrend {
   attendanceRate: number
 }
 
+/** 상담사별 미출근 현황 */
+export interface AgentAbsence {
+  center: "용산" | "광주"
+  name: string
+  id: string
+  group: string           // 서비스(택시, 대리 등)
+  position: string        // 유선, 채팅
+  absenceDates: string[]  // 미출근 일자 목록
+  absenceCount: number    // 미출근 건수
+}
+
 // ============================================================
 // 생산성 (Productivity) 타입
 // ============================================================

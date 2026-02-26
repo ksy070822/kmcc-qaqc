@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,6 +10,7 @@ import {
   Search,
   CalendarDays,
   Users,
+  UserX,
   Clock,
   AlertTriangle,
   Download,
@@ -19,6 +20,7 @@ import { format, subDays, addDays, startOfMonth, endOfMonth, subMonths, addMonth
 import { ko } from "date-fns/locale"
 import { cn } from "@/lib/utils"
 import { useAttendanceData } from "@/hooks/use-attendance-data"
+import type { AgentAbsence } from "@/lib/types"
 import { AttendanceKPI } from "./attendance-kpi"
 import { AttendanceChart } from "./attendance-chart"
 import { AttendanceDetailTable } from "./attendance-detail-table"
@@ -26,7 +28,7 @@ import { AttendanceDetailTable } from "./attendance-detail-table"
 const TABS = [
   { id: "overview", label: "종합 근태현황" },
   { id: "trend", label: "일자별 트렌드" },
-  { id: "detail", label: "센터/그룹 상세" },
+  { id: "detail", label: "상세 데이터" },
   { id: "shift", label: "근무조(Shift) 현황" },
   { id: "coaching", label: "코칭" },
 ]
@@ -50,7 +52,7 @@ export function AttendanceDashboard() {
   const dateStr = format(selectedDate, "yyyy-MM-dd")
   const dateLabel = format(selectedDate, "yyyy년 M월 d일 (E)", { locale: ko })
 
-  const { overview, detail, trend, loading } = useAttendanceData(dateStr)
+  const { overview, detail, trend, agents, loading } = useAttendanceData(dateStr)
 
   // 전일 데이터 (트렌드에서 추출)
   const prevOverview = useMemo(() => {
@@ -156,6 +158,71 @@ export function AttendanceDashboard() {
       a.center.localeCompare(b.center) || a.shift.localeCompare(b.shift)
     )
   }, [detail])
+
+  // 상담사 미출근 현황 — 월별 독립 조회
+  const [agentMonth, setAgentMonth] = useState<Date>(() => new Date())
+  const [agentData, setAgentData] = useState<AgentAbsence[] | null>(null)
+  const [agentLoading, setAgentLoading] = useState(false)
+  const [agentCenterFilter, setAgentCenterFilter] = useState("전체")
+  const [agentChannelFilter, setAgentChannelFilter] = useState("전체")
+  const [agentServiceFilter, setAgentServiceFilter] = useState("전체")
+
+  const agentMonthLabel = format(agentMonth, "yyyy년 M월", { locale: ko })
+  const prevMonthLabel = format(subMonths(agentMonth, 1), "M월")
+  const prev2MonthLabel = format(subMonths(agentMonth, 2), "M월")
+
+  useEffect(() => {
+    const fetchAgentData = async () => {
+      setAgentLoading(true)
+      const rangeStart = format(startOfMonth(subMonths(agentMonth, 2)), "yyyy-MM-dd")
+      const rangeEnd = format(endOfMonth(agentMonth), "yyyy-MM-dd")
+      // endDate가 미래면 어제까지만
+      const today = new Date()
+      const actualEnd = new Date(rangeEnd) > today ? format(subDays(today, 1), "yyyy-MM-dd") : rangeEnd
+      const sp = new URLSearchParams({ type: "attendance-agents", startDate: rangeStart, endDate: actualEnd })
+      try {
+        const res = await fetch(`/api/data?${sp}`)
+        const json = await res.json()
+        if (json.success && json.data) setAgentData(json.data)
+        else setAgentData([])
+      } catch {
+        setAgentData([])
+      } finally {
+        setAgentLoading(false)
+      }
+    }
+    fetchAgentData()
+  }, [agentMonth])
+
+  // 상담사 서비스 목록 (필터용)
+  const agentServices = useMemo(() => {
+    if (!agentData) return []
+    const set = new Set(agentData.map((a) => a.group))
+    return Array.from(set).sort()
+  }, [agentData])
+
+  // 월별 분리 + 필터 적용
+  const filteredAgentsWithMonths = useMemo(() => {
+    if (!agentData) return []
+    const curYM = format(agentMonth, "yyyy-MM")
+    const prevYM = format(subMonths(agentMonth, 1), "yyyy-MM")
+    const prev2YM = format(subMonths(agentMonth, 2), "yyyy-MM")
+
+    let result = agentData
+    if (agentCenterFilter !== "전체") result = result.filter((a) => a.center === agentCenterFilter)
+    if (agentChannelFilter !== "전체") result = result.filter((a) => a.position === agentChannelFilter)
+    if (agentServiceFilter !== "전체") result = result.filter((a) => a.group === agentServiceFilter)
+
+    return result
+      .map((agent) => {
+        const curDates = agent.absenceDates.filter((d) => d.startsWith(curYM))
+        const prevCount = agent.absenceDates.filter((d) => d.startsWith(prevYM)).length
+        const prev2Count = agent.absenceDates.filter((d) => d.startsWith(prev2YM)).length
+        return { ...agent, curDates, curCount: curDates.length, prevCount, prev2Count }
+      })
+      .filter((a) => a.curCount > 0 || a.prevCount > 0 || a.prev2Count > 0)
+      .sort((a, b) => b.curCount - a.curCount || b.prevCount - a.prevCount)
+  }, [agentData, agentMonth, agentCenterFilter, agentChannelFilter, agentServiceFilter])
 
   // 코칭 대상 (출근율 낮은 그룹)
   const coachingTargets = useMemo(() => {
@@ -366,39 +433,42 @@ export function AttendanceDashboard() {
         </>
       )}
 
-      {/* ===== 센터/그룹 상세 ===== */}
+      {/* ===== 상세 데이터 ===== */}
       {activeTab === "detail" && (
         <>
-          {/* 센터 요약 카드 - StatsCard 사용으로 통일 */}
+          {/* 센터 요약 카드 */}
           <div className="grid gap-4 md:grid-cols-2">
             {(["용산", "광주"] as const).map((center) => {
               const data = centerSummary?.[center === "용산" ? "yongsan" : "gwangju"]
               const rate = data?.attendanceRate ?? 0
-              const variant = rate >= 80 ? "success" : "warning"
               return (
                 <Card key={center} className={cn(
                   "border shadow-sm",
                   rate >= 80 ? "border-emerald-500/40 bg-emerald-50" : "border-amber-500/40 bg-amber-50"
                 )}>
                   <CardContent className="p-4">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-center justify-between">
+                      {/* 좌측: 센터명 + 출근율 */}
+                      <div className="flex items-center gap-3">
                         <Users className="h-4 w-4 text-muted-foreground" />
-                        <p className="text-sm font-medium text-muted-foreground">{center} 센터 출근율</p>
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">{center} 센터 출근율</p>
+                          <p className="text-2xl font-bold tracking-tight text-foreground">{rate}%</p>
+                        </div>
                       </div>
-                      <p className="text-2xl font-bold tracking-tight text-foreground">{rate}%</p>
-                      <div className="grid grid-cols-3 gap-2 pt-2">
+                      {/* 우측: 계획 · 출근 · 미출근 */}
+                      <div className="flex items-center gap-4">
                         <div className="text-center">
                           <p className="text-xs text-muted-foreground">계획</p>
-                          <p className="text-sm font-bold">{data?.planned ?? "-"}</p>
+                          <p className="text-sm font-bold">{data?.planned ?? "-"}명</p>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-blue-600">출근</p>
-                          <p className="text-sm font-bold text-blue-600">{data?.actual ?? "-"}</p>
+                          <p className="text-sm font-bold text-blue-600">{data?.actual ?? "-"}명</p>
                         </div>
                         <div className="text-center">
                           <p className="text-xs text-rose-500">미출근</p>
-                          <p className="text-sm font-bold text-rose-500">{data?.absent ?? "-"}</p>
+                          <p className="text-sm font-bold text-rose-500">{data?.absent ?? "-"}명</p>
                         </div>
                       </div>
                     </div>
@@ -445,6 +515,164 @@ export function AttendanceDashboard() {
             channelFilter={channelFilter}
             serviceFilter={serviceFilter}
           />
+
+          {/* 상담사 현황 */}
+          <Card className="bg-white border border-slate-200 rounded-xl">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserX className="h-4 w-4 text-rose-500" />
+                  <CardTitle className="text-[15px]">상담사 현황</CardTitle>
+                </div>
+                <div className="flex items-center gap-3">
+                  {/* 월 네비게이션 */}
+                  <div className="flex items-center gap-1">
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setAgentMonth((m) => subMonths(m, 1))}>
+                      <ChevronLeft className="h-3 w-3" />
+                    </Button>
+                    <span className="text-sm font-bold min-w-[100px] text-center">{agentMonthLabel}</span>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setAgentMonth((m) => addMonths(m, 1))}>
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <span className="text-xs font-bold text-muted-foreground">
+                    {filteredAgentsWithMonths.length}명
+                  </span>
+                  {filteredAgentsWithMonths.length > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        const headers = ["센터", "이름", "ID", "서비스", "채널", `당월(${format(agentMonth, "M월")}) 건수`, "미출근 일자", `전월(${prevMonthLabel}) 건수`, `전전월(${prev2MonthLabel}) 건수`]
+                        const rows = filteredAgentsWithMonths.map((a) =>
+                          [a.center, a.name, a.id, a.group, a.position, a.curCount, a.curDates.join(" / "), a.prevCount, a.prev2Count].join(",")
+                        )
+                        const csv = [headers.join(","), ...rows].join("\n")
+                        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" })
+                        const url = URL.createObjectURL(blob)
+                        const anchor = document.createElement("a")
+                        anchor.href = url
+                        anchor.download = `상담사_미출근현황_${format(agentMonth, "yyyy-MM")}.csv`
+                        anchor.click()
+                        URL.revokeObjectURL(url)
+                      }}
+                    >
+                      <Download className="w-3 h-3 mr-1" />
+                      엑셀 다운로드
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {/* 필터 바 */}
+              <div className="flex flex-wrap items-center gap-4 px-4 py-3 border-b">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">센터</span>
+                  <select value={agentCenterFilter} onChange={(e) => setAgentCenterFilter(e.target.value)} className="border rounded-md px-2 py-1.5 text-xs font-medium outline-none">
+                    <option>전체</option>
+                    <option>용산</option>
+                    <option>광주</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">채널</span>
+                  <select value={agentChannelFilter} onChange={(e) => setAgentChannelFilter(e.target.value)} className="border rounded-md px-2 py-1.5 text-xs font-medium outline-none">
+                    <option>전체</option>
+                    <option>유선</option>
+                    <option>채팅</option>
+                  </select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-muted-foreground">서비스</span>
+                  <select value={agentServiceFilter} onChange={(e) => setAgentServiceFilter(e.target.value)} className="border rounded-md px-2 py-1.5 text-xs font-medium outline-none">
+                    <option>전체</option>
+                    {agentServices.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              {agentLoading ? (
+                <div className="p-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> 조회중...
+                </div>
+              ) : filteredAgentsWithMonths.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-center whitespace-nowrap">
+                    <thead className="bg-muted/50 text-muted-foreground font-bold text-[11px] uppercase tracking-wider border-b">
+                      <tr>
+                        <th className="px-4 py-3 border-r text-left">센터</th>
+                        <th className="px-4 py-3 border-r">이름</th>
+                        <th className="px-4 py-3 border-r">ID</th>
+                        <th className="px-4 py-3 border-r">서비스</th>
+                        <th className="px-4 py-3 border-r">채널</th>
+                        <th className="px-4 py-3 border-r text-rose-500">당월 미출근</th>
+                        <th className="px-4 py-3 border-r text-left">미출근 일자</th>
+                        <th className="px-4 py-3 border-r">{prevMonthLabel}</th>
+                        <th className="px-4 py-3">{prev2MonthLabel}</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y text-muted-foreground font-medium">
+                      {filteredAgentsWithMonths.map((agent, i) => {
+                        const absBg = agent.curCount === 0
+                          ? ""
+                          : agent.curCount <= 2
+                            ? "bg-rose-50 text-rose-500"
+                            : agent.curCount <= 4
+                              ? "bg-rose-100 text-rose-600"
+                              : "bg-rose-200 text-rose-700"
+                        return (
+                          <tr key={`${agent.id}-${i}`} className={cn(
+                            "hover:bg-blue-50/30 transition-colors",
+                            agent.center === "용산" ? "bg-blue-50/20" : "bg-slate-50/40"
+                          )}>
+                            <td className={cn(
+                              "px-4 py-2.5 border-r text-left font-bold",
+                              agent.center === "용산" ? "text-blue-700" : "text-slate-700"
+                            )}>{agent.center}</td>
+                            <td className="px-4 py-2.5 border-r font-medium">{agent.name}</td>
+                            <td className="px-4 py-2.5 border-r text-xs text-muted-foreground">{agent.id}</td>
+                            <td className="px-4 py-2.5 border-r">{agent.group}</td>
+                            <td className="px-4 py-2.5 border-r">{agent.position}</td>
+                            <td className={cn("px-4 py-2.5 border-r font-bold", absBg)}>
+                              {agent.curCount}건
+                            </td>
+                            <td className="px-4 py-2.5 border-r text-left text-xs">
+                              <div className="flex flex-wrap gap-1">
+                                {agent.curDates.map((d) => (
+                                  <span key={d} className="inline-block px-1.5 py-0.5 bg-rose-50 text-rose-600 rounded text-[10px]">
+                                    {d.slice(5)}
+                                  </span>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 border-r">
+                              {agent.prevCount > 0 ? (
+                                <span className="font-bold text-muted-foreground">{agent.prevCount}건</span>
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-2.5">
+                              {agent.prev2Count > 0 ? (
+                                <span className="font-bold text-muted-foreground">{agent.prev2Count}건</span>
+                              ) : (
+                                <span className="text-muted-foreground/40">-</span>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  {agentData === null ? "데이터 로딩 중..." : "미출근 이력이 있는 상담사가 없습니다"}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
 

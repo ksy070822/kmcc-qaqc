@@ -1,6 +1,6 @@
 import { getBigQueryClient } from "@/lib/bigquery"
 import { HR_YONGSAN, HR_GWANGJU, HR_VERTICAL_SQL } from "@/lib/bigquery-productivity"
-import type { AttendanceOverview, AttendanceDetail, AttendanceDailyTrend } from "@/lib/types"
+import type { AttendanceOverview, AttendanceDetail, AttendanceDailyTrend, AgentAbsence } from "@/lib/types"
 
 /** 출근 판정값 */
 const PRESENT_VALUES = `('1', '0.75', '0.5', '0.8', '반후', '반전', '반차', '10~19', '13~22')`
@@ -183,6 +183,78 @@ export async function getAttendanceDailyTrend(
     return { success: true, data }
   } catch (error) {
     console.error("[Attendance] Daily trend error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// ============================================================
+// 4. 상담사별 미출근 현황 (최근 N일)
+// ============================================================
+
+export async function getAgentAbsenceList(
+  startDate: string,
+  endDate: string,
+): Promise<{ success: boolean; data?: AgentAbsence[]; error?: string }> {
+  try {
+    const bq = getBigQueryClient()
+
+    const query = `
+      WITH hr_union AS (
+        SELECT '용산' AS center, date, name, id, \`group\`, position, attendance
+        FROM ${HR_YONGSAN}
+        WHERE date BETWEEN @startDate AND @endDate
+          AND type = '상담사'
+          AND (resign_date IS NULL OR resign_date > @endDate)
+          AND position IN ('유선', '채팅')
+        UNION ALL
+        SELECT '광주' AS center, date, name, id, \`group\`, position, attendance
+        FROM ${HR_GWANGJU}
+        WHERE date BETWEEN @startDate AND @endDate
+          AND type = '상담사'
+          AND (resign_date IS NULL OR resign_date > @endDate)
+          AND position IN ('유선', '채팅')
+      ),
+      -- 근무 예정이었으나 미출근한 건만 추출
+      absent_days AS (
+        SELECT center, date, name, id, \`group\`, position
+        FROM hr_union
+        WHERE attendance IS NOT NULL
+          AND attendance NOT IN ${NON_WORKING_VALUES}
+          AND attendance NOT IN ${PRESENT_VALUES}
+      )
+      SELECT
+        center,
+        name,
+        id,
+        \`group\`,
+        position,
+        COUNT(*) AS absence_count,
+        ARRAY_AGG(CAST(date AS STRING) ORDER BY date) AS absence_dates
+      FROM absent_days
+      GROUP BY center, name, id, \`group\`, position
+      HAVING COUNT(*) >= 1
+      ORDER BY absence_count DESC, center, name
+    `
+
+    const [rows] = await bq.query({ query, params: { startDate, endDate } })
+
+    const data: AgentAbsence[] = (rows as Record<string, unknown>[]).map((r) => ({
+      center: String(r.center) as "용산" | "광주",
+      name: String(r.name),
+      id: String(r.id),
+      group: String(r.group),
+      position: String(r.position),
+      absenceCount: Number(r.absence_count) || 0,
+      absenceDates: Array.isArray(r.absence_dates)
+        ? (r.absence_dates as Array<{ value?: string } | string>).map((d) =>
+            typeof d === "object" && d?.value ? d.value : String(d)
+          )
+        : [],
+    }))
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("[Attendance] Agent absence error:", error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }
