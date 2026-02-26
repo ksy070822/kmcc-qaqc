@@ -62,15 +62,38 @@ export function AttendanceDetailTable({
     const spans = new Map<number, number>()
     let i = 0
     while (i < sorted.length) {
-      // 센터 경계 찾기
       let centerEnd = i + 1
       while (centerEnd < sorted.length && sorted[centerEnd].center === sorted[i].center) centerEnd++
-      // 센터 내 채널 그룹핑
       let j = i
       while (j < centerEnd) {
         let channelEnd = j + 1
         while (channelEnd < centerEnd && sorted[channelEnd].channel === sorted[j].channel) channelEnd++
         spans.set(j, channelEnd - j)
+        j = channelEnd
+      }
+      i = centerEnd
+    }
+    return spans
+  }, [sorted])
+
+  // rowspan 계산: 그룹(서비스) — 같은 센터+채널 내에서 vertical 그룹핑
+  const verticalSpans = useMemo(() => {
+    const spans = new Map<number, number>()
+    let i = 0
+    while (i < sorted.length) {
+      let centerEnd = i + 1
+      while (centerEnd < sorted.length && sorted[centerEnd].center === sorted[i].center) centerEnd++
+      let j = i
+      while (j < centerEnd) {
+        let channelEnd = j + 1
+        while (channelEnd < centerEnd && sorted[channelEnd].channel === sorted[j].channel) channelEnd++
+        let k = j
+        while (k < channelEnd) {
+          let vertEnd = k + 1
+          while (vertEnd < channelEnd && sorted[vertEnd].vertical === sorted[k].vertical) vertEnd++
+          spans.set(k, vertEnd - k)
+          k = vertEnd
+        }
         j = channelEnd
       }
       i = centerEnd
@@ -140,7 +163,17 @@ export function AttendanceDetailTable({
               {sorted.map((row, idx) => {
                 const showCenter = centerSpans.has(idx)
                 const showChannel = channelSpans.has(idx)
+                const showVertical = verticalSpans.has(idx)
                 const isGroupBoundary = showCenter && idx > 0
+
+                // 미출근 히트맵: absent 수에 따라 배경색 강도 조절
+                const absentBg = row.absent === 0
+                  ? "bg-emerald-50 text-emerald-600"
+                  : row.absent <= 2
+                    ? "bg-rose-50 text-rose-500"
+                    : row.absent <= 5
+                      ? "bg-rose-100 text-rose-600"
+                      : "bg-rose-200 text-rose-700"
 
                 return (
                   <tr
@@ -166,11 +199,18 @@ export function AttendanceDetailTable({
                         {row.channel}
                       </td>
                     )}
-                    <td className="px-4 py-3 border-r">{row.vertical}</td>
+                    {showVertical && (
+                      <td
+                        rowSpan={verticalSpans.get(idx)}
+                        className="px-4 py-3 border-r align-top"
+                      >
+                        {row.vertical}
+                      </td>
+                    )}
                     <td className="px-4 py-3 border-r">{row.shiftType}</td>
                     <td className="px-4 py-3 border-r">{row.planned}</td>
                     <td className="px-4 py-3 border-r font-black text-blue-600">{row.actual}</td>
-                    <td className="px-4 py-3 border-r font-bold text-rose-500">{row.absent}</td>
+                    <td className={cn("px-4 py-3 border-r font-bold", absentBg)}>{row.absent}</td>
                     <td className="px-6 py-3">
                       <div className="flex items-center justify-between gap-3">
                         <span
