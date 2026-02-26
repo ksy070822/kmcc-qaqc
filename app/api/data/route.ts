@@ -20,6 +20,7 @@ import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizSer
 import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
 import { getVoiceProductivity, getVoiceHandlingTime, getVoiceDailyTrend, getChatProductivity, getChatDailyTrend, getBoardProductivity, getWeeklySummary, getForeignLanguageProductivity } from "@/lib/bigquery-productivity"
 import { getSLAScorecard, getSLAMonthlyTrend, getSLADailyTracking } from "@/lib/bigquery-sla"
+import { getAttendanceOverview, getAttendanceDetail, getAttendanceDailyTrend } from "@/lib/bigquery-attendance"
 import { getCorsHeaders } from "@/lib/cors"
 
 const bq = new BigQuery({
@@ -678,6 +679,44 @@ export async function GET(request: Request) {
       case "sla-daily-tracking":
         result = await getSLADailyTracking(searchParams.get("month"))
         break
+
+      // ── 근태 현황 (Attendance) ──
+      case "attendance-overview": {
+        const attDate = searchParams.get("date")
+        if (!attDate) {
+          return NextResponse.json(
+            { success: false, error: "date is required" },
+            { status: 400, headers: corsHeaders }
+          )
+        }
+        result = await getAttendanceOverview(attDate)
+        break
+      }
+
+      case "attendance-detail": {
+        const attDetailDate = searchParams.get("date")
+        if (!attDetailDate) {
+          return NextResponse.json(
+            { success: false, error: "date is required" },
+            { status: 400, headers: corsHeaders }
+          )
+        }
+        result = await getAttendanceDetail(attDetailDate)
+        break
+      }
+
+      case "attendance-trend": {
+        const attStart = searchParams.get("startDate")
+        const attEnd = searchParams.get("endDate")
+        if (!attStart || !attEnd) {
+          return NextResponse.json(
+            { success: false, error: "startDate and endDate are required" },
+            { status: 400, headers: corsHeaders }
+          )
+        }
+        result = await getAttendanceDailyTrend(attStart, attEnd)
+        break
+      }
 
       default:
         return NextResponse.json(

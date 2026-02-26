@@ -16,6 +16,7 @@ import { SettingsPage } from "@/components/qc/settings"
 import { Predictions } from "@/components/qc/predictions"
 import { ProductivityDashboard } from "@/components/qc/productivity-dashboard"
 import { SLADashboard } from "@/components/qc/sla-dashboard"
+import { AttendanceDashboard } from "@/components/qc/attendance-dashboard"
 import { AIAssistant } from "@/components/qc/ai-assistant"
 import { cn } from "@/lib/utils"
 
@@ -99,6 +100,8 @@ export default function QCManagementApp() {
         return <ProductivityDashboard />
       case "sla":
         return <SLADashboard />
+      case "attendance":
+        return <AttendanceDashboard />
       case "predictions":
         return <Predictions onNavigateToFocus={handleNavigateToFocus} />
       case "agents":

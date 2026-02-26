@@ -1143,6 +1143,38 @@ export interface UnderperformingCriterionConfig {
 }
 
 // ============================================================
+// 근태 현황 (Attendance) 타입
+// ============================================================
+
+export interface AttendanceOverview {
+  center: "용산" | "광주"
+  date: string
+  planned: number           // 계획인원 (재직 상담사 중 근무예정)
+  actual: number            // 출근인원
+  absent: number            // 미출근
+  attendanceRate: number    // 출근율 %
+}
+
+export interface AttendanceDetail {
+  center: "용산" | "광주"
+  channel: string           // 유선, 채팅
+  vertical: string          // 택시, 대리, 퀵/배송 등
+  shiftType: string         // 주간, 야간
+  planned: number
+  actual: number
+  absent: number
+  attendanceRate: number
+}
+
+export interface AttendanceDailyTrend {
+  date: string
+  center: "용산" | "광주"
+  planned: number
+  actual: number
+  attendanceRate: number
+}
+
+// ============================================================
 // 생산성 (Productivity) 타입
 // ============================================================
 

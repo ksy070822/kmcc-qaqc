@@ -27,11 +27,11 @@ const CEMS_CSI = "`dataanalytics-25f2.dw_cems.chatbot_survey_inquire`"
 const CEMS_CST = "`dataanalytics-25f2.dw_cems.chatbot_survey_template`"
 
 // ── HR 스냅샷 테이블 (실투입 인원 산출) ──
-const HR_YONGSAN = "`csopp-25f2.kMCC_HR.HR_Yongsan_Snapshot`"
-const HR_GWANGJU = "`csopp-25f2.kMCC_HR.HR_Gwangju_Snapshot`"
+export const HR_YONGSAN = "`csopp-25f2.kMCC_HR.HR_Yongsan_Snapshot`"
+export const HR_GWANGJU = "`csopp-25f2.kMCC_HR.HR_Gwangju_Snapshot`"
 
 /** HR group → productivity vertical 매핑 SQL */
-const HR_VERTICAL_SQL = `CASE
+export const HR_VERTICAL_SQL = `CASE
   WHEN \`group\` IN ('퀵', '화물') THEN '퀵/배송'
   WHEN \`group\` = '바이크/마스' THEN '바이크'
   WHEN \`group\` = '주차/카오너' THEN '주차'

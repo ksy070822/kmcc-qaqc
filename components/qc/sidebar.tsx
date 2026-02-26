@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, ClipboardCheck, Activity, Award, Users, AlertTriangle, FileText, Settings, ChevronLeft, ChevronDown, TrendingUp, Bot, LogOut } from "lucide-react"
+import { LayoutDashboard, ClipboardCheck, Activity, Award, Clock, Users, AlertTriangle, FileText, Settings, ChevronLeft, ChevronDown, TrendingUp, Bot, LogOut } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { clearAuth } from "@/lib/auth"
 import { Button } from "@/components/ui/button"
@@ -21,6 +21,7 @@ const dashboardChildren = [
   { id: "dashboard", label: "품질", icon: ClipboardCheck },
   { id: "productivity", label: "생산성", icon: Activity },
   { id: "sla", label: "SLA 평가", icon: Award },
+  { id: "attendance", label: "근태 현황", icon: Clock },
 ]
 
 const secondaryItems = [
