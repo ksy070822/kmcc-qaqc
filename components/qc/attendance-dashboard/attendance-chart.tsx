@@ -80,7 +80,7 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
               용산 센터
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-3 h-3 bg-slate-300 rounded-sm inline-block" />
+              <span className="w-3 h-3 bg-[#1e3a5f] rounded-sm inline-block" />
               광주 센터
             </div>
           </div>
@@ -110,7 +110,7 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
                 label={{ value: "목표 80%", position: "right", fill: "#f43f5e", fontSize: 10 }}
               />
               <Bar dataKey="용산" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={24} />
-              <Bar dataKey="광주" fill="#cbd5e1" radius={[4, 4, 0, 0]} barSize={24} />
+              <Bar dataKey="광주" fill="#1e3a5f" radius={[4, 4, 0, 0]} barSize={24} />
               <Line
                 type="monotone"
                 dataKey="전체"
