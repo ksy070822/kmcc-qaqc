@@ -93,43 +93,37 @@ export function AttendanceKPI({ overview, prevOverview }: AttendanceKPIProps) {
   ]
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
       {cards.map((card) => {
         const Icon = card.icon
         return (
-          <Card key={card.label} className={`${card.color} shadow-sm`}>
-            <CardContent className="p-6 flex flex-col justify-between h-full">
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-bold text-muted-foreground">{card.label}</span>
-                  <Icon className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <div className="text-3xl font-black tracking-tighter">{card.value}</div>
+          <Card key={card.label} className={`border shadow-sm ${card.color}`}>
+            <CardContent className="p-4">
+              <div className="space-y-1">
+                <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
+                <p className="text-2xl font-bold tracking-tight text-foreground whitespace-nowrap">{card.value}</p>
                 {card.diff != null && (
-                  <div className="flex items-center gap-1 text-xs font-bold mt-2">
+                  <div className="flex items-center gap-1 text-sm font-medium whitespace-nowrap">
                     {card.diff >= 0 ? (
                       <>
-                        <TrendingUp className="h-3 w-3 text-emerald-500" />
-                        <span className="text-emerald-500">+{card.diff}%p</span>
+                        <TrendingUp className="h-4 w-4 text-emerald-600" />
+                        <span className="text-emerald-600">+{card.diff}%p</span>
                       </>
                     ) : (
                       <>
-                        <TrendingDown className="h-3 w-3 text-rose-500" />
-                        <span className="text-rose-500">{card.diff}%p</span>
+                        <TrendingDown className="h-4 w-4 text-red-600" />
+                        <span className="text-red-600">{card.diff}%p</span>
                       </>
                     )}
-                    <span className="text-muted-foreground font-medium ml-1">전일 대비</span>
+                    <span className="text-xs text-muted-foreground font-normal ml-0.5">전일 대비</span>
                   </div>
                 )}
-              </div>
-              <div className="mt-4 space-y-1 text-[11px] text-muted-foreground">
-                <div>{card.sub}</div>
-                {card.target && <div>{card.target}</div>}
+                <p className="text-xs text-muted-foreground break-words leading-tight">{card.sub}</p>
+                {card.target && <p className="text-xs text-muted-foreground break-words leading-tight">{card.target}</p>}
                 {"breakdown" in card && card.breakdown && (
-                  <div className="flex justify-between pt-1">
-                    <span>용산 {card.breakdown.yongsan}명</span>
-                    <span>광주 {card.breakdown.gwangju}명</span>
-                  </div>
+                  <p className="text-xs text-muted-foreground break-words leading-tight mt-1">
+                    용산 {card.breakdown.yongsan}명 / 광주 {card.breakdown.gwangju}명
+                  </p>
                 )}
               </div>
             </CardContent>

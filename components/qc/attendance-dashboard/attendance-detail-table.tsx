@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Download } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -30,13 +30,18 @@ export function AttendanceDetailTable({
     return result
   }, [detail, centerFilter, channelFilter, serviceFilter])
 
-  // 센터 > 채널 > 서비스 > Shift 순서로 정렬
+  // 센터 > 채널 > 서비스 > Shift 커스텀 정렬
   const sorted = useMemo(() => {
+    const SERVICE_ORDER = ["택시", "대리", "퀵/배송", "바이크", "주차"]
+    const SHIFT_ORDER = ["주간", "야간", "심야"]
+    const sIdx = (v: string) => { const i = SERVICE_ORDER.indexOf(v); return i >= 0 ? i : 999 }
+    const tIdx = (v: string) => { const i = SHIFT_ORDER.indexOf(v); return i >= 0 ? i : 999 }
+
     return [...filtered].sort((a, b) => {
       if (a.center !== b.center) return a.center.localeCompare(b.center)
       if (a.channel !== b.channel) return a.channel.localeCompare(b.channel)
-      if (a.vertical !== b.vertical) return a.vertical.localeCompare(b.vertical)
-      return a.shiftType.localeCompare(b.shiftType)
+      if (a.vertical !== b.vertical) return sIdx(a.vertical) - sIdx(b.vertical)
+      return tIdx(a.shiftType) - tIdx(b.shiftType)
     })
   }, [filtered])
 
@@ -92,10 +97,10 @@ export function AttendanceDetailTable({
 
   if (!detail || detail.length === 0) {
     return (
-      <Card>
-        <div className="p-4 border-b flex justify-between items-center">
-          <h3 className="text-[14px] font-semibold leading-none tracking-tight">센터/그룹별 상세 출근 데이터</h3>
-        </div>
+      <Card className="bg-white border border-slate-200 rounded-xl">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-[15px]">센터/그룹별 상세 출근 데이터</CardTitle>
+        </CardHeader>
         <CardContent>
           <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
             데이터가 없습니다
@@ -106,14 +111,16 @@ export function AttendanceDetailTable({
   }
 
   return (
-    <Card>
-      <div className="p-4 border-b flex justify-between items-center">
-        <h3 className="text-[14px] font-semibold leading-none tracking-tight">센터/그룹별 상세 출근 데이터</h3>
-        <Button variant="outline" size="sm" onClick={handleDownload}>
-          <Download className="w-3 h-3 mr-1" />
-          엑셀 다운로드
-        </Button>
-      </div>
+    <Card className="bg-white border border-slate-200 rounded-xl">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-[15px]">센터/그룹별 상세 출근 데이터</CardTitle>
+          <Button variant="outline" size="sm" onClick={handleDownload}>
+            <Download className="w-3 h-3 mr-1" />
+            엑셀 다운로드
+          </Button>
+        </div>
+      </CardHeader>
       <CardContent className="p-0">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-center whitespace-nowrap">

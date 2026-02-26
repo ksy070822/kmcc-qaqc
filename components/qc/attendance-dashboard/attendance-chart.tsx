@@ -24,8 +24,8 @@ interface AttendanceChartProps {
 export function AttendanceChart({ trend }: AttendanceChartProps) {
   if (!trend || trend.length === 0) {
     return (
-      <Card>
-        <CardHeader>
+      <Card className="bg-white border border-slate-200 rounded-xl">
+        <CardHeader className="pb-2">
           <CardTitle className="text-[15px]">일자별 센터 출근율 추이 (최근 7일)</CardTitle>
         </CardHeader>
         <CardContent>
@@ -66,11 +66,11 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
     })
 
   return (
-    <Card>
+    <Card className="bg-white border border-slate-200 rounded-xl">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-[15px]">일자별 센터 출근율 추이 (최근 7일)</CardTitle>
-          <div className="flex items-center gap-4 text-xs font-bold text-muted-foreground">
+          <div className="flex items-center gap-4 text-xs font-medium text-muted-foreground">
             <div className="flex items-center gap-1.5">
               <span className="w-3 h-0.5 bg-blue-400 rounded-full inline-block" />
               전체 평균

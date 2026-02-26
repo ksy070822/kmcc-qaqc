@@ -180,20 +180,23 @@ export function AttendanceDashboard() {
   return (
     <div className="space-y-6">
       {/* 서브탭 바 */}
-      <div className="flex items-center gap-2 flex-wrap">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              activeTab === tab.id
-                ? "bg-blue-500 text-white shadow-md"
-                : "text-slate-500 hover:text-slate-800 hover:bg-slate-100"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex gap-1 border-b pb-2">
+          {TABS.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                "px-4 py-2 text-xs border rounded-md cursor-pointer transition-colors",
+                activeTab === tab.id
+                  ? "bg-[#2c6edb] text-white border-[#2c6edb]"
+                  : "bg-white text-gray-600 border-slate-200 hover:bg-gray-50"
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* 날짜 네비게이션 (공통) */}
@@ -313,9 +316,9 @@ export function AttendanceDashboard() {
         <>
           <AttendanceChart trend={trend} />
 
-          <Card>
+          <Card className="bg-white border border-slate-200 rounded-xl">
             <CardHeader className="pb-2">
-              <CardTitle className="text-[14px]">일자별 센터 출근 현황</CardTitle>
+              <CardTitle className="text-[15px]">일자별 센터 출근 현황</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -366,37 +369,37 @@ export function AttendanceDashboard() {
       {/* ===== 센터/그룹 상세 ===== */}
       {activeTab === "detail" && (
         <>
-          {/* 센터 요약 카드 */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 센터 요약 카드 - StatsCard 사용으로 통일 */}
+          <div className="grid gap-4 md:grid-cols-2">
             {(["용산", "광주"] as const).map((center) => {
               const data = centerSummary?.[center === "용산" ? "yongsan" : "gwangju"]
+              const rate = data?.attendanceRate ?? 0
+              const variant = rate >= 80 ? "success" : "warning"
               return (
-                <Card key={center}>
+                <Card key={center} className={cn(
+                  "border shadow-sm",
+                  rate >= 80 ? "border-emerald-500/40 bg-emerald-50" : "border-amber-500/40 bg-amber-50"
+                )}>
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Users className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-bold text-sm">{center} 센터</span>
+                        <p className="text-sm font-medium text-muted-foreground">{center} 센터 출근율</p>
                       </div>
-                      <span className={cn(
-                        "text-2xl font-black",
-                        (data?.attendanceRate ?? 0) >= 80 ? "text-emerald-600" : "text-rose-500"
-                      )}>
-                        {data?.attendanceRate ?? "-"}%
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3 text-center">
-                      <div className="bg-muted/30 rounded-lg p-2">
-                        <p className="text-[10px] text-muted-foreground font-bold">계획인원</p>
-                        <p className="text-lg font-black">{data?.planned ?? "-"}</p>
-                      </div>
-                      <div className="bg-blue-50 rounded-lg p-2">
-                        <p className="text-[10px] text-blue-600 font-bold">출근인원</p>
-                        <p className="text-lg font-black text-blue-600">{data?.actual ?? "-"}</p>
-                      </div>
-                      <div className="bg-rose-50 rounded-lg p-2">
-                        <p className="text-[10px] text-rose-500 font-bold">미출근</p>
-                        <p className="text-lg font-black text-rose-500">{data?.absent ?? "-"}</p>
+                      <p className="text-2xl font-bold tracking-tight text-foreground">{rate}%</p>
+                      <div className="grid grid-cols-3 gap-2 pt-2">
+                        <div className="text-center">
+                          <p className="text-xs text-muted-foreground">계획</p>
+                          <p className="text-sm font-bold">{data?.planned ?? "-"}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-blue-600">출근</p>
+                          <p className="text-sm font-bold text-blue-600">{data?.actual ?? "-"}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-xs text-rose-500">미출근</p>
+                          <p className="text-sm font-bold text-rose-500">{data?.absent ?? "-"}</p>
+                        </div>
                       </div>
                     </div>
                   </CardContent>
@@ -453,32 +456,26 @@ export function AttendanceDashboard() {
             {shiftSummary.map((s) => {
               const rate = s.planned > 0 ? Math.round((s.actual / s.planned) * 1000) / 10 : 0
               return (
-                <Card key={s.shift}>
+                <Card key={s.shift} className={cn(
+                  "border shadow-sm",
+                  rate >= 80 ? "border-emerald-500/40 bg-emerald-50" : "border-amber-500/40 bg-amber-50"
+                )}>
                   <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
+                    <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <Clock className="h-4 w-4 text-muted-foreground" />
-                        <span className="font-bold text-sm">{s.shift}</span>
+                        <p className="text-sm font-medium text-muted-foreground">{s.shift}</p>
                       </div>
-                      <span className={cn(
-                        "text-xl font-black",
-                        rate >= 80 ? "text-emerald-600" : "text-rose-500"
-                      )}>
-                        {rate}%
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>계획 <strong className="text-foreground">{s.planned}</strong></span>
-                      <span>/</span>
-                      <span>출근 <strong className="text-blue-600">{s.actual}</strong></span>
-                      <span>/</span>
-                      <span>미출근 <strong className="text-rose-500">{s.absent}</strong></span>
-                    </div>
-                    <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className={cn("h-full rounded-full", rate >= 80 ? "bg-emerald-500" : "bg-blue-400")}
-                        style={{ width: `${Math.min(rate, 100)}%` }}
-                      />
+                      <p className="text-2xl font-bold tracking-tight text-foreground">{rate}%</p>
+                      <p className="text-xs text-muted-foreground break-words leading-tight">
+                        계획 {s.planned}명 · 출근 {s.actual}명 · 미출근 {s.absent}명
+                      </p>
+                      <div className="mt-2 h-1.5 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full", rate >= 80 ? "bg-emerald-500" : "bg-blue-400")}
+                          style={{ width: `${Math.min(rate, 100)}%` }}
+                        />
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -492,9 +489,9 @@ export function AttendanceDashboard() {
           </div>
 
           {/* Shift × 센터 크로스 테이블 */}
-          <Card>
+          <Card className="bg-white border border-slate-200 rounded-xl">
             <CardHeader className="pb-2">
-              <CardTitle className="text-[14px]">근무조 × 센터별 출근 현황</CardTitle>
+              <CardTitle className="text-[15px]">근무조 × 센터별 출근 현황</CardTitle>
             </CardHeader>
             <CardContent className="p-0">
               <div className="overflow-x-auto">
@@ -551,12 +548,12 @@ export function AttendanceDashboard() {
       {activeTab === "coaching" && (
         <>
           {/* 코칭 대상자 (출근율 < 75%) */}
-          <Card>
+          <Card className="bg-white border border-slate-200 rounded-xl">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-4 w-4 text-amber-500" />
-                  <CardTitle className="text-[14px]">출근율 주의 그룹 (75% 미만)</CardTitle>
+                  <CardTitle className="text-[15px]">출근율 주의 그룹 (75% 미만)</CardTitle>
                 </div>
                 <span className="text-xs font-bold text-muted-foreground">
                   {coachingTargets.length}건
@@ -606,12 +603,12 @@ export function AttendanceDashboard() {
           </Card>
 
           {/* 코칭 기록 */}
-          <Card>
+          <Card className="bg-white border border-slate-200 rounded-xl">
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <MessageSquare className="h-4 w-4 text-blue-500" />
-                  <CardTitle className="text-[14px]">코칭 기록</CardTitle>
+                  <CardTitle className="text-[15px]">코칭 기록</CardTitle>
                 </div>
                 <Button variant="outline" size="sm" disabled>
                   + 코칭 기록 추가
