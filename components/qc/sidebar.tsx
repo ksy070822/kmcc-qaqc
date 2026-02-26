@@ -61,7 +61,7 @@ export function Sidebar({ currentTab, onTabChange, collapsed, onCollapsedChange,
           {!collapsed && (
             <div className="flex items-center gap-2">
               <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg" />
-              <span className="font-bold text-sidebar-foreground text-base whitespace-nowrap">상담품질 통합관리 시스템</span>
+              <span className="font-bold text-sidebar-foreground text-base whitespace-nowrap">KMCC 통합 관리 시스템</span>
             </div>
           )}
           {collapsed && (
