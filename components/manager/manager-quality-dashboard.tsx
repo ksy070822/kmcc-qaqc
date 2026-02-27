@@ -9,9 +9,10 @@ import { QADashboard } from "@/components/qc/qa-dashboard"
 import { CSATDashboard } from "@/components/qc/csat-dashboard"
 import { QuizDashboard } from "@/components/qc/quiz-dashboard"
 import { CoachingDashboard } from "@/components/qc/coaching"
+import { ProductivityDashboard } from "@/components/qc/productivity-dashboard"
 import { cn, getThursdayWeek, formatDate } from "@/lib/utils"
 
-type TabValue = "qc" | "qa" | "csat" | "quiz" | "coaching"
+type TabValue = "qc" | "qa" | "csat" | "quiz" | "productivity" | "coaching"
 type PeriodMode = "weekly" | "monthly" | "custom"
 
 const TABS: Array<{ value: TabValue; label: string }> = [
@@ -19,6 +20,7 @@ const TABS: Array<{ value: TabValue; label: string }> = [
   { value: "qa", label: "QA" },
   { value: "csat", label: "상담평점" },
   { value: "quiz", label: "직무테스트" },
+  { value: "productivity", label: "생산성" },
   { value: "coaching", label: "코칭" },
 ]
 
@@ -279,6 +281,9 @@ export function ManagerQualityDashboard({ center, service }: ManagerQualityDashb
       )}
       {activeTab === "quiz" && (
         <QuizDashboard externalMonth={monthStr} scope={scope} />
+      )}
+      {activeTab === "productivity" && (
+        <ProductivityDashboard />
       )}
       {activeTab === "coaching" && (
         <CoachingDashboard
