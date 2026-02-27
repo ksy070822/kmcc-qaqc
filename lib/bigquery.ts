@@ -1323,6 +1323,8 @@ export interface WatchListItem {
   registeredAt?: string;
   /** 주간 상태: 'new' 신규편입, 'continuing' 연속, 'resolving' 해소예정(1주 기준↓) */
   weeklyStatus?: 'new' | 'continuing' | 'resolving';
+  /** QC 대상 미해당 (2월까지 용산 대리유선/퀵) */
+  qcExcluded?: boolean;
 }
 
 export async function getWatchList(filters?: {
@@ -1571,10 +1573,20 @@ export async function getWatchList(filters?: {
       }
 
       // service 정규화 (STRING_AGG 결과에서 각각 매핑)
+      const rawServices = (cur.services || '').toLowerCase();
+      const rawChannels = (cur.channels || '').toLowerCase();
       const serviceStr = (cur.services || '').split(', ')
         .map((s: string) => mapServiceName(s.trim(), cur.center))
         .filter(Boolean)
         .join(', ');
+
+      // QC 대상 미해당: 2월까지 용산 대리(유선), 퀵
+      const isYongsan = cur.center === '용산';
+      const periodEnd = weekEnd;
+      const isBeforeMarch = periodEnd <= '2026-02-28';
+      const isDaeriYuseon = rawServices.includes('대리') && rawChannels.includes('유선');
+      const isQuick = rawServices.includes('퀵');
+      const qcExcluded = isYongsan && isBeforeMarch && (isDaeriYuseon || isQuick);
 
       result.push({
         agentId: cur.agent_id,
@@ -1587,10 +1599,11 @@ export async function getWatchList(filters?: {
         totalRate: totalRate,
         trend: trend,
         evaluationCount: evalCount,
-        reason,
+        reason: qcExcluded ? 'QC 대상 미해당' : reason,
         topErrors,
         registeredAt: cur.first_eval_date ? cur.first_eval_date.value || String(cur.first_eval_date) : undefined,
         weeklyStatus,
+        qcExcluded,
       });
     }
 

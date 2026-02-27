@@ -19,6 +19,7 @@ export interface WatchListAgent {
   topErrors: string[]
   registeredAt?: string
   weeklyStatus?: "new" | "continuing" | "resolving"
+  qcExcluded?: boolean
 }
 
 interface UseWatchListOptions {

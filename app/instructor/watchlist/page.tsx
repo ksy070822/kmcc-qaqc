@@ -36,6 +36,7 @@ interface WatchAgent {
   reason: string
   topErrors: string[]
   weeklyStatus?: "new" | "continuing" | "resolving"
+  qcExcluded?: boolean
   // 7도메인 확장 필드 (API가 아직 미제공 가능 — optional)
   qaScore?: number | null
   csatScore?: number | null
@@ -256,11 +257,12 @@ export default function InstructorWatchlistPage() {
                 ) : (
                   filtered.map((agent) => {
                     const isHigh = agent.attitudeRate > 3.3 || agent.opsRate > 3.9
+                    const excluded = agent.qcExcluded
                     return (
-                      <tr key={agent.agentId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                      <tr key={agent.agentId} className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 ${excluded ? "opacity-50" : ""}`}>
                         <td className="py-2.5 px-3">
                           <div className="flex items-center gap-2">
-                            {isHigh && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
+                            {isHigh && !excluded && <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />}
                             <div>
                               <div className="font-medium text-slate-900">{agent.agentName}</div>
                               <div className="text-xs text-slate-400">{agent.agentId}</div>
@@ -270,12 +272,12 @@ export default function InstructorWatchlistPage() {
                         <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{agent.service}/{agent.channel}</td>
                         <td className="py-2.5 px-3 text-right text-slate-900">{agent.evaluationCount}건</td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={agent.attitudeRate >= 3.0 ? "text-red-600 font-medium" : "text-slate-900"}>
+                          <span className={!excluded && agent.attitudeRate >= 3.0 ? "text-red-600 font-medium" : "text-slate-900"}>
                             {agent.attitudeRate.toFixed(1)}%
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={agent.opsRate >= 0.91 ? "text-red-600 font-medium" : "text-slate-900"}>
+                          <span className={!excluded && agent.opsRate >= 0.91 ? "text-red-600 font-medium" : "text-slate-900"}>
                             {agent.opsRate.toFixed(2)}%
                           </span>
                         </td>
@@ -289,7 +291,10 @@ export default function InstructorWatchlistPage() {
                           <ScoreCell value={agent.quizScore} low={70} suffix="점" />
                         </td>
                         <td className="py-2.5 px-3">
-                          <WeeklyStatusBadge status={agent.weeklyStatus} trend={agent.trend} />
+                          {excluded
+                            ? <Badge className="bg-slate-100 text-slate-500 border-slate-200 text-[10px] px-1.5 py-0">QC 미해당</Badge>
+                            : <WeeklyStatusBadge status={agent.weeklyStatus} trend={agent.trend} />
+                          }
                         </td>
                       </tr>
                     )
