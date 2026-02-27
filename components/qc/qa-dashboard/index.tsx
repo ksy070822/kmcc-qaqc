@@ -52,7 +52,7 @@ export function QADashboard({ externalMonth, scope }: QADashboardProps) {
   }, [externalMonth])
 
   const { stats, centerStats, trendData, underperformerCount, loading, error, refresh } = useQADashboardData(
-    filterStartDate, filterEndDate
+    filterStartDate, filterEndDate, scope
   )
 
   const showLoading = isMounted && loading

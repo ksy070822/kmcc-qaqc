@@ -84,7 +84,7 @@ function buildFilterClause(
 export async function getQADashboardStats(
   startMonth?: string | null,
   endMonth?: string | null,
-  options?: { minTenureMonths?: number }
+  options?: { minTenureMonths?: number; center?: string; service?: string }
 ): Promise<{ success: boolean; data?: QADashboardStats; error?: string }> {
   try {
     const bq = getBigQueryClient()
@@ -113,6 +113,17 @@ export async function getQADashboardStats(
       params.minTenure = options.minTenureMonths
     }
 
+    // 센터/서비스 스코핑 (관리자 모드)
+    let scopeFilter = ""
+    if (options?.center) {
+      scopeFilter += " AND q.center = @scopeCenter"
+      params.scopeCenter = options.center
+    }
+    if (options?.service) {
+      scopeFilter += " AND q.service = @scopeService"
+      params.scopeService = options.service
+    }
+
     const query = `
       WITH current_period AS (
         SELECT
@@ -130,7 +141,7 @@ export async function getQADashboardStats(
           AVG(CASE WHEN q.center = '광주' AND q.channel = '유선' THEN q.total_score END) AS gwangju_voice_avg,
           AVG(CASE WHEN q.center = '광주' AND q.channel = '채팅' THEN q.total_score END) AS gwangju_chat_avg
         FROM ${TABLE} q
-        WHERE ${monthFilter}${tenureFilter}
+        WHERE ${monthFilter}${tenureFilter}${scopeFilter}
       ),
       prev_period AS (
         SELECT
@@ -138,7 +149,7 @@ export async function getQADashboardStats(
           AVG(CASE WHEN q.channel = '유선' THEN q.total_score END) AS prev_voice_avg,
           AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS prev_chat_avg
         FROM ${TABLE} q
-        WHERE q.evaluation_month = @prevMonth${tenureFilter}
+        WHERE q.evaluation_month = @prevMonth${tenureFilter}${scopeFilter}
       )
       SELECT
         c.avg_score,
@@ -282,10 +293,22 @@ export async function getQACenterStats(
  * QA 점수 월별 추이 (센터별)
  */
 export async function getQAScoreTrend(
-  months = 6
+  months = 6,
+  options?: { center?: string; service?: string }
 ): Promise<{ success: boolean; data?: QATrendData[]; error?: string }> {
   try {
     const bq = getBigQueryClient()
+
+    let scopeFilter = ""
+    const params: Record<string, string | number> = { months }
+    if (options?.center) {
+      scopeFilter += " AND q.center = @scopeCenter"
+      params.scopeCenter = options.center
+    }
+    if (options?.service) {
+      scopeFilter += " AND q.service = @scopeService"
+      params.scopeService = options.service
+    }
 
     const query = `
       SELECT
@@ -295,11 +318,12 @@ export async function getQAScoreTrend(
         AVG(CASE WHEN q.center = '광주' THEN q.total_score END) AS gwangju_avg
       FROM ${TABLE} q
       WHERE q.evaluation_month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE(), INTERVAL @months MONTH))
+        ${scopeFilter}
       GROUP BY q.evaluation_month
       ORDER BY q.evaluation_month
     `
 
-    const [rows] = await bq.query({ query, params: { months } })
+    const [rows] = await bq.query({ query, params })
     const data: QATrendData[] = (rows as Record<string, unknown>[]).map(row => ({
       month: String(row.month),
       용산: Math.round((Number(row.yongsan_avg) || 0) * 10) / 10,
@@ -686,7 +710,8 @@ export async function getQAAgentPerformance(
  */
 export async function getQAUnderperformerCount(
   startMonth?: string | null,
-  endMonth?: string | null
+  endMonth?: string | null,
+  options?: { center?: string; service?: string }
 ): Promise<{ success: boolean; data?: { yongsan: number; gwangju: number; total: number }; error?: string }> {
   try {
     const bq = getBigQueryClient()
@@ -702,6 +727,17 @@ export async function getQAUnderperformerCount(
       delete params.month
     }
 
+    // 센터/서비스 스코핑
+    let scopeFilter = ""
+    if (options?.center) {
+      scopeFilter += " AND q.center = @scopeCenter"
+      params.scopeCenter = options.center
+    }
+    if (options?.service) {
+      scopeFilter += " AND q.service = @scopeService"
+      params.scopeService = options.service
+    }
+
     const normalizedService = serviceNormalizeSql("q")
 
     const query = `
@@ -714,7 +750,7 @@ export async function getQAUnderperformerCount(
           COUNT(*) AS eval_count,
           AVG(q.total_score) AS agent_avg
         FROM ${TABLE} q
-        WHERE ${monthFilter}
+        WHERE ${monthFilter}${scopeFilter}
         GROUP BY q.agent_name, q.center, ${normalizedService}, q.channel
         HAVING COUNT(*) >= 5
       ),
@@ -725,7 +761,7 @@ export async function getQAUnderperformerCount(
           q.channel,
           AVG(q.total_score) AS group_avg
         FROM ${TABLE} q
-        WHERE ${monthFilter}
+        WHERE ${monthFilter}${scopeFilter}
         GROUP BY q.center, ${normalizedService}, q.channel
       ),
       underperformers AS (

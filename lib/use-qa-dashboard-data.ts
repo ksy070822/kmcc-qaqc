@@ -5,7 +5,7 @@ import type { QADashboardStats, QACenterStats, QATrendData } from "@/lib/types"
 
 const API_BASE = "/api/data"
 
-export function useQADashboardData(startMonth?: string, endMonth?: string) {
+export function useQADashboardData(startMonth?: string, endMonth?: string, scope?: { center?: string; service?: string }) {
   const [stats, setStats] = useState<QADashboardStats | null>(null)
   const [centerStats, setCenterStats] = useState<QACenterStats[]>([])
   const [trendData, setTrendData] = useState<QATrendData[]>([])
@@ -21,12 +21,13 @@ export function useQADashboardData(startMonth?: string, endMonth?: string) {
 
     try {
       const monthParams = `${startMonth ? `&startMonth=${startMonth}` : ""}${endMonth ? `&endMonth=${endMonth}` : ""}`
+      const scopeParams = `${scope?.center ? `&center=${encodeURIComponent(scope.center)}` : ""}${scope?.service ? `&service=${encodeURIComponent(scope.service)}` : ""}`
 
       const [statsRes, centersRes, trendRes, underRes] = await Promise.all([
-        fetch(`${API_BASE}?type=qa-dashboard${monthParams}`),
-        fetch(`${API_BASE}?type=qa-centers${monthParams}`),
-        fetch(`${API_BASE}?type=qa-trend&months=6`),
-        fetch(`${API_BASE}?type=qa-underperformer-count${monthParams}`),
+        fetch(`${API_BASE}?type=qa-dashboard${monthParams}${scopeParams}`),
+        fetch(`${API_BASE}?type=qa-centers${monthParams}${scopeParams}`),
+        fetch(`${API_BASE}?type=qa-trend&months=6${scopeParams}`),
+        fetch(`${API_BASE}?type=qa-underperformer-count${monthParams}${scopeParams}`),
       ])
 
       const [statsData, centersData, trendDataRes, underData] = await Promise.all([
@@ -64,7 +65,7 @@ export function useQADashboardData(startMonth?: string, endMonth?: string) {
     } finally {
       setLoading(false)
     }
-  }, [startMonth, endMonth])
+  }, [startMonth, endMonth, scope?.center, scope?.service])
 
   useEffect(() => {
     setMounted(true)

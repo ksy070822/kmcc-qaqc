@@ -457,7 +457,11 @@ export async function GET(request: Request) {
       case "qa-dashboard":
         result = await getQADashboardStats(
           searchParams.get("startMonth"),
-          searchParams.get("endMonth")
+          searchParams.get("endMonth"),
+          {
+            center: searchParams.get("center") || undefined,
+            service: searchParams.get("service") || undefined,
+          }
         )
         break
 
@@ -470,7 +474,10 @@ export async function GET(request: Request) {
 
       case "qa-trend": {
         const qaMonths = parseInt(searchParams.get("months") || "6")
-        result = await getQAScoreTrend(qaMonths)
+        result = await getQAScoreTrend(qaMonths, {
+          center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
+        })
         break
       }
 
@@ -521,7 +528,11 @@ export async function GET(request: Request) {
       case "qa-underperformer-count":
         result = await getQAUnderperformerCount(
           searchParams.get("startMonth"),
-          searchParams.get("endMonth")
+          searchParams.get("endMonth"),
+          {
+            center: searchParams.get("center") || undefined,
+            service: searchParams.get("service") || undefined,
+          }
         )
         break
 
