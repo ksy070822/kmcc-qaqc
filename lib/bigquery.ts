@@ -1329,6 +1329,7 @@ export interface WatchListItem {
 
 export async function getWatchList(filters?: {
   center?: string;
+  service?: string;
   channel?: string;
   tenure?: string;
   month?: string;
@@ -1380,6 +1381,7 @@ export async function getWatchList(filters?: {
     const prev2WeekEnd = new Date(we); prev2WeekEnd.setDate(we.getDate() - 14);
 
     const centerFilter = filters?.center && filters.center !== 'all' ? 'AND center = @center' : '';
+    const serviceFilter = filters?.service && filters.service !== 'all' ? 'AND service = @service' : '';
     const channelFilter = filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : '';
 
     const params: any = {
@@ -1391,6 +1393,7 @@ export async function getWatchList(filters?: {
       prev2WeekEnd: prev2WeekEnd.toISOString().slice(0, 10),
     };
     if (filters?.center && filters.center !== 'all') params.center = filters.center;
+    if (filters?.service && filters.service !== 'all') params.service = filters.service;
     if (filters?.channel && filters.channel !== 'all') params.channel = filters.channel;
 
     // 3주간 데이터를 한번에 조회 (현재주 + 이전1주 + 이전2주)
@@ -1432,6 +1435,7 @@ export async function getWatchList(filters?: {
         FROM ${EVAL_TABLE}
         WHERE evaluation_date BETWEEN @prev2WeekStart AND @weekEnd
           ${centerFilter}
+          ${serviceFilter}
           ${channelFilter}
         GROUP BY agent_id, agent_name, center, period
         HAVING COUNT(*) >= 5 OR period != 'current'

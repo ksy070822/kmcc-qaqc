@@ -315,7 +315,7 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-900">
-                        {agent.agentName} ({agent.agentId})
+                        {agent.agentId} / {agent.agentName}
                       </span>
                       <Badge variant="outline" className="bg-white border-slate-200 text-xs">
                         {agent.center} {agent.service}

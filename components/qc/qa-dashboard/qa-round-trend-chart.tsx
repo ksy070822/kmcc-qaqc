@@ -338,7 +338,7 @@ export function QARoundTrendChart({ center, service, channel, tenure, roundMonth
                     dataKey="실제"
                     position="top"
                     offset={8}
-                    content={({ x, y, value, index }: { x?: number; y?: number; value?: number; index?: number }) => {
+                    content={(({ x, y, value, index }: { x?: number; y?: number; value?: number; index?: number }) => {
                       if (!value || x == null || y == null || index == null) return null
                       const item = totalChartData.items[index]
                       const diff = item?.차이
@@ -354,7 +354,7 @@ export function QARoundTrendChart({ center, service, channel, tenure, roundMonth
                           )}
                         </g>
                       )
-                    }}
+                    }) as any}
                   />
                 </Line>
               </ComposedChart>

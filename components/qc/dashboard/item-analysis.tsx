@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, Fragment } from "react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
@@ -91,7 +91,8 @@ function MiniLineChart({ values, color, globalMax }: { values: number[]; color: 
 }
 
 export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel, selectedTenure, selectedDate, startDate: propStartDate, endDate: propEndDate }: ItemAnalysisProps) {
-  const [selectedCategory, setSelectedCategory] = useState<string>("all")
+  const [localCenter, setLocalCenter] = useState<string>("all")
+  const [activeTab, setActiveTab] = useState("trend-overview")
 
   // 날짜 범위: filter(주차 선택) 우선, 없으면 selectedDate, 없으면 오늘
   const endDate = propEndDate ?? (selectedDate ? new Date(selectedDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0])
@@ -107,8 +108,10 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
   weeklyStart.setDate(weeklyStart.getDate() - 56)
   const weeklyStartStr = weeklyStart.toISOString().split("T")[0]
 
+  // 로컬 센터 필터가 선택되면 우선, 아니면 상위 필터 사용
+  const effectiveCenter = localCenter !== "all" ? localCenter : (selectedCenter !== "all" ? selectedCenter : undefined)
   const filterOpts = {
-    center: selectedCenter !== "all" ? selectedCenter : undefined,
+    center: effectiveCenter,
     service: selectedService !== "all" ? selectedService : undefined,
     channel: selectedChannel !== "all" ? selectedChannel : undefined,
   }
@@ -296,7 +299,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
     )
   }
 
-  if (loading) {
+  if (loading && itemStatsData.length === 0) {
     return (
       <div className="flex items-center justify-center py-8">
         <Loader2 className="h-6 w-6 animate-spin mr-2" />
@@ -315,19 +318,19 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
     <div>
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-bold text-gray-800">평가항목별 현황</h3>
-        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+        <Select value={localCenter} onValueChange={setLocalCenter}>
           <SelectTrigger className="w-[140px] h-8 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">전체</SelectItem>
-            <SelectItem value="상담태도">상담태도</SelectItem>
-            <SelectItem value="오상담/오처리">오상담/오처리</SelectItem>
+            <SelectItem value="용산">용산</SelectItem>
+            <SelectItem value="광주">광주</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <Tabs defaultValue="trend-overview" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="mb-4">
           <TabsTrigger value="trend-overview">추이 총괄</TabsTrigger>
           <TabsTrigger value="chart">차트</TabsTrigger>
@@ -336,10 +339,8 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
 
         {/* ── 추이 총괄 ── */}
         <TabsContent value="trend-overview">
-          {(selectedCategory === "all" || selectedCategory === "상담태도") &&
-            renderTrendTable(attitudeItems, NAVY, "상담태도 (5개 항목)")}
-          {(selectedCategory === "all" || selectedCategory === "오상담/오처리") &&
-            renderTrendTable(processItems, KAKAO, "오상담/오처리 (11개 항목)")}
+          {renderTrendTable(attitudeItems, NAVY, "상담태도 (5개 항목)")}
+          {renderTrendTable(processItems, KAKAO, "오상담/오처리 (11개 항목)")}
         </TabsContent>
 
         {/* ── 차트 (QA V2 MODI 인라인 미니바 스타일) ── */}
@@ -357,14 +358,14 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
               </thead>
               <tbody>
                 {[
-                  { label: "상담태도", items: attitudeItems, show: selectedCategory === "all" || selectedCategory === "상담태도" },
-                  { label: "오상담/오처리", items: processItems, show: selectedCategory === "all" || selectedCategory === "오상담/오처리" },
-                ].filter(g => g.show).map((group, gi) => {
+                  { label: "상담태도", items: attitudeItems },
+                  { label: "오상담/오처리", items: processItems },
+                ].map((group, gi) => {
                   const maxRate = Math.max(...group.items.map(i => i.errorRate), 0.1)
                   return (
-                    <>
+                    <Fragment key={`group-${gi}`}>
                       {/* 카테고리 구분 행 */}
-                      <tr key={`cat-${gi}`}>
+                      <tr>
                         <td
                           colSpan={5}
                           className="pt-4 pb-1.5 px-3"
@@ -452,7 +453,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                           </tr>
                         )
                       })}
-                    </>
+                    </Fragment>
                   )
                 })}
               </tbody>
@@ -475,7 +476,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
               </thead>
               <tbody>
                 {/* 상담태도 항목 */}
-                {(selectedCategory === "all" || selectedCategory === "상담태도") && attitudeItems.map((item) => (
+                {attitudeItems.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <Badge variant="outline" className="text-xs border-[#6B93D6] text-[#6B93D6] bg-slate-50">태도</Badge>
@@ -492,7 +493,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                   </tr>
                 ))}
                 {/* 태도 합계 */}
-                {(selectedCategory === "all" || selectedCategory === "상담태도") && (() => {
+                {(() => {
                   const attCount = attitudeItems.reduce((s, i) => s + i.errorCount, 0)
                   const attRate = attitudeItems.reduce((s, i) => s + i.errorRate, 0)
                   const attTrend = attitudeItems.reduce((s, i) => s + i.trend, 0)
@@ -510,7 +511,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                 })()}
 
                 {/* 오상담/오처리 항목 */}
-                {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && processItems.map((item) => (
+                {processItems.map((item) => (
                   <tr key={item.id}>
                     <td>
                       <Badge variant="outline" className="text-xs border-[#9E9E9E] text-[#9E9E9E] bg-orange-50">업무</Badge>
@@ -527,7 +528,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                   </tr>
                 ))}
                 {/* 업무 합계 */}
-                {(selectedCategory === "all" || selectedCategory === "오상담/오처리") && (() => {
+                {(() => {
                   const procCount = processItems.reduce((s, i) => s + i.errorCount, 0)
                   const procRate = processItems.reduce((s, i) => s + i.errorRate, 0)
                   const procTrend = processItems.reduce((s, i) => s + i.trend, 0)
@@ -545,7 +546,7 @@ export function ItemAnalysis({ selectedCenter, selectedService, selectedChannel,
                 })()}
 
                 {/* 전체 합계 */}
-                {selectedCategory === "all" && (() => {
+                {(() => {
                   const allCount = itemData.reduce((s, i) => s + i.errorCount, 0)
                   const allRate = itemData.reduce((s, i) => s + i.errorRate, 0)
                   const allTrend = itemData.reduce((s, i) => s + i.trend, 0)

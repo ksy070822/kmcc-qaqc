@@ -94,12 +94,14 @@ export async function getCenterMultiDomainMetrics(
   thisWeekStart: string,
   thisWeekEnd: string,
   prevWeekStart: string,
+  service?: string,
 ): Promise<MultiDomainMetrics> {
   const bq = getBigQueryClient()
   const currentMonth = thisWeekEnd.slice(0, 7) // YYYY-MM
   const prevMonth = getPrevMonth(currentMonth)
 
   const centerFilter = center ? "AND e.center = @center" : ""
+  const serviceFilter = service ? "AND e.service = @service" : ""
   const qaCenterFilter = center ? "AND q.center = @center" : ""
   const quizCenterFilter = center
     ? `AND ${QUIZ_CENTER_SQL} = @center`
@@ -113,6 +115,7 @@ export async function getCenterMultiDomainMetrics(
     prevMonth,
   }
   if (center) params.center = center
+  if (service) params.service = service
 
   // ── QC (주간 기준) ──
   const qcQuery = `
@@ -124,7 +127,7 @@ export async function getCenterMultiDomainMetrics(
         SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) AS att_errors,
         SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) AS ops_errors
       FROM ${EVALUATIONS} e
-      WHERE e.evaluation_date >= @thisWeekStart AND e.evaluation_date <= @thisWeekEnd ${centerFilter}
+      WHERE e.evaluation_date >= @thisWeekStart AND e.evaluation_date <= @thisWeekEnd ${centerFilter} ${serviceFilter}
     ),
     prev_week AS (
       SELECT
@@ -132,7 +135,7 @@ export async function getCenterMultiDomainMetrics(
         SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) AS att_errors,
         SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) AS ops_errors
       FROM ${EVALUATIONS} e
-      WHERE e.evaluation_date >= @prevWeekStart AND e.evaluation_date < @thisWeekStart ${centerFilter}
+      WHERE e.evaluation_date >= @prevWeekStart AND e.evaluation_date < @thisWeekStart ${centerFilter} ${serviceFilter}
     )
     SELECT
       tw.evals, tw.agents, tw.group_cnt, tw.att_errors, tw.ops_errors,

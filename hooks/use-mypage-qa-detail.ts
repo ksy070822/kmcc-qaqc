@@ -9,7 +9,7 @@ export function useMypageQADetail(agentId: string | null, month?: string) {
   const [error, setError] = useState<string | null>(null)
 
   const fetch_ = useCallback(async () => {
-    if (!agentId) return
+    if (!agentId) { setLoading(false); return }
     setLoading(true)
     setError(null)
     try {

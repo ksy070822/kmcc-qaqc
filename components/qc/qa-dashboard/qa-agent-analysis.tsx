@@ -148,8 +148,7 @@ export function QAAgentAnalysis({ center, service, channel, tenure, startMonth, 
           <table className="data-table w-full">
             <thead>
               <tr>
-                <th className="text-left">이름</th>
-                <th className="text-left">닉네임</th>
+                <th className="text-left">아이디 / 이름</th>
                 <th className="text-right">평가건수</th>
                 <th className="text-right">평균점수</th>
                 <th className="text-right">차이</th>
@@ -161,8 +160,7 @@ export function QAAgentAnalysis({ center, service, channel, tenure, startMonth, 
                 .sort((a, b) => a.diff - b.diff)
                 .map((agent, i) => (
                 <tr key={i}>
-                  <td className="text-left font-medium">{agent.agentName}</td>
-                  <td className="text-left">{agent.agentId || "-"}</td>
+                  <td className="text-left font-medium">{agent.agentId} / {agent.agentName}</td>
                   <td className="text-right">{agent.evaluations}건</td>
                   <td className="text-right">
                     <span className={cn("font-medium", agent.diff < -3 ? "text-red-500" : agent.diff < -1 ? "text-amber-600" : "text-gray-700")}>

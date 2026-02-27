@@ -152,7 +152,10 @@ export function GoalCard({ goal, onEdit }: GoalCardProps) {
             <p
               className={cn(
                 "text-2xl font-bold",
-                goal.currentErrorRate <= goal.targetErrorRate ? "text-emerald-600" : "text-red-600",
+                goal.status === "achieved" ? "text-emerald-600" :
+                goal.status === "on-track" ? "text-blue-600" :
+                goal.status === "at-risk" ? "text-amber-600" :
+                "text-red-600",
               )}
             >
               {goal.currentErrorRate.toFixed(2)}%

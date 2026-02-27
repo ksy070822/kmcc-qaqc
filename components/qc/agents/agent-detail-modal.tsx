@@ -105,7 +105,7 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
               <User className="h-5 w-5 text-primary" />
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xl">{agent.name}</span>
+              <span className="text-xl">{agent.id} / {agent.name}</span>
               <Badge
                 className={cn(
                   agent.status === "양호"

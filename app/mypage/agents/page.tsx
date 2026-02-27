@@ -19,6 +19,7 @@ export default function AgentsPage() {
   const [data, setData] = useState<AgentSummaryRow[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedAgent, setSelectedAgent] = useState<string | null>(null)
+  const [selectedAgentData, setSelectedAgentData] = useState<AgentSummaryRow | null>(null)
   const [detailView, setDetailView] = useState<DetailView>("main")
 
   const fetchData = useCallback(async () => {
@@ -51,6 +52,7 @@ export default function AgentsPage() {
   if (selectedAgent) {
     const goBackToList = () => {
       setSelectedAgent(null)
+      setSelectedAgentData(null)
       setDetailView("main")
     }
     const goBackToMain = () => setDetailView("main")
@@ -81,7 +83,16 @@ export default function AgentsPage() {
         </button>
         <MypageMainView
           agentId={selectedAgent}
-          user={{ userId: selectedAgent, userName: selectedAgent, role: "agent", center: null, service: null, channel: null, agentId: selectedAgent }}
+          user={{
+            userId: selectedAgent,
+            userName: selectedAgentData?.name || selectedAgent,
+            role: "agent",
+            center: selectedAgentData?.center || null,
+            service: null,
+            channel: null,
+            agentId: selectedAgent,
+            workHours: null,
+          }}
           onNavigate={(view) => setDetailView(view as DetailView)}
         />
       </div>
@@ -100,7 +111,10 @@ export default function AgentsPage() {
       <AgentListTable
         data={data}
         loading={loading}
-        onSelect={setSelectedAgent}
+        onSelect={(agentId) => {
+          setSelectedAgent(agentId)
+          setSelectedAgentData(data.find(a => a.agentId === agentId) ?? null)
+        }}
         centerFilter={centerFilter}
         onCenterChange={setCenterFilter}
       />

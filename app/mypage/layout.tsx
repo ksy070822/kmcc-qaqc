@@ -7,12 +7,14 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/hooks/use-auth"
 import Image from "next/image"
+import { NoticeBell } from "@/components/mypage/notice-bell"
 import {
   ChevronLeft,
   LayoutDashboard,
   CalendarDays,
   CalendarRange,
   MessageSquare,
+  Megaphone,
   LogOut,
   Loader2,
   User,
@@ -20,6 +22,7 @@ import {
 } from "lucide-react"
 
 const mypageNavItems = [
+  { id: "/mypage/notices", label: "공지사항", icon: Megaphone },
   { id: "/mypage", label: "통합 현황", icon: LayoutDashboard, exact: true },
   { id: "/mypage/weekly", label: "주간 리포트", icon: CalendarDays },
   { id: "/mypage/monthly", label: "월간 리포트", icon: CalendarRange },
@@ -57,13 +60,13 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
           {/* 헤더 */}
           <div className="flex h-16 items-center justify-between border-b border-sidebar-border px-4">
             {!collapsed && (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push("/mypage")}>
                 <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg" />
                 <span className="font-bold text-sidebar-foreground text-base whitespace-nowrap">KMCC 통합 관리 시스템</span>
               </div>
             )}
             {collapsed && (
-              <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg" />
+              <Image src="/kakaot_logo1.png" alt="카카오T" width={32} height={32} className="rounded-lg cursor-pointer" onClick={() => router.push("/mypage")} />
             )}
             {!collapsed && (
               <Button
@@ -99,7 +102,7 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
                   <User className="h-4 w-4 text-sidebar-foreground" />
                 </div>
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-sidebar-foreground truncate">{user.userId}</div>
+                  <div className="text-sm font-medium text-sidebar-foreground truncate">{user.userId} / {user.userName}</div>
                   <div className="text-xs text-sidebar-foreground/60 truncate">
                     {user.center} {user.service && `/ ${user.service}`}
                   </div>
@@ -195,8 +198,11 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
               </span>
             )}
           </div>
-          <div className="text-xs text-slate-400">
-            카카오 T 고객센터 품질 통합 관리 시스템
+          <div className="flex items-center gap-2">
+            <NoticeBell agentId={user?.userId ?? null} center={user?.center ?? null} />
+            <span className="text-xs text-slate-400">
+              KMCC 통합 관리 시스템 (Komi)
+            </span>
           </div>
         </header>
 

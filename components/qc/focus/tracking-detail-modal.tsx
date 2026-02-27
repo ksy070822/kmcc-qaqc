@@ -147,7 +147,7 @@ export function TrackingDetailModal({ open, onOpenChange, agent }: TrackingDetai
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-lg font-semibold text-slate-900">
-                    {agent.agentName} ({agent.agentId})
+                    {agent.agentId} / {agent.agentName}
                   </span>
                   <Badge className={cn("gap-1", statusConf.color)}>
                     {statusConf.icon}

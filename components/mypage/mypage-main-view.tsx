@@ -78,7 +78,7 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
       <div className="flex items-center gap-3">
         <div>
           <h1 className="text-xl font-bold text-slate-900">
-            {user?.userId ?? "상담사"}님, 반갑습니다!
+            {user?.userId ? `${user.userId} / ${user.userName ?? user.userId}` : "상담사"}님, 반갑습니다!
           </h1>
           <p className="text-sm text-slate-500 mt-0.5">
             {user?.center && <span>{user.center} · </span>}통합 품질 성과 현황을 확인하세요

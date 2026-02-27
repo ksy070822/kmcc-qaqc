@@ -189,7 +189,7 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
                   >
                     <td className="px-2 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">
                       <div className="flex items-center gap-1">
-                        <span className="truncate">{s.agentName || s.agentId}</span>
+                        <span className="truncate">{s.agentId} / {s.agentName || s.agentId}</span>
                         {s.watchTags && s.watchTags.length > 0 && (
                           <>
                             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200 shrink-0">

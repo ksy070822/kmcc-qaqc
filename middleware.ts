@@ -48,6 +48,7 @@ const ROLE_HOME: Record<UserRole, string> = {
 const PUBLIC_PATHS = [
   '/login',
   '/api/health',
+  '/api/auth',
   '/api/sync',
   '/api/sync-sheets',
   '/api/import-sheets-2025',
@@ -93,6 +94,7 @@ const ROLE_API_ACCESS: Record<UserRole, readonly string[]> = {
     '/api/weekly-reports',
     '/api/role-metrics',
     '/api/check-agent',
+    '/api/mypage',
   ],
   manager: [
     '/api/data',
@@ -103,6 +105,8 @@ const ROLE_API_ACCESS: Record<UserRole, readonly string[]> = {
     '/api/goals',
     '/api/role-metrics',
     '/api/check-agent',
+    '/api/mypage',
+    '/api/manager',
   ],
   agent: [
     '/api/mypage',

@@ -24,6 +24,7 @@ import type { UnderperformingAgent } from "@/lib/types"
 
 interface UnderperformingTableProps {
   center?: string
+  service?: string
   onViewDetail: (agent: UnderperformingAgent) => void
 }
 
@@ -58,11 +59,12 @@ const STATUS_CONFIG: Record<
   },
 }
 
-export function UnderperformingTable({ center, onViewDetail }: UnderperformingTableProps) {
+export function UnderperformingTable({ center, service, onViewDetail }: UnderperformingTableProps) {
   const [statusFilter, setStatusFilter] = useState("all")
 
   const { data: agents, loading, error } = useUnderperforming({
     center: center !== "all" ? center : undefined,
+    service,
     status: statusFilter !== "all" ? statusFilter : undefined,
   })
 
@@ -211,7 +213,7 @@ export function UnderperformingTable({ center, onViewDetail }: UnderperformingTa
                       return (
                         <TableRow key={agent.trackingId} className="hover:bg-slate-50">
                           <TableCell className="font-medium text-slate-900">
-                            {agent.agentName} ({agent.agentId})
+                            {agent.agentId} / {agent.agentName}
                           </TableCell>
                           <TableCell>
                             <Badge

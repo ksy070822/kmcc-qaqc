@@ -93,8 +93,8 @@ export default function InstructorMainPage() {
         </h2>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <KpiCard value={`${metrics?.qcEvaluations ?? 0}건`} label="주간 검수 건수" />
-          <KpiCard value={`${metrics?.qcAttitudeRate.toFixed(1) ?? "0.0"}%`} label="태도 오류율" diff={attDiff} higherIsBetter={false} />
-          <KpiCard value={`${metrics?.qcOpsRate.toFixed(1) ?? "0.0"}%`} label="오상담 오류율" diff={opsDiff} higherIsBetter={false} />
+          <KpiCard value={`${metrics?.qcAttitudeRate?.toFixed(1) ?? "0.0"}%`} label="태도 오류율" diff={attDiff} higherIsBetter={false} />
+          <KpiCard value={`${metrics?.qcOpsRate?.toFixed(1) ?? "0.0"}%`} label="오상담 오류율" diff={opsDiff} higherIsBetter={false} />
           <KpiCard value={`${metrics?.totalAgents ?? 0}명`} label={`관리 상담사 · ${metrics?.groupCount ?? 0}개 그룹`} />
         </div>
       </div>
@@ -108,19 +108,19 @@ export default function InstructorMainPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <DomainCard
             icon={ClipboardCheck} iconBg="bg-blue-50" iconColor="text-blue-600"
-            title="QA 평균 점수" value={`${metrics?.qaAvgScore.toFixed(1) ?? "0.0"}점`}
+            title="QA 평균 점수" value={`${metrics?.qaAvgScore?.toFixed(1) ?? "0.0"}점`}
             badge={`${metrics?.qaEvalCount ?? 0}건`}
             diff={qaDiff} higherIsBetter={true} suffix="점"
           />
           <DomainCard
             icon={Star} iconBg="bg-amber-50" iconColor="text-amber-600"
-            title="CSAT 평균 (5점)" value={`${metrics?.csatAvgScore.toFixed(2) ?? "0.00"}점`}
+            title="CSAT 평균 (5점)" value={`${metrics?.csatAvgScore?.toFixed(2) ?? "0.00"}점`}
             badge={`${metrics?.csatReviewCount ?? 0}건`}
             diff={csatDiff} higherIsBetter={true} suffix="점"
           />
           <DomainCard
             icon={BookOpen} iconBg="bg-green-50" iconColor="text-green-600"
-            title="직무테스트 평균" value={`${metrics?.quizAvgScore.toFixed(1) ?? "0.0"}점`}
+            title="직무테스트 평균" value={`${metrics?.quizAvgScore?.toFixed(1) ?? "0.0"}점`}
             badge={`${metrics?.quizAttemptCount ?? 0}건`}
             diff={quizDiff} higherIsBetter={true} suffix="점"
           />
@@ -136,12 +136,12 @@ export default function InstructorMainPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <DomainCard
             icon={Phone} iconBg="bg-indigo-50" iconColor="text-indigo-600"
-            title="유선 응대율" value={`${metrics?.voiceResponseRate.toFixed(1) ?? "0.0"}%`}
+            title="유선 응대율" value={`${metrics?.voiceResponseRate?.toFixed(1) ?? "0.0"}%`}
             badge="유선" diff={0} higherIsBetter={true} suffix="%p"
           />
           <DomainCard
             icon={MessageSquare} iconBg="bg-violet-50" iconColor="text-violet-600"
-            title="채팅 응대율" value={`${metrics?.chatResponseRate.toFixed(1) ?? "0.0"}%`}
+            title="채팅 응대율" value={`${metrics?.chatResponseRate?.toFixed(1) ?? "0.0"}%`}
             badge="채팅" diff={0} higherIsBetter={true} suffix="%p"
           />
         </div>
@@ -164,7 +164,7 @@ export default function InstructorMainPage() {
               </div>
               <div className="flex items-center gap-2">
                 <span className="text-2xl font-bold text-slate-900">
-                  {metrics?.slaScore.toFixed(1) ?? "0.0"}점
+                  {metrics?.slaScore?.toFixed(1) ?? "0.0"}점
                 </span>
                 <DiffBadge diff={slaDiff} higherIsBetter={true} suffix="점" />
               </div>
@@ -180,7 +180,7 @@ export default function InstructorMainPage() {
                 <SlaGradeBadge grade={metrics?.slaPrevGrade ?? "-"} />
               </div>
               <span className="text-2xl font-bold text-slate-900">
-                {metrics?.slaPrevScore.toFixed(1) ?? "0.0"}점
+                {metrics?.slaPrevScore?.toFixed(1) ?? "0.0"}점
               </span>
               <p className="text-xs text-slate-500 mt-1">전월 SLA 점수</p>
             </CardContent>
@@ -196,7 +196,7 @@ export default function InstructorMainPage() {
                 </Badge>
               </div>
               <span className="text-2xl font-bold text-slate-900">
-                {metrics?.attendanceRate.toFixed(1) ?? "0.0"}%
+                {metrics?.attendanceRate?.toFixed(1) ?? "0.0"}%
               </span>
               <p className="text-xs text-slate-500 mt-1">금일 출근율</p>
             </CardContent>
@@ -217,8 +217,8 @@ export default function InstructorMainPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <InfoItem label="소속 센터" value={user?.center || "전체"} />
             <InfoItem label="관리 상담사" value={`${metrics?.totalAgents ?? 0}명`} />
-            <InfoItem label="전주 태도 오류율" value={`${metrics?.qcPrevAttitudeRate.toFixed(1) ?? "0.0"}%`} />
-            <InfoItem label="전주 오상담 오류율" value={`${metrics?.qcPrevOpsRate.toFixed(1) ?? "0.0"}%`} />
+            <InfoItem label="전주 태도 오류율" value={`${metrics?.qcPrevAttitudeRate?.toFixed(1) ?? "0.0"}%`} />
+            <InfoItem label="전주 오상담 오류율" value={`${metrics?.qcPrevOpsRate?.toFixed(1) ?? "0.0"}%`} />
           </div>
         </CardContent>
       </Card>

@@ -90,8 +90,7 @@ export function AgentProfileModal({ profile, loading, error, onClose, onNavigate
             {profile && (
               <>
                 <h2 className="text-lg font-bold text-gray-900">
-                  {profile.agentName}
-                  <span className="text-sm font-normal text-gray-500 ml-2">{profile.agentId}</span>
+                  {profile.agentId} / {profile.agentName}
                 </h2>
                 <p className="text-sm text-gray-500">
                   {profile.center} {profile.service && `/ ${profile.service}`} {profile.channel && `/ ${profile.channel}`}

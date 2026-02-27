@@ -96,7 +96,7 @@ export default function InstructorWatchlistPage() {
   const newCount = agents.filter((a) => a.weeklyStatus === "new").length
   const continuingCount = agents.filter((a) => a.weeklyStatus === "continuing").length
 
-  // 도메인별 데이터 보유 상담사 수
+  // 항목별 데이터 보유 상담사 수
   const qaCount = agents.filter((a) => a.qaScore != null).length
   const csatCount = agents.filter((a) => a.csatScore != null).length
   const quizCount = agents.filter((a) => a.quizScore != null).length
@@ -172,11 +172,11 @@ export default function InstructorWatchlistPage() {
         </div>
       </div>
 
-      {/* ═══ 다도메인 데이터 보유 현황 ═══ */}
+      {/* ═══ 항목별 데이터 보유 현황 ═══ */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <ClipboardCheck className="h-4 w-4" />
-          다도메인 데이터 현황
+          항목별 데이터 현황
         </h2>
         <div className="grid grid-cols-3 gap-4">
           <DomainMiniCard
@@ -228,7 +228,7 @@ export default function InstructorWatchlistPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Target className="h-4 w-4 text-[#7c3aed]" />
-            집중관리 대상자 목록 (7도메인)
+            집중관리 대상자 목록
           </CardTitle>
         </CardHeader>
         <CardContent>

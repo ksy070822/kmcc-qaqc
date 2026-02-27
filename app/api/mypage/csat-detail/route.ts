@@ -5,13 +5,15 @@ export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
   const agentId = searchParams.get("agentId")
   const month = searchParams.get("month") || undefined
+  const period = (searchParams.get("period") || "monthly") as "weekly" | "monthly"
+  const weekOffset = Number(searchParams.get("weekOffset") || "0")
 
   if (!agentId) {
     return NextResponse.json({ success: false, error: "agentId required" }, { status: 400 })
   }
 
   try {
-    const data = await getAgentCSATDetail(agentId, month)
+    const data = await getAgentCSATDetail(agentId, month, period, weekOffset)
     return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error("[API] mypage/csat-detail error:", error)

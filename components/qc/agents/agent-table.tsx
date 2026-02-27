@@ -110,7 +110,7 @@ export function AgentTable({ agents, onSelectAgent }: AgentTableProps) {
           {sortedAgents.map((agent) => (
             <TableRow key={agent.id} className="cursor-pointer hover:bg-muted/50" onClick={() => onSelectAgent(agent)}>
               <TableCell>{getStatusBadge(agent.status)}</TableCell>
-              <TableCell className="font-medium">{agent.name} / {agent.id}</TableCell>
+              <TableCell className="font-medium">{agent.id} / {agent.name}</TableCell>
               <TableCell>
                 <span className="text-muted-foreground">
                   {agent.center} {agent.group}

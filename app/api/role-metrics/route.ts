@@ -19,6 +19,7 @@ export async function GET(request: NextRequest) {
       // ── 센터/그룹 단위 4도메인 KPI (강사/관리자 대시보드) ──
       case "multi-domain-metrics": {
         const center = searchParams.get("center") || undefined
+        const service = searchParams.get("service") || undefined
 
         // 최신 데이터 날짜 기반 주간 계산
         const refDateStr = searchParams.get("refDate")
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
           formatDate(thisWeek.start),
           formatDate(thisWeek.end),
           formatDate(prevWeek.start),
+          service,
         )
 
         return NextResponse.json({

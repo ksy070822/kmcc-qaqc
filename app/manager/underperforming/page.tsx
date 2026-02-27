@@ -8,6 +8,7 @@ import { TrackingDetailModal } from "@/components/qc/focus/tracking-detail-modal
 import { useAuth } from "@/hooks/use-auth"
 import type { UnderperformingAgent } from "@/lib/types"
 import type { MultiDomainMetrics, AgentMultiDomainRow } from "@/lib/bigquery-role-metrics"
+import { UNDERPERFORMING_THRESHOLDS_V2 } from "@/lib/constants"
 import {
   Loader2,
   ShieldCheck,
@@ -19,22 +20,26 @@ import {
   UserX,
 } from "lucide-react"
 
-// 도메인별 부진 판정 임계값
+// 항목별 부진 판정 임계값 (constants.ts UNDERPERFORMING_THRESHOLDS_V2 기반)
 const THRESHOLDS = {
-  qcAttitude: 3.0,   // 태도 오류율 3% 이상이면 부진
-  qcOps: 3.0,        // 오상담 오류율 3% 이상이면 부진
-  qa: 85,            // QA 85점 미만이면 부진
-  csat: 4.0,         // CSAT 4.0점 미만이면 부진
-  quiz: 70,          // 직무테스트 70점 미만이면 부진
+  qcAttitude: UNDERPERFORMING_THRESHOLDS_V2.qc_attitude.underperforming,
+  qcOps: UNDERPERFORMING_THRESHOLDS_V2.qc_misconsult.underperforming,
+  qa: UNDERPERFORMING_THRESHOLDS_V2.qa.underperforming,
+  csat: UNDERPERFORMING_THRESHOLDS_V2.csat.underperforming,
+  quiz: UNDERPERFORMING_THRESHOLDS_V2.quiz.underperforming,
 } as const
 
 export default function UnderperformingPage() {
   const { user } = useAuth()
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<UnderperformingAgent | null>(null)
+  const [channelFilter, setChannelFilter] = useState("")
+  const [shiftFilter, setShiftFilter] = useState("")
 
   // 7-domain agent data for summary
   const [agentList, setAgentList] = useState<AgentMultiDomainRow[]>([])
+  // HR 메타데이터 (shift 등)
+  const [hrMeta, setHrMeta] = useState<Map<string, { position: string; workHours: string; shift: string }>>(new Map())
   const [metrics, setMetrics] = useState<MultiDomainMetrics | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(true)
 
@@ -52,6 +57,7 @@ export default function UnderperformingPage() {
           center: user.center,
           month: currentMonth,
         })
+        if (user.service) agentParams.set("service", user.service)
 
         // Fetch center-level metrics for targets context
         const ldRes = await fetch("/api/data?type=latest-date")
@@ -63,10 +69,16 @@ export default function UnderperformingPage() {
           refDate,
           center: user.center,
         })
+        if (user.service) metricsParams.set("service", user.service)
 
-        const [agentRes, metricsRes] = await Promise.all([
+        // HR 메타데이터 조회
+        const hrParams = new URLSearchParams({ center: user.center })
+        if (user.service) hrParams.set("service", user.service)
+
+        const [agentRes, metricsRes, hrRes] = await Promise.all([
           fetch(`/api/role-metrics?${agentParams}`),
           fetch(`/api/role-metrics?${metricsParams}`),
+          fetch(`/api/manager/hr-metadata?${hrParams}`),
         ])
 
         const agentData = await agentRes.json()
@@ -78,6 +90,17 @@ export default function UnderperformingPage() {
         if (metricsData.success) {
           setMetrics(metricsData.metrics)
         }
+
+        try {
+          const hrData = await hrRes.json()
+          if (hrData.success && hrData.data) {
+            const map = new Map<string, { position: string; workHours: string; shift: string }>()
+            for (const m of hrData.data) {
+              map.set(m.id, { position: m.position, workHours: m.workHours, shift: m.shift })
+            }
+            setHrMeta(map)
+          }
+        } catch { /* silent */ }
       } catch {
         // silent
       } finally {
@@ -88,31 +111,56 @@ export default function UnderperformingPage() {
     fetchDomainSummary()
   }, [user?.center])
 
-  // 도메인별 부진 인원 계산
+  // 채널/시간대 필터링된 agent 목록
+  const filteredAgentList = useMemo(() => {
+    let list = agentList
+    if (channelFilter) {
+      list = list.filter(a => {
+        const hrChannel = hrMeta.get(a.agentId)?.position
+        return a.channel === channelFilter || hrChannel === channelFilter
+      })
+    }
+    if (shiftFilter) {
+      list = list.filter(a => hrMeta.get(a.agentId)?.shift === shiftFilter)
+    }
+    return list
+  }, [agentList, channelFilter, shiftFilter, hrMeta])
+
+  // 채널 옵션 추출 (agentList + hrMeta 기반)
+  const channelOptions = useMemo(() => {
+    const channels = new Set<string>()
+    for (const a of agentList) {
+      const ch = a.channel || hrMeta.get(a.agentId)?.position
+      if (ch) channels.add(ch)
+    }
+    return ["", ...Array.from(channels).sort()]
+  }, [agentList, hrMeta])
+
+  // 항목별 부진 인원 계산
   const domainCounts = useMemo(() => {
-    if (!agentList.length) {
+    if (!filteredAgentList.length) {
       return { qcAtt: 0, qcOps: 0, qa: 0, csat: 0, quiz: 0, total: 0 }
     }
 
-    const qcAtt = agentList.filter(
+    const qcAtt = filteredAgentList.filter(
       (a) => a.qcAttRate != null && a.qcAttRate >= THRESHOLDS.qcAttitude && a.qcEvalCount > 0
     ).length
-    const qcOps = agentList.filter(
+    const qcOps = filteredAgentList.filter(
       (a) => a.qcOpsRate != null && a.qcOpsRate >= THRESHOLDS.qcOps && a.qcEvalCount > 0
     ).length
-    const qa = agentList.filter(
+    const qa = filteredAgentList.filter(
       (a) => a.qaScore != null && a.qaScore < THRESHOLDS.qa
     ).length
-    const csat = agentList.filter(
+    const csat = filteredAgentList.filter(
       (a) => a.csatScore != null && a.csatScore < THRESHOLDS.csat
     ).length
-    const quiz = agentList.filter(
+    const quiz = filteredAgentList.filter(
       (a) => a.quizScore != null && a.quizScore < THRESHOLDS.quiz
     ).length
 
-    // 1개 이상 도메인에서 부진인 고유 상담사 수
+    // 1개 이상 항목에서 부진인 고유 상담사 수
     const underperformingIds = new Set<string>()
-    for (const a of agentList) {
+    for (const a of filteredAgentList) {
       if (
         (a.qcAttRate != null && a.qcAttRate >= THRESHOLDS.qcAttitude && a.qcEvalCount > 0) ||
         (a.qcOpsRate != null && a.qcOpsRate >= THRESHOLDS.qcOps && a.qcEvalCount > 0) ||
@@ -125,7 +173,7 @@ export default function UnderperformingPage() {
     }
 
     return { qcAtt, qcOps, qa, csat, quiz, total: underperformingIds.size }
-  }, [agentList])
+  }, [filteredAgentList])
 
   const handleViewDetail = (agent: UnderperformingAgent) => {
     setSelectedAgent(agent)
@@ -141,16 +189,63 @@ export default function UnderperformingPage() {
         </p>
       </div>
 
+      {/* 채널/시간대 필터 */}
+      <div className="flex flex-wrap items-center gap-3">
+        {channelOptions.length > 1 && (
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-slate-400 mr-1">채널</span>
+            {channelOptions.map(c => (
+              <button
+                key={c || "__all"}
+                onClick={() => setChannelFilter(c)}
+                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                  channelFilter === c
+                    ? "bg-[#1e3a5f] text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                {c || "전체"}
+              </button>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-1">
+          <span className="text-xs text-slate-400 mr-1">시간대</span>
+          {[
+            { value: "", label: "전체" },
+            { value: "day", label: "주간" },
+            { value: "evening", label: "야간" },
+            { value: "overnight", label: "심야" },
+          ].map(s => (
+            <button
+              key={s.value || "__all"}
+              onClick={() => setShiftFilter(s.value)}
+              className={`px-2.5 py-1 text-xs font-medium rounded-md transition-colors ${
+                shiftFilter === s.value
+                  ? "bg-[#1e3a5f] text-white"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+        <span className="text-xs text-slate-400 ml-auto">
+          {filteredAgentList.length}명{(channelFilter || shiftFilter) ? ` / 전체 ${agentList.length}명` : ""}
+        </span>
+      </div>
+
       {/* 7-Domain Underperforming Summary */}
       <DomainUnderperformingSummary
         counts={domainCounts}
         metrics={metrics}
-        totalAgents={agentList.length}
+        totalAgents={filteredAgentList.length}
         loading={summaryLoading}
       />
 
       <UnderperformingTable
         center={user?.center || undefined}
+        service={user?.service || undefined}
         onViewDetail={handleViewDetail}
       />
 
@@ -184,7 +279,7 @@ function DomainUnderperformingSummary({
         <CardContent className="py-6">
           <div className="flex items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin mr-2 text-slate-400" />
-            <span className="text-sm text-slate-500">도메인별 부진 현황 로딩 중...</span>
+            <span className="text-sm text-slate-500">항목별 부진 현황 로딩 중...</span>
           </div>
         </CardContent>
       </Card>
@@ -211,7 +306,7 @@ function DomainUnderperformingSummary({
       icon: ShieldCheck,
       iconBg: "bg-blue-50",
       iconColor: "text-[#1e3a5f]",
-      currentValue: `${metrics?.qcAttitudeRate.toFixed(1) ?? "0.0"}%`,
+      currentValue: `${metrics?.qcAttitudeRate?.toFixed(1) ?? "0.0"}%`,
     },
     {
       key: "qcOps",
@@ -221,7 +316,7 @@ function DomainUnderperformingSummary({
       icon: ShieldCheck,
       iconBg: "bg-blue-50",
       iconColor: "text-[#1e3a5f]",
-      currentValue: `${metrics?.qcOpsRate.toFixed(1) ?? "0.0"}%`,
+      currentValue: `${metrics?.qcOpsRate?.toFixed(1) ?? "0.0"}%`,
     },
     {
       key: "qa",
@@ -231,7 +326,7 @@ function DomainUnderperformingSummary({
       icon: ClipboardCheck,
       iconBg: "bg-sky-50",
       iconColor: "text-sky-600",
-      currentValue: `${metrics?.qaAvgScore.toFixed(1) ?? "0.0"}점`,
+      currentValue: `${metrics?.qaAvgScore?.toFixed(1) ?? "0.0"}점`,
     },
     {
       key: "csat",
@@ -241,7 +336,7 @@ function DomainUnderperformingSummary({
       icon: Star,
       iconBg: "bg-amber-50",
       iconColor: "text-amber-600",
-      currentValue: `${metrics?.csatAvgScore.toFixed(2) ?? "0.00"}점`,
+      currentValue: `${metrics?.csatAvgScore?.toFixed(2) ?? "0.00"}점`,
     },
     {
       key: "quiz",
@@ -251,7 +346,7 @@ function DomainUnderperformingSummary({
       icon: BookOpen,
       iconBg: "bg-green-50",
       iconColor: "text-green-600",
-      currentValue: `${metrics?.quizAvgScore.toFixed(1) ?? "0.0"}점`,
+      currentValue: `${metrics?.quizAvgScore?.toFixed(1) ?? "0.0"}점`,
     },
   ]
 
@@ -262,7 +357,7 @@ function DomainUnderperformingSummary({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-semibold text-slate-600">도메인별 부진 현황</h2>
+            <h2 className="text-sm font-semibold text-slate-600">항목별 부진 현황</h2>
             <Badge variant="outline" className="text-xs text-slate-400 border-slate-200">
               {new Date().toISOString().slice(0, 7)} 기준
             </Badge>

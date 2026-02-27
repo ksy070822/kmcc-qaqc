@@ -55,7 +55,7 @@ export default function InstructorAgentsPage() {
       return sortDesc ? (bv as number) - (av as number) : (av as number) - (bv as number)
     })
 
-  // 도메인별 데이터 보유 상담사 수
+  // 항목별 데이터 보유 상담사 수
   const qcCount = agents.filter((a) => a.qcEvalCount > 0).length
   const qaCount = agents.filter((a) => a.qaScore != null).length
   const csatCount = agents.filter((a) => a.csatScore != null).length
@@ -74,11 +74,11 @@ export default function InstructorAgentsPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">상담사 분석</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {user?.center ? `${user.center} 센터` : "전체"} 상담사별 7도메인 현황
+          {user?.center ? `${user.center} 센터` : "전체"} 상담사별 종합 현황
         </p>
       </div>
 
-      {/* 도메인별 데이터 현황 */}
+      {/* 항목별 데이터 현황 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <MiniStat label="전체 상담사" value={`${agents.length}명`} />
         <MiniStat label="QC 검수" value={`${qcCount}명`} />
@@ -104,7 +104,7 @@ export default function InstructorAgentsPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4 text-[#7c3aed]" />
-            상담사 목록 (7도메인)
+            상담사 목록
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -133,8 +133,7 @@ export default function InstructorAgentsPage() {
                   filtered.map((agent) => (
                     <tr key={agent.agentId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-slate-900">{agent.agentName}</div>
-                        <div className="text-xs text-slate-400">{agent.agentId}</div>
+                        <div className="font-medium text-slate-900">{agent.agentId} / {agent.agentName}</div>
                       </td>
                       <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">
                         {agent.service ? `${agent.service}/${agent.channel}` : agent.channel || "-"}

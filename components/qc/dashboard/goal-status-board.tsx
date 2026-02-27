@@ -434,12 +434,15 @@ export function GoalStatusBoard({ selectedDate }: GoalStatusBoardProps) {
                                       {statusConfig.label}
                                     </Badge>
                                   </div>
-                                  {/* 현재 오류율 */}
+                                  {/* 현재 오류율 — 상태 배지 색상과 일치 */}
                                   <div className="text-center mb-1">
                                     <span
                                       className={cn(
                                         "text-2xl font-bold",
-                                        goal.currentRate <= goal.targetRate ? "text-emerald-600" : "text-red-600",
+                                        goal.status === "achieved" ? "text-emerald-600" :
+                                        goal.status === "on-track" ? "text-blue-600" :
+                                        goal.status === "at-risk" ? "text-amber-600" :
+                                        "text-red-600",
                                       )}
                                     >
                                       {goal.currentRate.toFixed(2)}%

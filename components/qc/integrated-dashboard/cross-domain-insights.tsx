@@ -150,7 +150,7 @@ export function CrossDomainInsights({ crossAnalysis, stats, summaries, onAgentCl
                 className="flex items-center justify-between text-sm px-2 py-1.5 rounded-lg hover:bg-blue-50 cursor-pointer"
               >
                 <div>
-                  <span className="font-medium text-gray-800">{agent.agentName || agent.agentId}</span>
+                  <span className="font-medium text-gray-800">{agent.agentId} / {agent.agentName || agent.agentId}</span>
                   <span className="text-xs text-gray-400 ml-1">{agent.center}</span>
                 </div>
                 <span className="text-xs px-1.5 py-0.5 rounded bg-red-50 text-red-600 font-medium">

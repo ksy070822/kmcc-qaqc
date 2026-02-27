@@ -182,7 +182,7 @@ export function AgentPicker({
                       onClick={() => setSelectedAgentId(agent.agentId)}
                     >
                       <TableCell className="font-medium text-slate-900">
-                        {agent.agentName} ({agent.agentId})
+                        {agent.agentId} / {agent.agentName}
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -238,7 +238,7 @@ export function AgentPicker({
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="font-semibold text-slate-900">
-                        {selectedAgent.agentName} ({selectedAgent.agentId})
+                        {selectedAgent.agentId} / {selectedAgent.agentName}
                       </span>
                       <Badge variant="outline" className="bg-white text-xs">
                         {selectedAgent.center} {selectedAgent.service}/{selectedAgent.channel}

@@ -825,7 +825,13 @@ export interface MypageCSATDetail {
   score5Rate: number
   lowScoreRate: number
   prevMonthAvg: number
+  prevScore5Rate?: number
+  prevLowScoreRate?: number
   centerAvg: number
+  percentile?: number           // 센터 내 상위 몇%
+  targetScore?: number          // 목표 평점
+  period?: 'weekly' | 'monthly'
+  periodLabel?: string          // "2월 3주차" or "2026-02"
   monthlyTrend: Array<{ month: string; agentAvg: number; centerAvg: number }>
   recentReviews: Array<{
     date: string
@@ -836,7 +842,7 @@ export interface MypageCSATDetail {
   }>
   sentimentPositive?: Array<{ label: string; value: number }>
   sentimentNegative?: Array<{ label: string; value: number }>
-  sentimentTags?: Array<{ label: string; count: number; type: 'positive' | 'negative' }>
+  sentimentTags?: Array<{ label: string; count: number; pct: number; type: 'positive' | 'negative' }>
   coachingGuide?: Array<{ type: 'strength' | 'improvement'; title: string; description: string }>
 }
 
@@ -900,11 +906,15 @@ export interface AgentSummaryRow {
   agentId: string
   name: string | null
   center: string
+  service: string | null
+  channel: string | null
   hireDate: string | null
   tenureMonths: number
   attRate: number | null
   opsRate: number | null
   quizScore: number | null
+  workHours: string | null
+  shift: string | null
 }
 
 // ============================================================
@@ -1655,4 +1665,36 @@ export interface AgentMonthlySummaryV2 extends AgentMonthlySummary {
   // 코칭 연동
   coaching_session_count?: number
   last_coaching_date?: string
+}
+
+// ============================================================
+// 공지사항 (Notices) 타입
+// ============================================================
+
+export interface Notice {
+  noticeId: string
+  title: string
+  content: string
+  noticeType: 'announcement' | 'education'
+  centerScope: '용산' | '광주' | 'all'
+  priority: number              // 0=일반, 1=중요, 2=긴급
+  isPinned: boolean
+  createdBy: string
+  createdAt: string
+  expiresAt?: string
+  isRead?: boolean
+  readAt?: string
+}
+
+export interface NoticeRead {
+  readId: string                // {noticeId}_{userId}
+  noticeId: string
+  userId: string
+  readAt: string
+}
+
+export interface NoticeListResponse {
+  notices: Notice[]
+  unreadCount: number
+  total: number
 }

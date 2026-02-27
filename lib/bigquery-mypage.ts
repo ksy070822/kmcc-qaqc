@@ -854,11 +854,12 @@ export async function getAgentQuizDetail(
 
 export async function getAgentCSATDetail(
   agentId: string,
-  month?: string
+  month?: string,
+  period: "weekly" | "monthly" = "monthly",
+  weekOffset: number = 0,
 ): Promise<MypageCSATDetail> {
   const { current, prev } = getCurrentAndPrevMonth(month)
 
-  // Default empty result
   const empty: MypageCSATDetail = {
     totalReviews: 0,
     avgScore: 0,
@@ -870,9 +871,45 @@ export async function getAgentCSATDetail(
     recentReviews: [],
   }
 
+  // Service path mapping
+  const servicePathMap: Record<string, string> = {
+    c2_kakaot: "택시",
+    c2_kakaot_wheeldriver: "대리",
+    c2_kakaot_wheelc: "대리",
+    c2_kakaot_picker: "배송",
+    c2_kakaot_trucker: "화물",
+    c2_kakaot_navi: "내비",
+    c2_kakaot_taxidriver: "택시",
+    c2_kakaot_quick: "퀵",
+    c2_kakaot_bike: "바이크",
+    c2_kakaot_parking: "주차",
+    c2_kakaot_biz_join: "비즈",
+  }
+
   try {
     const bq = getBigQueryClient()
 
+    // ── 기간 필터 빌드 ──
+    let currentFilter: string
+    let prevFilter: string
+    let periodLabel: string
+
+    if (period === "weekly") {
+      // 주간: 목~수 기준, weekOffset=0 → 현재 주, -1 → 전주
+      currentFilter = `DATE(r.created_at) BETWEEN
+        DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset} WEEK)
+        AND DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset} WEEK + INTERVAL 6 DAY)`
+      prevFilter = `DATE(r.created_at) BETWEEN
+        DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset - 1} WEEK)
+        AND DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset - 1} WEEK + INTERVAL 6 DAY)`
+      periodLabel = `주간 (offset ${weekOffset})`
+    } else {
+      currentFilter = `FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth`
+      prevFilter = `FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @prevMonth`
+      periodLabel = current
+    }
+
+    // ── 1) 메인 KPI + 전기간 비교 ──
     const mainQuery = `
       WITH agent_current AS (
         SELECT
@@ -886,19 +923,22 @@ export async function getAgentCSATDetail(
         JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
         WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
-          AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth
+          AND ${currentFilter}
       ),
       agent_prev AS (
-        SELECT AVG(r.score) AS avg_score
+        SELECT
+          AVG(r.score) AS avg_score,
+          SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate,
+          SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate
         FROM ${CHAT_INQUIRE} ci
         JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
         JOIN ${REVIEW} r ON r.review_request_id = rr.id
         JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
         WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
-          AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @prevMonth
+          AND ${prevFilter}
       ),
-      center_avg AS (
+      center_current AS (
         SELECT AVG(r.score) AS avg_score
         FROM ${CHAT_INQUIRE} ci
         JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
@@ -908,16 +948,39 @@ export async function getAgentCSATDetail(
         WHERE u.team_id1 = (
           SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
         )
-        AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth
+        AND ${currentFilter}
+      ),
+      agent_ranks AS (
+        SELECT u.username AS uid, AVG(r.score) AS avg_score
+        FROM ${CHAT_INQUIRE} ci
+        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+        JOIN ${REVIEW} r ON r.review_request_id = rr.id
+        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+        WHERE u.team_id1 = (
+          SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
+        )
+        AND ${currentFilter}
+        GROUP BY uid
+      ),
+      percentile AS (
+        SELECT SAFE_DIVIDE(
+          COUNTIF(ar.avg_score <= (SELECT avg_score FROM agent_current)),
+          COUNT(*)
+        ) * 100 AS pctile
+        FROM agent_ranks ar
       )
       SELECT
         ac.total_reviews, ac.avg_score, ac.score5_rate, ac.low_score_rate,
         ap.avg_score AS prev_avg_score,
-        ca.avg_score AS center_avg_score
-      FROM agent_current ac, agent_prev ap, center_avg ca
+        ap.score5_rate AS prev_score5_rate,
+        ap.low_score_rate AS prev_low_score_rate,
+        cc.avg_score AS center_avg_score,
+        p.pctile AS percentile
+      FROM agent_current ac, agent_prev ap, center_current cc, percentile p
     `
 
-    // Monthly trend
+    // ── 2) 트렌드 (항상 월 단위 6개월) ──
     const trendQuery = `
       WITH agent_trend AS (
         SELECT
@@ -953,31 +1016,61 @@ export async function getAgentCSATDetail(
       ORDER BY a.month
     `
 
-    // Recent reviews
-    const recentQuery = `
+    // ── 3) 태그 통계 (개인별) ──
+    const tagQuery = `
+      WITH tagged AS (
+        SELECT
+          r.score,
+          JSON_VALUE(r.additional_answer, '$.selected_option_type') AS option_type,
+          JSON_QUERY_ARRAY(r.additional_answer, '$.selected_options') AS options
+        FROM ${CHAT_INQUIRE} ci
+        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+        JOIN ${REVIEW} r ON r.review_request_id = rr.id
+        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+        WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
+          AND ${currentFilter}
+          AND r.additional_answer IS NOT NULL
+          AND JSON_VALUE(r.additional_answer, '$.selected_option_type') IS NOT NULL
+      ),
+      flattened AS (
+        SELECT score, option_type, REPLACE(opt, '"', '') AS tag
+        FROM tagged, UNNEST(options) AS opt
+      )
+      SELECT tag, option_type, COUNT(*) AS cnt
+      FROM flattened
+      GROUP BY tag, option_type
+      ORDER BY cnt DESC
+    `
+
+    // ── 4) 긍정 리뷰 (4~5점 + 코멘트 있는 것) ──
+    const positiveQuery = `
       SELECT
         FORMAT_DATE('%Y-%m-%d', DATE(r.created_at)) AS review_date,
         CAST(ci.id AS STRING) AS consult_id,
         c.incoming_path AS service_path,
         r.score,
-        COALESCE(r.comment, '') AS comment
+        r.comment
       FROM ${CHAT_INQUIRE} ci
       JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
       JOIN ${REVIEW} r ON r.review_request_id = rr.id
       JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
       JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
       WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
-        AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth
+        AND ${currentFilter}
+        AND r.score >= 4
+        AND r.comment IS NOT NULL AND r.comment != ''
       ORDER BY r.created_at DESC
-      LIMIT 10
+      LIMIT 20
     `
 
     const params = { agentId, currentMonth: current, prevMonth: prev }
 
-    const [[mainRows], [trendRows], [recentRows]] = await Promise.all([
+    const [[mainRows], [trendRows], [tagRows], [positiveRows]] = await Promise.all([
       bq.query({ query: mainQuery, params }),
       bq.query({ query: trendQuery, params: { agentId } }),
-      bq.query({ query: recentQuery, params: { agentId, currentMonth: current } }),
+      bq.query({ query: tagQuery, params }),
+      bq.query({ query: positiveQuery, params }),
     ])
 
     const row = (mainRows as Record<string, unknown>[])[0] || {}
@@ -988,18 +1081,26 @@ export async function getAgentCSATDetail(
       centerAvg: Math.round((Number(r.center_avg) || 0) * 100) / 100,
     }))
 
-    // Service path mapping
-    const servicePathMap: Record<string, string> = {
-      c2_kakaot: "택시",
-      c2_kakaot_wheeldriver: "대리",
-      c2_kakaot_wheelc: "대리",
-      c2_kakaot_picker: "배송",
-      c2_kakaot_trucker: "화물",
-      c2_kakaot_navi: "내비",
-      c2_kakaot_taxidriver: "택시",
-    }
+    // Tag processing
+    const tagData = tagRows as Record<string, unknown>[]
+    const totalTags = tagData.reduce((s, t) => s + (Number(t.cnt) || 0), 0)
 
-    const recentReviews = (recentRows as Record<string, unknown>[]).map(r => ({
+    const sentimentTags = tagData.map(t => ({
+      label: String(t.tag),
+      count: Number(t.cnt) || 0,
+      pct: totalTags > 0 ? Math.round(((Number(t.cnt) || 0) / totalTags) * 1000) / 10 : 0,
+      type: (String(t.option_type) === "POSITIVE" ? "positive" : "negative") as "positive" | "negative",
+    }))
+
+    const sentimentPositive = sentimentTags
+      .filter(t => t.type === "positive")
+      .map(t => ({ label: t.label, value: t.count }))
+    const sentimentNegative = sentimentTags
+      .filter(t => t.type === "negative")
+      .map(t => ({ label: t.label, value: t.count }))
+
+    // Positive reviews
+    const recentReviews = (positiveRows as Record<string, unknown>[]).map(r => ({
       date: String(r.review_date),
       consultId: String(r.consult_id || ""),
       service: servicePathMap[String(r.service_path)] || String(r.service_path || ""),
@@ -1013,9 +1114,17 @@ export async function getAgentCSATDetail(
       score5Rate: Math.round((Number(row.score5_rate) || 0) * 10) / 10,
       lowScoreRate: Math.round((Number(row.low_score_rate) || 0) * 10) / 10,
       prevMonthAvg: Math.round((Number(row.prev_avg_score) || 0) * 100) / 100,
+      prevScore5Rate: Math.round((Number(row.prev_score5_rate) || 0) * 10) / 10,
+      prevLowScoreRate: Math.round((Number(row.prev_low_score_rate) || 0) * 10) / 10,
       centerAvg: Math.round((Number(row.center_avg_score) || 0) * 100) / 100,
+      percentile: Math.round((100 - (Number(row.percentile) || 0)) * 10) / 10, // 상위 X%로 변환
+      period,
+      periodLabel,
       monthlyTrend,
       recentReviews,
+      sentimentPositive,
+      sentimentNegative,
+      sentimentTags,
     }
   } catch (error) {
     console.error("[bigquery-mypage] getAgentCSATDetail error:", error)
@@ -1042,6 +1151,8 @@ export async function getAgentsSummary(
     WITH qc_summary AS (
       SELECT
         e.agent_id,
+        ARRAY_AGG(e.service ORDER BY e.evaluation_date DESC LIMIT 1)[OFFSET(0)] AS latest_service,
+        ARRAY_AGG(e.channel ORDER BY e.evaluation_date DESC LIMIT 1)[OFFSET(0)] AS latest_channel,
         SAFE_DIVIDE(
           SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END
             + CASE WHEN e.empathy_error THEN 1 ELSE 0 END
@@ -1078,6 +1189,8 @@ export async function getAgentsSummary(
     )
     SELECT
       qc.agent_id AS qc_agent_id,
+      qc.latest_service,
+      qc.latest_channel,
       qc.att_rate,
       qc.ops_rate,
       qz.agent_id AS qz_agent_id,
@@ -1089,11 +1202,13 @@ export async function getAgentsSummary(
   const [rows] = await bq.query({ query, params: { month: targetMonth } })
 
   // Build a map from BQ results
-  const kpiMap = new Map<string, { attRate: number | null; opsRate: number | null; quizScore: number | null }>()
+  const kpiMap = new Map<string, { service: string | null; channel: string | null; attRate: number | null; opsRate: number | null; quizScore: number | null }>()
   for (const row of rows as Record<string, unknown>[]) {
     const agentId = String(row.qc_agent_id || row.qz_agent_id || "")
     if (!agentId) continue
-    const existing = kpiMap.get(agentId) || { attRate: null, opsRate: null, quizScore: null }
+    const existing = kpiMap.get(agentId) || { service: null, channel: null, attRate: null, opsRate: null, quizScore: null }
+    if (row.latest_service != null) existing.service = String(row.latest_service)
+    if (row.latest_channel != null) existing.channel = String(row.latest_channel)
     if (row.att_rate != null) existing.attRate = Math.round(Number(row.att_rate) * 100) / 100
     if (row.ops_rate != null) existing.opsRate = Math.round(Number(row.ops_rate) * 100) / 100
     if (row.quiz_score != null) existing.quizScore = Math.round(Number(row.quiz_score) * 10) / 10
@@ -1102,16 +1217,20 @@ export async function getAgentsSummary(
 
   // Merge HR list with KPI data
   return hrAgents.map(agent => {
-    const kpi = kpiMap.get(agent.agentId) || { attRate: null, opsRate: null, quizScore: null }
+    const kpi = kpiMap.get(agent.agentId) || { service: null, channel: null, attRate: null, opsRate: null, quizScore: null }
     return {
       agentId: agent.agentId,
       name: agent.name,
       center: agent.center,
+      service: kpi.service,
+      channel: kpi.channel,
       hireDate: agent.hireDate,
       tenureMonths: agent.tenureMonths,
       attRate: kpi.attRate,
       opsRate: kpi.opsRate,
       quizScore: kpi.quizScore,
+      workHours: null,
+      shift: null,
     }
   })
 }

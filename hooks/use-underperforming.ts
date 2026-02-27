@@ -5,6 +5,7 @@ import type { UnderperformingAgent, UnderperformingRegistration } from "@/lib/ty
 
 interface UseUnderperformingOptions {
   center?: string
+  service?: string
   status?: string
   agentId?: string
   enabled?: boolean
@@ -24,6 +25,7 @@ export function useUnderperforming(options: UseUnderperformingOptions = {}) {
 
       const params = new URLSearchParams()
       if (options.center && options.center !== "all") params.append("center", options.center)
+      if (options.service) params.append("service", options.service)
       if (options.status && options.status !== "all") params.append("status", options.status)
       if (options.agentId) params.append("agentId", options.agentId)
 
@@ -40,7 +42,7 @@ export function useUnderperforming(options: UseUnderperformingOptions = {}) {
     } finally {
       setLoading(false)
     }
-  }, [options.center, options.status, options.agentId, options.enabled])
+  }, [options.center, options.service, options.status, options.agentId, options.enabled])
 
   useEffect(() => {
     fetchData()

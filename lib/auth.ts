@@ -10,6 +10,7 @@ export interface UserInfo {
   service: string | null
   channel: string | null
   agentId: string | null
+  workHours: string | null   // HR 근무시간 (e.g. "08:00~17:00")
 }
 
 export const ROLE_CONFIG: Record<UserRole, { label: string; defaultRoute: string; color: string }> = {
@@ -32,26 +33,6 @@ function setAuthCookie(user: UserInfo): void {
 
 function clearAuthCookie(): void {
   document.cookie = `${COOKIE_NAME}=; path=/; SameSite=Lax; max-age=0`
-}
-
-// Test user presets
-const TEST_USERS: Record<UserRole, UserInfo> = {
-  hq_admin: {
-    userId: 'admin01', userName: '본사관리자', role: 'hq_admin',
-    center: null, service: null, channel: null, agentId: null,
-  },
-  manager: {
-    userId: 'manager01', userName: '김팀장', role: 'manager',
-    center: '용산', service: '택시 유선', channel: '유선', agentId: null,
-  },
-  instructor: {
-    userId: 'instructor01', userName: '이강사', role: 'instructor',
-    center: '용산', service: null, channel: null, agentId: null,
-  },
-  agent: {
-    userId: 'vivi.koc', userName: 'vivi.koc', role: 'agent',
-    center: '용산', service: '택시', channel: '채팅', agentId: 'vivi.koc',
-  },
 }
 
 export function setAuth(user: UserInfo): void {
@@ -79,18 +60,40 @@ export function clearAuth(): void {
   }
 }
 
-export function getTestUser(role: UserRole): UserInfo {
-  return TEST_USERS[role]
-}
+// ── 테스트용 프리셋 (실제 BQ 계정 연동) ──
 
-// 상담사 테스트 프리셋 (유선/채팅)
-export const AGENT_PRESETS: Record<string, UserInfo> = {
-  voice_yongsan: {
-    userId: 'vivi.koc', userName: '김보은', role: 'agent',
-    center: '용산', service: '택시', channel: '유선', agentId: 'vivi.koc',
+export const TEST_PRESETS: { key: string; label: string; sub: string; color: string; user: UserInfo }[] = [
+  {
+    key: 'hq_admin', label: '본사 관리자', sub: '전체 센터', color: 'bg-[#2c6edb] hover:bg-[#202237] text-white',
+    user: { userId: 'admin01', userName: '본사관리자', role: 'hq_admin', center: null, service: null, channel: null, agentId: null, workHours: null },
   },
-  chat_gwangju: {
-    userId: 'isabella.itx', userName: 'isabella.itx', role: 'agent',
-    center: '광주', service: '바이크/마스', channel: '채팅', agentId: 'isabella.itx',
+  {
+    key: 'instructor', label: '강사', sub: '용산', color: 'bg-[#ffcd00] hover:bg-[#ffcd00]/80 text-black',
+    user: { userId: 'instructor01', userName: '강사', role: 'instructor', center: '용산', service: null, channel: null, agentId: null, workHours: null },
   },
+  {
+    key: 'manager_gj', label: '관리자(광주)', sub: 'corgi.itx · 전용호 · 택시', color: 'bg-[#1e3a5f] hover:bg-[#1e3a5f]/80 text-white',
+    user: { userId: 'corgi.itx', userName: '전용호', role: 'manager', center: '광주', service: '택시', channel: null, agentId: null, workHours: '08:00~17:00' },
+  },
+  {
+    key: 'agent_yongsan', label: '유선 상담사(용산)', sub: 'can.koc · 송은규 · 퀵', color: 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200',
+    user: { userId: 'can.koc', userName: '송은규', role: 'agent', center: '용산', service: '퀵', channel: '유선', agentId: 'can.koc', workHours: null },
+  },
+  {
+    key: 'agent_gwangju', label: '채팅 상담사(광주)', sub: 'mini.itx · 박미정 · 바이크/마스', color: 'bg-white hover:bg-slate-50 text-slate-800 border border-slate-200',
+    user: { userId: 'mini.itx', userName: '박미정', role: 'agent', center: '광주', service: '바이크/마스', channel: '채팅', agentId: 'mini.itx', workHours: null },
+  },
+]
+
+/**
+ * BQ 기반 실제 사용자 조회 (서버 API 호출)
+ * quiz_results.user_roles → quiz_results.users → kMCC_HR 순으로 조회
+ */
+export async function lookupUser(userId: string): Promise<{ success: boolean; user?: UserInfo; error?: string }> {
+  const res = await fetch(`/api/auth/lookup?userId=${encodeURIComponent(userId)}`)
+  const data = await res.json()
+  if (data.success && data.user) {
+    return { success: true, user: data.user as UserInfo }
+  }
+  return { success: false, error: data.error || '사용자를 찾을 수 없습니다.' }
 }

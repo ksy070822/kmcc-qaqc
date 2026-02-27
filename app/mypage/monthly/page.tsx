@@ -54,6 +54,10 @@ export default function MonthlyReportPage() {
   } | null>(null)
   const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
 
+  const baseDate = monthOffset === 0 ? new Date() : addMonths(new Date(), monthOffset)
+  const monthStart = startOfMonth(baseDate)
+  const monthEnd = endOfMonth(baseDate)
+
   // 품질 점수 (QA/CSAT/Quiz) + 생산성 (센터) 조회
   useEffect(() => {
     async function fetchExtras() {
@@ -106,10 +110,6 @@ export default function MonthlyReportPage() {
     }
     fetchExtras()
   }, [user?.agentId, user?.userId, user?.center, monthOffset, monthStart])
-
-  const baseDate = monthOffset === 0 ? new Date() : addMonths(new Date(), monthOffset)
-  const monthStart = startOfMonth(baseDate)
-  const monthEnd = endOfMonth(baseDate)
 
   useEffect(() => {
     async function fetchMonthly() {
@@ -169,7 +169,7 @@ export default function MonthlyReportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">월간 리포트</h1>
-          <p className="text-sm text-slate-500 mt-1">품질 4도메인 통합 + 생산성 월간 현황을 확인합니다.</p>
+          <p className="text-sm text-slate-500 mt-1">품질 항목 통합 + 생산성 월간 현황을 확인합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthOffset(monthOffset - 1)}>
