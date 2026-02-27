@@ -18,7 +18,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts"
-import { Loader2 } from "lucide-react"
+import { Loader2, MessageCircle } from "lucide-react"
 
 interface MypageQcDetailProps {
   agentId: string | null
@@ -43,7 +43,7 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
 
   const topErrors = data?.topErrors ?? []
   const maxErrorCount = topErrors[0]?.count ?? 1
-  const errorColors = ["bg-[#2c6edb]", "bg-[#4A6FA5]", "bg-[#6B93D6]", "bg-[#9E9E9E]", "bg-[#B3B3B3]"]
+  const errorColors = ["bg-rose-500", "bg-orange-500", "bg-amber-500", "bg-yellow-500", "bg-blue-400"]
 
   return (
     <div className="space-y-6">
@@ -157,16 +157,21 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
           {topErrors.length > 0 ? (
             <div className="space-y-3">
               {topErrors.slice(0, 5).map((err, i) => (
-                <div key={i}>
-                  <div className="flex items-center justify-between text-xs mb-1">
-                    <span className="text-slate-700">{err.item}</span>
-                    <span className="text-slate-500">{err.count}건</span>
+                <div key={i} className="flex items-center gap-3">
+                  <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold shrink-0">
+                    {i + 1}
                   </div>
-                  <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full", errorColors[i] ?? "bg-amber-300")}
-                      style={{ width: `${(err.count / maxErrorCount) * 100}%` }}
-                    />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between text-xs mb-1">
+                      <span className="text-slate-700 font-medium">{err.item}</span>
+                      <span className="text-slate-500">{err.count}건</span>
+                    </div>
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full", errorColors[i] ?? "bg-amber-300")}
+                        style={{ width: `${(err.count / maxErrorCount) * 100}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
               ))}
@@ -177,49 +182,131 @@ export function MypageQcDetail({ agentId, onBack }: MypageQcDetailProps) {
         </div>
       </div>
 
-      {/* Radar */}
-      {(data?.radarData ?? []).length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <MypageRadarChart data={data!.radarData} title="항목별 역량 분석" height={300} />
+      {/* Radar + Coaching Feedback */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {(data?.radarData ?? []).length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <MypageRadarChart data={data!.radarData} title="항목별 역량 분석" height={300} />
+          </div>
+        )}
+
+        <div className="bg-white border border-slate-200 rounded-xl p-5">
+          <p className="text-sm font-medium text-slate-700 mb-4 flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-blue-500" />
+            주요 코칭 피드백
+          </p>
+          {(data?.coachingFeedback ?? []).length > 0 ? (
+            <div className="space-y-3">
+              {data!.coachingFeedback!.map((fb, i) => (
+                <div key={i} className="p-4 bg-slate-50 border border-slate-100 rounded-xl">
+                  <div className={cn(
+                    "text-xs font-bold mb-1",
+                    fb.category === "우수" ? "text-emerald-600" : "text-blue-600"
+                  )}>
+                    {fb.date} {fb.category}
+                  </div>
+                  <div className="text-sm font-bold text-slate-800 mb-2">{fb.title}</div>
+                  <p className="text-xs text-slate-500 leading-relaxed italic">&quot;{fb.comment}&quot;</p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(() => {
+                const errorEvals = (data?.recentEvaluations ?? []).filter(e => e.errorItems.length > 0)
+                const cleanEvals = (data?.recentEvaluations ?? []).filter(e => e.errorItems.length === 0)
+                return (
+                  <>
+                    {errorEvals.length > 0 && (
+                      <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl">
+                        <div className="text-xs font-bold text-amber-600 mb-1">개선 필요 항목</div>
+                        <div className="text-sm font-bold text-slate-800 mb-1">
+                          주요 오류: {topErrors[0]?.item ?? "오류 항목 없음"}
+                        </div>
+                        <p className="text-xs text-slate-500 leading-relaxed italic">
+                          최근 {errorEvals.length}건의 검수에서 오류가 발견되었습니다. 해당 항목에 대한 재확인이 필요합니다.
+                        </p>
+                      </div>
+                    )}
+                    {cleanEvals.length > 0 && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                        <div className="text-xs font-bold text-emerald-600 mb-1">우수 사례</div>
+                        <div className="text-sm font-bold text-slate-800 mb-1">정상 검수 유지</div>
+                        <p className="text-xs text-slate-500 leading-relaxed italic">
+                          최근 {cleanEvals.length}건의 검수에서 오류 없이 정상 처리되었습니다.
+                        </p>
+                      </div>
+                    )}
+                    {errorEvals.length === 0 && cleanEvals.length === 0 && (
+                      <div className="text-center py-6 text-sm text-slate-400">검수 데이터 기반 코칭 피드백이 없습니다</div>
+                    )}
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Recent Evaluations Table */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5">
-        <p className="text-sm font-medium text-slate-700 mb-4">최근 오류 내역</p>
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+        <div className="p-5 border-b border-slate-100 bg-slate-50/50">
+          <p className="text-sm font-medium text-slate-700">상세 오류 내역</p>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-200">
-                <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">평가일</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">상담ID</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">서비스</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">오류항목</th>
-                <th className="text-left py-2 px-3 text-xs font-medium text-slate-500">결과</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">평가일</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">상담ID</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">서비스</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">오류 유형</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">세부 항목</th>
+                <th className="text-left py-3 px-5 text-xs font-medium text-slate-400 uppercase tracking-wider">결과</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
-                const errorRows = (data?.recentEvaluations ?? []).filter(row => row.errorItems.length > 0)
-                if (errorRows.length === 0) {
-                  return <tr><td colSpan={5} className="py-8 text-center text-sm text-slate-400">오류 내역이 없습니다</td></tr>
+                const rows = data?.recentEvaluations ?? []
+                if (rows.length === 0) {
+                  return <tr><td colSpan={6} className="py-8 text-center text-sm text-slate-400">오류 내역이 없습니다</td></tr>
                 }
-                return errorRows.map((row, i) => (
-                  <tr key={i} className="border-b border-slate-100 last:border-0">
-                    <td className="py-2 px-3 text-slate-700">{row.evaluationDate}</td>
-                    <td className="py-2 px-3 text-slate-600 font-mono text-xs">{row.consultId || "-"}</td>
-                    <td className="py-2 px-3 text-slate-700">{row.service}</td>
-                    <td className="py-2 px-3 text-slate-700">{row.errorItems.join(", ")}</td>
-                    <td className="py-2 px-3">
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] bg-red-50 text-red-700 border-red-200"
-                      >
-                        {row.result}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))
+                return rows.map((row, i) => {
+                  const hasError = row.errorItems.length > 0
+                  const isAttError = row.errorItems.some(item =>
+                    ["첫인사", "끝인사", "공감표현", "사과표현", "추가문의", "불친절"].some(k => item.includes(k))
+                  )
+                  return (
+                    <tr key={i} className="border-b border-slate-100 last:border-0 hover:bg-slate-50 transition-colors">
+                      <td className="py-3 px-5 text-slate-700">{row.evaluationDate}</td>
+                      <td className="py-3 px-5 text-blue-600 font-mono text-xs font-bold">{row.consultId || "-"}</td>
+                      <td className="py-3 px-5 text-slate-700">{row.service}</td>
+                      <td className="py-3 px-5">
+                        {hasError ? (
+                          <span className={cn("font-bold text-xs", isAttError ? "text-amber-600" : "text-rose-500")}>
+                            {isAttError ? "태도 오류" : "오상담"}
+                          </span>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-5 text-slate-700 text-xs">{hasError ? row.errorItems.join(", ") : "-"}</td>
+                      <td className="py-3 px-5">
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px] font-bold tracking-wider",
+                            hasError
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          )}
+                        >
+                          {row.result}
+                        </Badge>
+                      </td>
+                    </tr>
+                  )
+                })
               })()}
             </tbody>
           </table>

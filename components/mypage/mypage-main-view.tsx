@@ -144,10 +144,18 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
       {/* 생산성 (센터 기준) */}
       {productivity && (
         <div>
-          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-            <Phone className="h-3.5 w-3.5" />
-            생산성 (센터 기준)
-          </h2>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Phone className="h-3.5 w-3.5" />
+              생산성 (센터 기준)
+            </h2>
+            <button
+              onClick={() => onNavigate("productivity")}
+              className="text-[11px] font-medium text-slate-500 hover:text-blue-600 flex items-center gap-0.5 transition-colors"
+            >
+              상세 보기 →
+            </button>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Card>
               <CardContent className="pt-4 pb-3">

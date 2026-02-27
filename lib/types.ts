@@ -816,6 +816,7 @@ export interface MypageQCDetail {
     errorItems: string[]
     result: string
   }>
+  coachingFeedback?: Array<{ date: string; category: string; title: string; comment: string }>
 }
 
 export interface MypageCSATDetail {
@@ -833,6 +834,10 @@ export interface MypageCSATDetail {
     score: number
     comment: string
   }>
+  sentimentPositive?: Array<{ label: string; value: number }>
+  sentimentNegative?: Array<{ label: string; value: number }>
+  sentimentTags?: Array<{ label: string; count: number; type: 'positive' | 'negative' }>
+  coachingGuide?: Array<{ type: 'strength' | 'improvement'; title: string; description: string }>
 }
 
 export interface MypageQADetail {
@@ -842,6 +847,9 @@ export interface MypageQADetail {
   evalCount: number
   prevMonthScore: number
   centerAvg: number
+  targetScore?: number
+  prevEmpathy?: number
+  prevBusiness?: number
   monthlyTrend: Array<{ month: string; agentScore: number; centerAvg: number }>
   radarData: Array<{ label: string; value: number; groupAvg: number; fullMark: number }>
   itemComparison: Array<{
@@ -849,7 +857,9 @@ export interface MypageQADetail {
     currentScore: number
     prevScore: number
     gap: number
+    comment?: string
   }>
+  coachingGuide?: Array<{ type: 'strength' | 'opportunity'; title: string; description: string }>
 }
 
 export interface MypageQuizDetail {
@@ -859,8 +869,11 @@ export interface MypageQuizDetail {
   centerAvg: number
   groupPercentile: number
   passed: boolean
+  wrongAnswerCount?: number
+  topWrongCategory?: string
   monthlyTrend: Array<{ month: string; agentScore: number; centerAvg: number }>
   radarData: Array<{ label: string; value: number; groupAvg: number; fullMark: number }>
+  knowledgeRadar?: Array<{ label: string; value: number; fullMark: number }>
   attempts: Array<{
     date: string
     service: string
@@ -868,6 +881,9 @@ export interface MypageQuizDetail {
     passed: boolean
     centerAvg: number
   }>
+  wrongAnswers?: Array<{ questionNo: string; summary: string; myAnswer: string; correctAnswer: string; centerWrongRate: number }>
+  centerTopWrong?: Array<{ rank: number; topic: string; wrongRate: number; trend: 'up' | 'down' | 'same' }>
+  coachingGuide?: Array<{ type: string; title: string; description: string }>
 }
 
 // ── 상담사 관리 (HR 기반) ──
