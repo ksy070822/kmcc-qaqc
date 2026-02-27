@@ -95,6 +95,7 @@ const ROLE_API_ACCESS: Record<UserRole, readonly string[]> = {
     '/api/role-metrics',
     '/api/check-agent',
     '/api/mypage',
+    '/api/notices',
   ],
   manager: [
     '/api/data',
@@ -107,6 +108,7 @@ const ROLE_API_ACCESS: Record<UserRole, readonly string[]> = {
     '/api/check-agent',
     '/api/mypage',
     '/api/manager',
+    '/api/notices',
   ],
   agent: [
     '/api/mypage',
