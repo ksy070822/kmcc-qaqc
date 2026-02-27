@@ -12,6 +12,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   FileText,
+  Phone,
+  MessageSquare,
 } from "lucide-react"
 import { format, addWeeks } from "date-fns"
 import { ko } from "date-fns/locale"
@@ -55,6 +57,32 @@ export default function WeeklyReportPage() {
   const [weekOffset, setWeekOffset] = useState(0)
   const [detail, setDetail] = useState<WeeklyDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
+
+  useEffect(() => {
+    async function fetchProductivity() {
+      if (!user?.center) return
+      try {
+        const ldRes = await fetch("/api/data?type=latest-date")
+        const ldData = await ldRes.json()
+        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
+        const params = new URLSearchParams({
+          type: "multi-domain-metrics",
+          refDate,
+          center: user.center,
+        })
+        const res = await fetch(`/api/role-metrics?${params}`)
+        const d = await res.json()
+        if (d.success) {
+          setProductivity({
+            voice: d.metrics.voiceResponseRate ?? 0,
+            chat: d.metrics.chatResponseRate ?? 0,
+          })
+        }
+      } catch { /* silent */ }
+    }
+    fetchProductivity()
+  }, [user?.center])
 
   const { start: weekStart, end: weekEnd } = useMemo(() => {
     const baseDate = weekOffset === 0 ? new Date() : addWeeks(new Date(), weekOffset)
@@ -201,6 +229,38 @@ export default function WeeklyReportPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* 생산성 요약 (센터 기준) */}
+          {productivity && (
+            <Card className="border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+              <CardContent className="pt-4 pb-3">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5" />
+                  생산성 (센터 기준)
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
+                      <Phone className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">유선 응대율</p>
+                      <p className="text-lg font-bold text-slate-900">{productivity.voice.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+                      <MessageSquare className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">채팅 응대율</p>
+                      <p className="text-lg font-bold text-slate-900">{productivity.chat.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 개별 검수 이력 */}
           <Card>

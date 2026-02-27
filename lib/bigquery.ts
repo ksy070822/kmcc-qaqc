@@ -1321,6 +1321,8 @@ export interface WatchListItem {
   reason: string;
   topErrors: string[];
   registeredAt?: string;
+  /** 주간 상태: 'new' 신규편입, 'continuing' 연속, 'resolving' 해소예정(1주 기준↓) */
+  weeklyStatus?: 'new' | 'continuing' | 'resolving';
 }
 
 export async function getWatchList(filters?: {
@@ -1328,45 +1330,83 @@ export async function getWatchList(filters?: {
   channel?: string;
   tenure?: string;
   month?: string;
+  weekStart?: string;
+  weekEnd?: string;
 }): Promise<{ success: boolean; data?: WatchListItem[]; error?: string }> {
   try {
     const bigquery = getBigQueryClient();
-    
-    const month = filters?.month || new Date().toISOString().slice(0, 7);
-    
-    let whereClause = 'WHERE 1=1';
-    const params: any = { month };
-    
-    // 전월 계산
-    const prevMonth = new Date(month + '-01')
-    prevMonth.setMonth(prevMonth.getMonth() - 1)
-    const prevMonthStr = prevMonth.toISOString().slice(0, 7)
-    params.prevMonth = prevMonthStr
-    
-    if (filters?.center && filters.center !== 'all') {
-      whereClause += ' AND center = @center';
-      params.center = filters.center;
+    const hrMap = await getHrAgentsMap();
+
+    // 주간 모드 vs 월간 모드 결정
+    const isWeeklyMode = !filters?.month;
+
+    // 주간 모드: weekStart/weekEnd 또는 현재 주
+    let weekStart: string;
+    let weekEnd: string;
+
+    if (isWeeklyMode) {
+      if (filters?.weekStart && filters?.weekEnd) {
+        weekStart = filters.weekStart;
+        weekEnd = filters.weekEnd;
+      } else {
+        // 기본: 현재 주 (목~수)
+        const now = new Date();
+        const dayOfWeek = now.getDay();
+        const daysBack = (dayOfWeek - 4 + 7) % 7;
+        const thu = new Date(now);
+        thu.setDate(now.getDate() - daysBack);
+        const wed = new Date(thu);
+        wed.setDate(thu.getDate() + 6);
+        weekStart = thu.toISOString().slice(0, 10);
+        weekEnd = wed.toISOString().slice(0, 10);
+      }
+    } else {
+      // 월간 모드 — weekStart/weekEnd는 월의 1일~말일
+      weekStart = filters!.month + '-01';
+      const monthDate = new Date(filters!.month + '-01');
+      monthDate.setMonth(monthDate.getMonth() + 1);
+      monthDate.setDate(0);
+      weekEnd = monthDate.toISOString().slice(0, 10);
     }
-    if (filters?.channel && filters.channel !== 'all') {
-      whereClause += ' AND channel = @channel';
-      params.channel = filters.channel;
-    }
-    // tenure 필터는 평가 테이블에 없으므로 주석 처리
-    // if (filters?.tenure && filters.tenure !== 'all') {
-    //   whereClause += ' AND tenure_group = @tenure';
-    //   params.tenure = filters.tenure;
-    // }
-    
+
+    // 이전 주 계산 (주간 비교용)
+    const ws = new Date(weekStart);
+    const we = new Date(weekEnd);
+    const prevWeekStart = new Date(ws); prevWeekStart.setDate(ws.getDate() - 7);
+    const prevWeekEnd = new Date(we); prevWeekEnd.setDate(we.getDate() - 7);
+    const prev2WeekStart = new Date(ws); prev2WeekStart.setDate(ws.getDate() - 14);
+    const prev2WeekEnd = new Date(we); prev2WeekEnd.setDate(we.getDate() - 14);
+
+    const centerFilter = filters?.center && filters.center !== 'all' ? 'AND center = @center' : '';
+    const channelFilter = filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : '';
+
+    const params: any = {
+      weekStart,
+      weekEnd,
+      prevWeekStart: prevWeekStart.toISOString().slice(0, 10),
+      prevWeekEnd: prevWeekEnd.toISOString().slice(0, 10),
+      prev2WeekStart: prev2WeekStart.toISOString().slice(0, 10),
+      prev2WeekEnd: prev2WeekEnd.toISOString().slice(0, 10),
+    };
+    if (filters?.center && filters.center !== 'all') params.center = filters.center;
+    if (filters?.channel && filters.channel !== 'all') params.channel = filters.channel;
+
+    // 3주간 데이터를 한번에 조회 (현재주 + 이전1주 + 이전2주)
     const query = `
-      WITH current_month_errors AS (
+      WITH period_errors AS (
         SELECT
           agent_id,
           agent_name,
           center,
-          service,
-          channel,
+          CASE
+            WHEN evaluation_date BETWEEN @weekStart AND @weekEnd THEN 'current'
+            WHEN evaluation_date BETWEEN @prevWeekStart AND @prevWeekEnd THEN 'prev1'
+            WHEN evaluation_date BETWEEN @prev2WeekStart AND @prev2WeekEnd THEN 'prev2'
+          END as period,
           COUNT(*) as evaluation_count,
           MIN(evaluation_date) as first_eval_date,
+          STRING_AGG(DISTINCT service, ', ') as services,
+          STRING_AGG(DISTINCT channel, ', ') as channels,
           SUM(attitude_error_count) as attitude_errors,
           SUM(business_error_count) as ops_errors,
           ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as attitude_rate,
@@ -1388,134 +1428,174 @@ export async function getWatchList(filters?: {
           SUM(CAST(flag_keyword_error AS INT64)) as flag_keyword_errors,
           SUM(CAST(history_error AS INT64)) as history_errors
         FROM ${EVAL_TABLE}
-        WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @month
-          ${filters?.center && filters.center !== 'all' ? 'AND center = @center' : ''}
-          ${filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : ''}
-        GROUP BY agent_id, agent_name, center, service, channel
-      ),
-      previous_month_errors AS (
-        SELECT
-          agent_id,
-          agent_name,
-          center,
-          service,
-          channel,
-          ROUND(SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100, 2) as prev_attitude_rate,
-          ROUND(SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100, 2) as prev_ops_rate
-        FROM ${EVAL_TABLE}
-        WHERE FORMAT_DATE('%Y-%m', evaluation_date) = @prevMonth
-          ${filters?.center && filters.center !== 'all' ? 'AND center = @center' : ''}
-          ${filters?.channel && filters.channel !== 'all' ? 'AND channel = @channel' : ''}
-        GROUP BY agent_id, agent_name, center, service, channel
+        WHERE evaluation_date BETWEEN @prev2WeekStart AND @weekEnd
+          ${centerFilter}
+          ${channelFilter}
+        GROUP BY agent_id, agent_name, center, period
+        HAVING COUNT(*) >= 5 OR period != 'current'
       )
       SELECT
-        c.agent_id,
-        c.agent_name,
-        c.center,
-        c.service,
-        c.channel,
-        c.evaluation_count,
-        c.first_eval_date,
-        c.attitude_errors,
-        c.ops_errors,
-        c.attitude_rate,
-        c.ops_rate,
-        c.greeting_errors,
-        c.empathy_errors,
-        c.apology_errors,
-        c.additional_inquiry_errors,
-        c.unkind_errors,
-        c.consult_type_errors,
-        c.guide_errors,
-        c.identity_check_errors,
-        c.required_search_errors,
-        c.wrong_guide_errors,
-        c.process_missing_errors,
-        c.process_incomplete_errors,
-        c.system_errors,
-        c.id_mapping_errors,
-        c.flag_keyword_errors,
-        c.history_errors,
-        COALESCE(p.prev_attitude_rate, 0) as prev_attitude_rate,
-        COALESCE(p.prev_ops_rate, 0) as prev_ops_rate
-      FROM current_month_errors c
-      LEFT JOIN previous_month_errors p 
-        ON c.agent_id = p.agent_id 
-        AND c.center = p.center 
-        AND c.service = p.service 
-        AND c.channel = p.channel
-      WHERE c.attitude_rate > 5 OR c.ops_rate > 6
-      ORDER BY (c.attitude_rate + c.ops_rate) DESC
+        agent_id,
+        agent_name,
+        center,
+        period,
+        evaluation_count,
+        first_eval_date,
+        services,
+        channels,
+        attitude_errors,
+        ops_errors,
+        attitude_rate,
+        ops_rate,
+        greeting_errors,
+        empathy_errors,
+        apology_errors,
+        additional_inquiry_errors,
+        unkind_errors,
+        consult_type_errors,
+        guide_errors,
+        identity_check_errors,
+        required_search_errors,
+        wrong_guide_errors,
+        process_missing_errors,
+        process_incomplete_errors,
+        system_errors,
+        id_mapping_errors,
+        flag_keyword_errors,
+        history_errors
+      FROM period_errors
+      ORDER BY agent_id, period
     `;
-    
-    const options = {
-      query,
-      params,
-      location: GCP_LOCATION,
-    };
-    
-    const [rows] = await bigquery.query(options);
-    
-    const result: WatchListItem[] = rows.map((row: any) => {
-      const attRate = Number(row.attitude_rate) || 0;
-      const opsRate = Number(row.ops_rate) || 0;
-      const prevAttRate = Number(row.prev_attitude_rate) || 0;
-      const prevOpsRate = Number(row.prev_ops_rate) || 0;
-      
-      // 전일대비 증감율 계산 (전월 대비)
+
+    const [rows] = await bigquery.query({ query, params, location: GCP_LOCATION });
+
+    // 에이전트별로 3주간 데이터 그룹핑
+    const agentMap = new Map<string, { current?: any; prev1?: any; prev2?: any }>();
+    for (const row of rows) {
+      const key = `${row.agent_id}__${row.center}`;
+      if (!agentMap.has(key)) agentMap.set(key, {});
+      const entry = agentMap.get(key)!;
+      const period = row.period as string;
+      if (period === 'current') entry.current = row;
+      else if (period === 'prev1') entry.prev1 = row;
+      else if (period === 'prev2') entry.prev2 = row;
+    }
+
+    const ATT_THRESHOLD = 3.0;
+    const OPS_THRESHOLD = 0.91;
+
+    const result: WatchListItem[] = [];
+
+    for (const [, entry] of agentMap) {
+      const cur = entry.current;
+      if (!cur) continue;
+
+      const attRate = Number(cur.attitude_rate) || 0;
+      const opsRate = Number(cur.ops_rate) || 0;
+      const evalCount = Number(cur.evaluation_count) || 0;
+
+      // 최소 5건 이상 (현재 주)
+      if (evalCount < 5) continue;
+
+      // 임계값: att >= 3.0% OR ops >= 0.91%
+      const overThreshold = attRate >= ATT_THRESHOLD || opsRate >= OPS_THRESHOLD;
+      if (!overThreshold) continue;
+
+      // HR 캐시로 관리자 제외 (상담사만 포함)
+      const agentIdLower = String(cur.agent_id).trim().toLowerCase();
+      if (!hrMap.has(agentIdLower)) continue;
+
+      // 해소 로직: 이전 2주 연속으로 기준 이하이면 → 이번주 재편입 (new)
+      // 이전 1주만 기준 이하이면 → 해소 예정 (resolving)
+      // 이전 주에도 초과였으면 → 연속 (continuing)
+      const prev1 = entry.prev1;
+      const prev2 = entry.prev2;
+
+      const prev1Over = prev1
+        ? (Number(prev1.attitude_rate) || 0) >= ATT_THRESHOLD || (Number(prev1.ops_rate) || 0) >= OPS_THRESHOLD
+        : false;
+      const prev2Over = prev2
+        ? (Number(prev2.attitude_rate) || 0) >= ATT_THRESHOLD || (Number(prev2.ops_rate) || 0) >= OPS_THRESHOLD
+        : false;
+
+      // 해소: 이전 2주 연속 기준↓ → 편입 안됨 (해소 완료), 하지만 이번주 다시 초과 → 신규 편입
+      // 실제 해소 판단: 이전 2주 연속 기준↓이었던 사람이 다시 올라온 건 → new
+      let weeklyStatus: 'new' | 'continuing' | 'resolving';
+      if (prev1Over && prev2Over) {
+        weeklyStatus = 'continuing'; // 3주 연속 초과
+      } else if (prev1Over && !prev2Over) {
+        weeklyStatus = 'continuing'; // 2주 연속 초과
+      } else if (!prev1Over && prev2Over) {
+        // 전주 기준↓, 전전주 초과 → 이번주 다시 초과 = 신규 편입은 아니고 아직 해소 안됨
+        weeklyStatus = 'new';
+      } else {
+        weeklyStatus = 'new'; // 이전 2주 모두 기준↓ (또는 데이터 없음) → 신규 편입
+      }
+
+      // 전주 대비 증감
+      const prevAttRate = prev1 ? Number(prev1.attitude_rate) || 0 : 0;
+      const prevOpsRate = prev1 ? Number(prev1.ops_rate) || 0 : 0;
       const totalRate = Number((attRate + opsRate).toFixed(2));
       const prevTotalRate = Number((prevAttRate + prevOpsRate).toFixed(2));
       const trend = Number((totalRate - prevTotalRate).toFixed(2));
-      
-      // 주요 오류 항목 (모든 오류 항목 포함)
+
+      // 주요 오류 항목
       const errors = [
-        { name: '첫인사/끝인사 누락', count: Number(row.greeting_errors) || 0 },
-        { name: '공감표현 누락', count: Number(row.empathy_errors) || 0 },
-        { name: '사과표현 누락', count: Number(row.apology_errors) || 0 },
-        { name: '추가문의 누락', count: Number(row.additional_inquiry_errors) || 0 },
-        { name: '불친절', count: Number(row.unkind_errors) || 0 },
-        { name: '상담유형 오설정', count: Number(row.consult_type_errors) || 0 },
-        { name: '가이드 미준수', count: Number(row.guide_errors) || 0 },
-        { name: '본인확인 누락', count: Number(row.identity_check_errors) || 0 },
-        { name: '필수탐색 누락', count: Number(row.required_search_errors) || 0 },
-        { name: '오안내', count: Number(row.wrong_guide_errors) || 0 },
-        { name: '전산 처리 누락', count: Number(row.process_missing_errors) || 0 },
-        { name: '전산 처리 미완료', count: Number(row.process_incomplete_errors) || 0 },
-        { name: '전산 조작 미흡', count: Number(row.system_errors) || 0 },
-        { name: '콜픽트림ID 매핑 누락', count: Number(row.id_mapping_errors) || 0 },
-        { name: '플래그키워드 누락', count: Number(row.flag_keyword_errors) || 0 },
-        { name: '상담이력 기재 미흡', count: Number(row.history_errors) || 0 },
+        { name: '첫인사/끝인사 누락', count: Number(cur.greeting_errors) || 0 },
+        { name: '공감표현 누락', count: Number(cur.empathy_errors) || 0 },
+        { name: '사과표현 누락', count: Number(cur.apology_errors) || 0 },
+        { name: '추가문의 누락', count: Number(cur.additional_inquiry_errors) || 0 },
+        { name: '불친절', count: Number(cur.unkind_errors) || 0 },
+        { name: '상담유형 오설정', count: Number(cur.consult_type_errors) || 0 },
+        { name: '가이드 미준수', count: Number(cur.guide_errors) || 0 },
+        { name: '본인확인 누락', count: Number(cur.identity_check_errors) || 0 },
+        { name: '필수탐색 누락', count: Number(cur.required_search_errors) || 0 },
+        { name: '오안내', count: Number(cur.wrong_guide_errors) || 0 },
+        { name: '전산 처리 누락', count: Number(cur.process_missing_errors) || 0 },
+        { name: '전산 처리 미완료', count: Number(cur.process_incomplete_errors) || 0 },
+        { name: '전산 조작 미흡', count: Number(cur.system_errors) || 0 },
+        { name: '콜픽트림ID 매핑 누락', count: Number(cur.id_mapping_errors) || 0 },
+        { name: '플래그키워드 누락', count: Number(cur.flag_keyword_errors) || 0 },
+        { name: '상담이력 기재 미흡', count: Number(cur.history_errors) || 0 },
       ].filter(e => e.count > 0).sort((a, b) => b.count - a.count);
-      
+
       const topErrors = errors.slice(0, 3).map(e => `${e.name}(${e.count})`);
-      
+
       let reason = '';
-      if (attRate > 10) {
-        reason = '태도 오류율 10% 초과';
-      } else if (opsRate > 10) {
-        reason = '오상담 오류율 10% 초과';
-      } else if (attRate > 5) {
-        reason = '태도 오류율 5% 초과';
+      if (attRate >= ATT_THRESHOLD && opsRate >= OPS_THRESHOLD) {
+        reason = '태도+오상담 기준 초과';
+      } else if (attRate >= ATT_THRESHOLD) {
+        reason = `태도 오류율 ${attRate.toFixed(1)}% (기준 ${ATT_THRESHOLD}%)`;
       } else {
-        reason = '오상담 오류율 6% 초과';
+        reason = `오상담 오류율 ${opsRate.toFixed(2)}% (기준 ${OPS_THRESHOLD}%)`;
       }
-      
-      return {
-        agentId: row.agent_id,
-        agentName: row.agent_name,
-        center: row.center,
-        service: mapServiceName(row.service, row.center) || '',
-        channel: row.channel,
+
+      // service 정규화 (STRING_AGG 결과에서 각각 매핑)
+      const serviceStr = (cur.services || '').split(', ')
+        .map((s: string) => mapServiceName(s.trim(), cur.center))
+        .filter(Boolean)
+        .join(', ');
+
+      result.push({
+        agentId: cur.agent_id,
+        agentName: cur.agent_name,
+        center: cur.center,
+        service: serviceStr,
+        channel: cur.channels || '',
         attitudeRate: attRate,
         opsRate: opsRate,
         totalRate: totalRate,
         trend: trend,
-        evaluationCount: Number(row.evaluation_count) || 0,
+        evaluationCount: evalCount,
         reason,
         topErrors,
-        registeredAt: row.first_eval_date ? row.first_eval_date.value || String(row.first_eval_date) : undefined,
-      };
-    });
+        registeredAt: cur.first_eval_date ? cur.first_eval_date.value || String(cur.first_eval_date) : undefined,
+        weeklyStatus,
+      });
+    }
+
+    // 총합 오류율 내림차순 정렬
+    result.sort((a, b) => b.totalRate - a.totalRate);
 
     return { success: true, data: result };
   } catch (error) {

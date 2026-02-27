@@ -13,6 +13,11 @@ import {
   TrendingDown,
   TrendingUp,
   BarChart3,
+  ClipboardCheck,
+  Star,
+  BookOpen,
+  Phone,
+  MessageSquare,
 } from "lucide-react"
 import { format, startOfMonth, endOfMonth, subMonths, addMonths } from "date-fns"
 import { ko } from "date-fns/locale"
@@ -44,6 +49,63 @@ export default function MonthlyReportPage() {
   const [monthOffset, setMonthOffset] = useState(0)
   const [detail, setDetail] = useState<MonthlyDetail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [qualityScores, setQualityScores] = useState<{
+    qa: number; qaPrev: number; csat: number; csatPrev: number; quiz: number; quizPrev: number
+  } | null>(null)
+  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
+
+  // 품질 점수 (QA/CSAT/Quiz) + 생산성 (센터) 조회
+  useEffect(() => {
+    async function fetchExtras() {
+      if (!user?.agentId && !user?.userId) return
+      const agentId = user.agentId || user.userId
+      try {
+        // Agent profile (6개월 트렌드 포함)
+        const profileRes = await fetch(`/api/mypage/profile?agentId=${encodeURIComponent(agentId)}`)
+        const profileData = await profileRes.json()
+        if (profileData.success && profileData.data) {
+          const selectedMonth = format(monthStart, "yyyy-MM")
+          const trend = profileData.data.trendData as Array<{
+            month: string; qaScore: number | null; csatScore: number | null; quizScore: number | null
+          }>
+          const cur = trend.find(t => t.month === selectedMonth)
+          const prevIdx = trend.findIndex(t => t.month === selectedMonth) - 1
+          const prev = prevIdx >= 0 ? trend[prevIdx] : null
+          setQualityScores({
+            qa: cur?.qaScore ?? 0,
+            qaPrev: prev?.qaScore ?? 0,
+            csat: cur?.csatScore ?? 0,
+            csatPrev: prev?.csatScore ?? 0,
+            quiz: cur?.quizScore ?? 0,
+            quizPrev: prev?.quizScore ?? 0,
+          })
+        }
+      } catch { /* silent */ }
+
+      // 생산성 (센터 레벨)
+      if (user?.center) {
+        try {
+          const ldRes = await fetch("/api/data?type=latest-date")
+          const ldData = await ldRes.json()
+          const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
+          const params = new URLSearchParams({
+            type: "multi-domain-metrics",
+            refDate,
+            center: user.center,
+          })
+          const res = await fetch(`/api/role-metrics?${params}`)
+          const d = await res.json()
+          if (d.success) {
+            setProductivity({
+              voice: d.metrics.voiceResponseRate ?? 0,
+              chat: d.metrics.chatResponseRate ?? 0,
+            })
+          }
+        } catch { /* silent */ }
+      }
+    }
+    fetchExtras()
+  }, [user?.agentId, user?.userId, user?.center, monthOffset, monthStart])
 
   const baseDate = monthOffset === 0 ? new Date() : addMonths(new Date(), monthOffset)
   const monthStart = startOfMonth(baseDate)
@@ -107,7 +169,7 @@ export default function MonthlyReportPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">월간 리포트</h1>
-          <p className="text-sm text-slate-500 mt-1">월간 추이와 목표 달성률을 확인합니다.</p>
+          <p className="text-sm text-slate-500 mt-1">품질 4도메인 통합 + 생산성 월간 현황을 확인합니다.</p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => setMonthOffset(monthOffset - 1)}>
@@ -179,6 +241,104 @@ export default function MonthlyReportPage() {
               </CardContent>
             </Card>
           </div>
+
+          {/* 품질 지표 (QA / CSAT / 직무테스트) */}
+          {qualityScores && (
+            <div>
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <ClipboardCheck className="h-3.5 w-3.5" />
+                품질 지표
+              </p>
+              <div className="grid grid-cols-3 gap-4">
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-blue-50">
+                        <ClipboardCheck className="h-3.5 w-3.5 text-blue-600" />
+                      </div>
+                      <span className="text-xs text-slate-500">QA 평가</span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold text-slate-900">
+                        {qualityScores.qa > 0 ? `${qualityScores.qa.toFixed(1)}점` : "-"}
+                      </span>
+                      {qualityScores.qa > 0 && qualityScores.qaPrev > 0 && (
+                        <DiffIndicator diff={qualityScores.qa - qualityScores.qaPrev} higherIsBetter={true} />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-50">
+                        <Star className="h-3.5 w-3.5 text-amber-600" />
+                      </div>
+                      <span className="text-xs text-slate-500">CSAT</span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold text-slate-900">
+                        {qualityScores.csat > 0 ? `${qualityScores.csat.toFixed(2)}점` : "-"}
+                      </span>
+                      {qualityScores.csat > 0 && qualityScores.csatPrev > 0 && (
+                        <DiffIndicator diff={qualityScores.csat - qualityScores.csatPrev} higherIsBetter={true} />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4 pb-3">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="flex h-7 w-7 items-center justify-center rounded-md bg-green-50">
+                        <BookOpen className="h-3.5 w-3.5 text-green-600" />
+                      </div>
+                      <span className="text-xs text-slate-500">직무테스트</span>
+                    </div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="text-xl font-bold text-slate-900">
+                        {qualityScores.quiz > 0 ? `${qualityScores.quiz.toFixed(1)}점` : "-"}
+                      </span>
+                      {qualityScores.quiz > 0 && qualityScores.quizPrev > 0 && (
+                        <DiffIndicator diff={qualityScores.quiz - qualityScores.quizPrev} higherIsBetter={true} />
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {/* 생산성 요약 (센터 기준) */}
+          {productivity && (
+            <Card className="border-slate-200 bg-gradient-to-r from-slate-50 to-white">
+              <CardContent className="pt-4 pb-3">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Phone className="h-3.5 w-3.5" />
+                  생산성 (센터 기준)
+                </p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-50">
+                      <Phone className="h-4 w-4 text-indigo-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">유선 응대율</p>
+                      <p className="text-lg font-bold text-slate-900">{productivity.voice.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+                      <MessageSquare className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500">채팅 응대율</p>
+                      <p className="text-lg font-bold text-slate-900">{productivity.chat.toFixed(1)}%</p>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 주간별 추이 테이블 */}
           <Card>
@@ -265,5 +425,18 @@ export default function MonthlyReportPage() {
         </>
       )}
     </div>
+  )
+}
+
+// ── 전월 대비 차이 표시 ──
+
+function DiffIndicator({ diff, higherIsBetter }: { diff: number; higherIsBetter: boolean }) {
+  if (Math.abs(diff) < 0.05) return null
+  const isGood = higherIsBetter ? diff > 0 : diff < 0
+  return (
+    <span className={`flex items-center text-xs ${isGood ? "text-green-600" : "text-red-500"}`}>
+      {diff > 0 ? <TrendingUp className="h-3 w-3 mr-0.5" /> : <TrendingDown className="h-3 w-3 mr-0.5" />}
+      {diff > 0 ? "+" : ""}{diff.toFixed(1)}
+    </span>
   )
 }

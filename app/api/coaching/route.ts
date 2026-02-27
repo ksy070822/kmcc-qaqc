@@ -8,6 +8,7 @@
  * GET /api/coaching?action=effectiveness&month=2026-02&prevMonth=2026-01
  * GET /api/coaching?action=drilldown&agentId=xxx&month=2026-02
  * GET /api/coaching?action=trend&agentId=xxx&weeks=8
+ * GET /api/coaching?action=agent-plan&agentId=xxx&month=2026-02
  * GET /api/coaching?action=underperforming&weekStart=2026-02-13&weekEnd=2026-02-19&month=2026-02&center=용산
  * GET /api/coaching?action=underperforming-history&agentId=xxx&weeks=6
  */
@@ -153,6 +154,22 @@ export async function GET(request: NextRequest) {
         )
       }
 
+      // 상담사 개인 코칭 플랜 (mypage 용)
+      case 'agent-plan': {
+        if (!agentId) {
+          return NextResponse.json(
+            { success: false, error: 'agentId is required' },
+            { status: 400, headers: corsHeaders },
+          )
+        }
+        const allPlans = await generateCoachingPlans(month, center)
+        const agentPlan = allPlans.filter(p => p.agentId === agentId)
+        return NextResponse.json(
+          { success: true, data: agentPlan },
+          { headers: corsHeaders },
+        )
+      }
+
       // 미흡상담사 주간 적발 이력 (연속 적발 추적)
       case 'underperforming-history': {
         if (!agentId) {
@@ -180,7 +197,7 @@ export async function GET(request: NextRequest) {
 
       default:
         return NextResponse.json(
-          { success: false, error: `Unknown action: ${action}. Use: plans, new-hires, heatmap, alerts, effectiveness, drilldown, trend, underperforming, underperforming-history` },
+          { success: false, error: `Unknown action: ${action}. Use: plans, new-hires, heatmap, alerts, effectiveness, drilldown, trend, agent-plan, underperforming, underperforming-history` },
           { status: 400, headers: corsHeaders },
         )
     }

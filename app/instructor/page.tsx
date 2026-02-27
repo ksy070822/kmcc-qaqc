@@ -5,100 +5,49 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/hooks/use-auth"
 import {
-  BarChart3,
-  TrendingDown,
-  TrendingUp,
-  Users,
-  AlertTriangle,
-  CheckCircle2,
+  ShieldCheck,
+  ClipboardCheck,
+  Star,
+  BookOpen,
   Loader2,
   ArrowUpRight,
   ArrowDownRight,
   GraduationCap,
+  Phone,
+  MessageSquare,
+  Award,
+  UserCheck,
+  Activity,
 } from "lucide-react"
-import { format } from "date-fns"
-import { ko } from "date-fns/locale"
-import { getThursdayWeek, getPrevThursdayWeek, formatDate } from "@/lib/utils"
-
-interface CenterMetrics {
-  totalEvaluations: number
-  attitudeErrorRate: number
-  opsErrorRate: number
-  prevAttitudeRate: number
-  prevOpsRate: number
-  totalAgents: number
-  groupCount: number
-  topIssueItems: Array<{ item: string; count: number; rate: number }>
-  groupSummary: Array<{
-    service: string
-    channel: string
-    evaluations: number
-    attitudeRate: number
-    opsRate: number
-  }>
-}
+import type { MultiDomainMetrics } from "@/lib/bigquery-role-metrics"
 
 export default function InstructorMainPage() {
   const { user } = useAuth()
-  const [metrics, setMetrics] = useState<CenterMetrics | null>(null)
+  const [metrics, setMetrics] = useState<MultiDomainMetrics | null>(null)
   const [loading, setLoading] = useState(true)
-  const [dataWeekLabel, setDataWeekLabel] = useState<{ start: Date; end: Date } | null>(null)
+  const [weekRange, setWeekRange] = useState<{ start: string; end: string } | null>(null)
 
   useEffect(() => {
     async function fetchMetrics() {
       try {
         setLoading(true)
 
-        // 1. 최신 데이터 날짜를 먼저 가져와서 기준점으로 사용
         const ldRes = await fetch("/api/data?type=latest-date")
         const ldData = await ldRes.json()
-        const referenceDate = ldData.latestDate ? new Date(ldData.latestDate) : new Date()
+        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
 
-        // 2. 기준 날짜가 속한 주를 "이번 주"로 사용 (목~수 기준)
-        const thisWeek = getThursdayWeek(referenceDate)
-        const prevWeek = getPrevThursdayWeek(referenceDate)
-
-        setDataWeekLabel({ start: thisWeek.start, end: thisWeek.end })
-
-        const startDateStr = formatDate(prevWeek.start)
-        const endDateStr = formatDate(thisWeek.end)
-
-        const params = new URLSearchParams({
-          startDate: startDateStr,
-          endDate: endDateStr,
-        })
+        const params = new URLSearchParams({ type: "multi-domain-metrics", refDate })
         if (user?.center) params.append("center", user.center)
 
-        const res = await fetch(`/api/data?type=center-metrics&${params}`)
+        const res = await fetch(`/api/role-metrics?${params}`)
         const data = await res.json()
 
         if (data.success) {
           setMetrics(data.metrics)
-        } else {
-          setMetrics({
-            totalEvaluations: 0,
-            attitudeErrorRate: 0,
-            opsErrorRate: 0,
-            prevAttitudeRate: 0,
-            prevOpsRate: 0,
-            totalAgents: 0,
-            groupCount: 0,
-            topIssueItems: [],
-            groupSummary: [],
-          })
+          setWeekRange(data.weekRange)
         }
       } catch {
-        setMetrics({
-          totalEvaluations: 0,
-          attitudeErrorRate: 0,
-          opsErrorRate: 0,
-          prevAttitudeRate: 0,
-          prevOpsRate: 0,
-          totalAgents: 0,
-          groupCount: 0,
-          topIssueItems: [],
-          groupSummary: [],
-        })
+        // silent
       } finally {
         setLoading(false)
       }
@@ -106,9 +55,6 @@ export default function InstructorMainPage() {
 
     fetchMetrics()
   }, [user?.center])
-
-  const attDiff = metrics ? metrics.attitudeErrorRate - metrics.prevAttitudeRate : 0
-  const opsDiff = metrics ? metrics.opsErrorRate - metrics.prevOpsRate : 0
 
   if (loading) {
     return (
@@ -118,6 +64,13 @@ export default function InstructorMainPage() {
     )
   }
 
+  const attDiff = metrics ? metrics.qcAttitudeRate - metrics.qcPrevAttitudeRate : 0
+  const opsDiff = metrics ? metrics.qcOpsRate - metrics.qcPrevOpsRate : 0
+  const qaDiff = metrics ? metrics.qaAvgScore - metrics.qaPrevAvgScore : 0
+  const csatDiff = metrics ? metrics.csatAvgScore - metrics.csatPrevAvgScore : 0
+  const quizDiff = metrics ? metrics.quizAvgScore - metrics.quizPrevAvgScore : 0
+  const slaDiff = metrics ? metrics.slaScore - metrics.slaPrevScore : 0
+
   return (
     <div className="space-y-6">
       {/* 페이지 헤더 */}
@@ -126,233 +79,225 @@ export default function InstructorMainPage() {
           {user?.center ? `${user.center} 센터 현황` : "센터 현황"}
         </h1>
         <p className="text-sm text-slate-500 mt-1">
-          {dataWeekLabel
-            ? `${format(dataWeekLabel.start, "yyyy년 M월 d일", { locale: ko })} ~ ${format(dataWeekLabel.end, "M월 d일", { locale: ko })} 주간 현황`
-            : "주간 현황 로딩 중..."
-          }
+          {weekRange
+            ? `${weekRange.start} ~ ${weekRange.end} 주간 · ${new Date().toISOString().slice(0, 7)} 월간`
+            : "데이터 로딩 중..."}
         </p>
       </div>
 
-      {/* KPI 카드 4개 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-5 pb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-purple-50">
-                <BarChart3 className="h-5 w-5 text-[#7c3aed]" />
-              </div>
-              <Badge variant="outline" className="text-xs">이번 주</Badge>
-            </div>
-            <div className="text-2xl font-bold text-slate-900">
-              {metrics?.totalEvaluations ?? 0}건
-            </div>
-            <p className="text-xs text-slate-500 mt-1">주간 검수 건수</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5 pb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-50">
-                {attDiff <= 0 ? (
-                  <TrendingDown className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingUp className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="flex items-center gap-1 text-xs">
-                {attDiff <= 0 ? (
-                  <span className="flex items-center text-green-600">
-                    <ArrowDownRight className="h-3 w-3" />
-                    {Math.abs(attDiff).toFixed(1)}%p
-                  </span>
-                ) : (
-                  <span className="flex items-center text-red-600">
-                    <ArrowUpRight className="h-3 w-3" />
-                    +{attDiff.toFixed(1)}%p
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-slate-900">
-              {metrics?.attitudeErrorRate.toFixed(1) ?? "0.0"}%
-            </div>
-            <p className="text-xs text-slate-500 mt-1">상담태도 오류율</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5 pb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50">
-                {opsDiff <= 0 ? (
-                  <TrendingDown className="h-5 w-5 text-green-600" />
-                ) : (
-                  <TrendingUp className="h-5 w-5 text-red-600" />
-                )}
-              </div>
-              <div className="flex items-center gap-1 text-xs">
-                {opsDiff <= 0 ? (
-                  <span className="flex items-center text-green-600">
-                    <ArrowDownRight className="h-3 w-3" />
-                    {Math.abs(opsDiff).toFixed(1)}%p
-                  </span>
-                ) : (
-                  <span className="flex items-center text-red-600">
-                    <ArrowUpRight className="h-3 w-3" />
-                    +{opsDiff.toFixed(1)}%p
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="text-2xl font-bold text-slate-900">
-              {metrics?.opsErrorRate.toFixed(1) ?? "0.0"}%
-            </div>
-            <p className="text-xs text-slate-500 mt-1">오상담 오류율</p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-5 pb-4">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-green-50">
-                <Users className="h-5 w-5 text-green-600" />
-              </div>
-              <Badge variant="outline" className="text-xs">관리 인원</Badge>
-            </div>
-            <div className="text-2xl font-bold text-slate-900">
-              {metrics?.totalAgents ?? 0}명
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              {metrics?.groupCount ?? 0}개 그룹
-            </p>
-          </CardContent>
-        </Card>
+      {/* ═══ QC 모니터링 (주간) ═══ */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <ShieldCheck className="h-4 w-4" />
+          QC 모니터링 (주간)
+        </h2>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <KpiCard value={`${metrics?.qcEvaluations ?? 0}건`} label="주간 검수 건수" />
+          <KpiCard value={`${metrics?.qcAttitudeRate.toFixed(1) ?? "0.0"}%`} label="태도 오류율" diff={attDiff} higherIsBetter={false} />
+          <KpiCard value={`${metrics?.qcOpsRate.toFixed(1) ?? "0.0"}%`} label="오상담 오류율" diff={opsDiff} higherIsBetter={false} />
+          <KpiCard value={`${metrics?.totalAgents ?? 0}명`} label={`관리 상담사 · ${metrics?.groupCount ?? 0}개 그룹`} />
+        </div>
       </div>
 
-      {/* 하단 섹션 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* 주요 부진 항목 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-500" />
-              주요 부진 항목 (이번 주)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {metrics?.topIssueItems && metrics.topIssueItems.length > 0 ? (
-              <div className="space-y-3">
-                {metrics.topIssueItems.slice(0, 5).map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-6 w-6 items-center justify-center rounded-full bg-slate-100 text-xs font-medium text-slate-600">
-                        {idx + 1}
-                      </span>
-                      <span className="text-sm text-slate-700">{item.item}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-slate-900">{item.count}건</span>
-                      <span className="text-xs text-slate-500">({item.rate.toFixed(1)}%)</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center py-8 text-slate-400">
-                <CheckCircle2 className="h-8 w-8 mb-2" />
-                <p className="text-sm">이번 주 검수 데이터가 없습니다</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* 센터 정보 */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <GraduationCap className="h-4 w-4 text-[#7c3aed]" />
-              센터 정보
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500">소속 센터</span>
-                <span className="text-sm font-medium text-slate-900">
-                  {user?.center || "전체"}
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500">관리 상담사</span>
-                <span className="text-sm font-medium text-slate-900">{metrics?.totalAgents ?? 0}명</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500">관리 그룹</span>
-                <span className="text-sm font-medium text-slate-900">{metrics?.groupCount ?? 0}개</span>
-              </div>
-              <div className="flex items-center justify-between py-2 border-b border-slate-100">
-                <span className="text-sm text-slate-500">전주 태도 오류율</span>
-                <span className="text-sm font-medium text-slate-900">
-                  {metrics?.prevAttitudeRate.toFixed(1) ?? "0.0"}%
-                </span>
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <span className="text-sm text-slate-500">전주 오상담 오류율</span>
-                <span className="text-sm font-medium text-slate-900">
-                  {metrics?.prevOpsRate.toFixed(1) ?? "0.0"}%
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* ═══ 품질 지표 (월간) — QA + CSAT + Quiz ═══ */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <ClipboardCheck className="h-4 w-4" />
+          품질 지표 (월간)
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <DomainCard
+            icon={ClipboardCheck} iconBg="bg-blue-50" iconColor="text-blue-600"
+            title="QA 평균 점수" value={`${metrics?.qaAvgScore.toFixed(1) ?? "0.0"}점`}
+            badge={`${metrics?.qaEvalCount ?? 0}건`}
+            diff={qaDiff} higherIsBetter={true} suffix="점"
+          />
+          <DomainCard
+            icon={Star} iconBg="bg-amber-50" iconColor="text-amber-600"
+            title="CSAT 평균 (5점)" value={`${metrics?.csatAvgScore.toFixed(2) ?? "0.00"}점`}
+            badge={`${metrics?.csatReviewCount ?? 0}건`}
+            diff={csatDiff} higherIsBetter={true} suffix="점"
+          />
+          <DomainCard
+            icon={BookOpen} iconBg="bg-green-50" iconColor="text-green-600"
+            title="직무테스트 평균" value={`${metrics?.quizAvgScore.toFixed(1) ?? "0.0"}점`}
+            badge={`${metrics?.quizAttemptCount ?? 0}건`}
+            diff={quizDiff} higherIsBetter={true} suffix="점"
+          />
+        </div>
       </div>
 
-      {/* 그룹별 요약 테이블 */}
-      {metrics?.groupSummary && metrics.groupSummary.length > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-[#7c3aed]" />
-              그룹별 현황
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-slate-200">
-                    <th className="py-2 px-3 text-left font-medium text-slate-500">서비스</th>
-                    <th className="py-2 px-3 text-left font-medium text-slate-500">채널</th>
-                    <th className="py-2 px-3 text-right font-medium text-slate-500">검수건수</th>
-                    <th className="py-2 px-3 text-right font-medium text-slate-500">태도 오류율</th>
-                    <th className="py-2 px-3 text-right font-medium text-slate-500">오상담 오류율</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {metrics.groupSummary.map((group, idx) => (
-                    <tr key={idx} className="border-b border-slate-100 last:border-0">
-                      <td className="py-2 px-3 text-slate-900">{group.service}</td>
-                      <td className="py-2 px-3 text-slate-700">{group.channel}</td>
-                      <td className="py-2 px-3 text-right text-slate-900">{group.evaluations}건</td>
-                      <td className="py-2 px-3 text-right">
-                        <span className={group.attitudeRate > 3.3 ? "text-red-600 font-medium" : "text-slate-900"}>
-                          {group.attitudeRate.toFixed(1)}%
-                        </span>
-                      </td>
-                      <td className="py-2 px-3 text-right">
-                        <span className={group.opsRate > 3.9 ? "text-red-600 font-medium" : "text-slate-900"}>
-                          {group.opsRate.toFixed(1)}%
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* ═══ 생산성 (월간) — 유선/채팅 응대율 ═══ */}
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Activity className="h-4 w-4" />
+          생산성 (월간)
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <DomainCard
+            icon={Phone} iconBg="bg-indigo-50" iconColor="text-indigo-600"
+            title="유선 응대율" value={`${metrics?.voiceResponseRate.toFixed(1) ?? "0.0"}%`}
+            badge="유선" diff={0} higherIsBetter={true} suffix="%p"
+          />
+          <DomainCard
+            icon={MessageSquare} iconBg="bg-violet-50" iconColor="text-violet-600"
+            title="채팅 응대율" value={`${metrics?.chatResponseRate.toFixed(1) ?? "0.0"}%`}
+            badge="채팅" diff={0} higherIsBetter={true} suffix="%p"
+          />
+        </div>
+      </div>
+
+      {/* ═══ SLA · 근태 (본사 전용 — 추후 오픈 검토) ═══
+      <div>
+        <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <Award className="h-4 w-4" />
+          SLA · 근태
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50">
+                  <Award className="h-4 w-4 text-rose-600" />
+                </div>
+                <SlaGradeBadge grade={metrics?.slaGrade ?? "-"} />
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xl font-bold text-slate-900">
+                  {metrics?.slaScore.toFixed(1) ?? "0.0"}점
+                </span>
+                <DiffBadge diff={slaDiff} higherIsBetter={true} suffix="점" />
+              </div>
+              <p className="text-xs text-slate-500 mt-1">SLA 종합점수 (107점 만점)</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100">
+                  <Award className="h-4 w-4 text-slate-500" />
+                </div>
+                <SlaGradeBadge grade={metrics?.slaPrevGrade ?? "-"} />
+              </div>
+              <span className="text-2xl font-bold text-slate-900">
+                {metrics?.slaPrevScore.toFixed(1) ?? "0.0"}점
+              </span>
+              <p className="text-xs text-slate-500 mt-1">전월 SLA 점수</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-50">
+                  <UserCheck className="h-4 w-4 text-teal-600" />
+                </div>
+                <Badge variant="outline" className="text-xs">
+                  {metrics?.attendanceActual ?? 0}/{metrics?.attendancePlanned ?? 0}명
+                </Badge>
+              </div>
+              <span className="text-2xl font-bold text-slate-900">
+                {metrics?.attendanceRate.toFixed(1) ?? "0.0"}%
+              </span>
+              <p className="text-xs text-slate-500 mt-1">금일 출근율</p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+      */}
+
+      {/* ═══ 센터 정보 ═══ */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <GraduationCap className="h-4 w-4 text-[#7c3aed]" />
+            센터 정보
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <InfoItem label="소속 센터" value={user?.center || "전체"} />
+            <InfoItem label="관리 상담사" value={`${metrics?.totalAgents ?? 0}명`} />
+            <InfoItem label="전주 태도 오류율" value={`${metrics?.qcPrevAttitudeRate.toFixed(1) ?? "0.0"}%`} />
+            <InfoItem label="전주 오상담 오류율" value={`${metrics?.qcPrevOpsRate.toFixed(1) ?? "0.0"}%`} />
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ── 공통 컴포넌트 ──
+
+function KpiCard({ value, label, diff, higherIsBetter }: {
+  value: string; label: string; diff?: number; higherIsBetter?: boolean
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-bold text-slate-900">{value}</span>
+          {diff != null && higherIsBetter != null && <DiffBadge diff={diff} higherIsBetter={higherIsBetter} />}
+        </div>
+        <p className="text-xs text-slate-500 mt-1">{label}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DomainCard({ icon: Icon, iconBg, iconColor, title, value, badge, diff, higherIsBetter, suffix = "%p" }: {
+  icon: React.ComponentType<{ className?: string }>
+  iconBg: string; iconColor: string; title: string; value: string; badge: string
+  diff: number; higherIsBetter: boolean; suffix?: string
+}) {
+  return (
+    <Card>
+      <CardContent className="pt-5 pb-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${iconBg}`}>
+            <Icon className={`h-4 w-4 ${iconColor}`} />
+          </div>
+          <Badge variant="outline" className="text-xs">{badge}</Badge>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-2xl font-bold text-slate-900">{value}</span>
+          <DiffBadge diff={diff} higherIsBetter={higherIsBetter} suffix={suffix} />
+        </div>
+        <p className="text-xs text-slate-500 mt-1">{title}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function DiffBadge({ diff, higherIsBetter, suffix = "%p" }: { diff: number; higherIsBetter: boolean; suffix?: string }) {
+  if (Math.abs(diff) < 0.05) return null
+  const isGood = higherIsBetter ? diff > 0 : diff < 0
+  return (
+    <span className={`flex items-center text-xs ${isGood ? "text-green-600" : "text-red-600"}`}>
+      {diff > 0 ? <ArrowUpRight className="h-3 w-3" /> : <ArrowDownRight className="h-3 w-3" />}
+      {diff > 0 ? "+" : ""}{diff.toFixed(1)}{suffix}
+    </span>
+  )
+}
+
+const SLA_GRADE_COLORS: Record<string, string> = {
+  S: "bg-yellow-100 text-yellow-800",
+  A: "bg-green-100 text-green-800",
+  B: "bg-blue-100 text-blue-800",
+  C: "bg-orange-100 text-orange-800",
+  D: "bg-red-100 text-red-800",
+  E: "bg-red-200 text-red-900",
+}
+
+function SlaGradeBadge({ grade }: { grade: string }) {
+  const color = SLA_GRADE_COLORS[grade] || "bg-slate-100 text-slate-600"
+  return <Badge className={`text-xs font-bold ${color}`}>{grade}등급</Badge>
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="py-2">
+      <p className="text-xs text-slate-500">{label}</p>
+      <p className="text-sm font-medium text-slate-900 mt-0.5">{value}</p>
     </div>
   )
 }

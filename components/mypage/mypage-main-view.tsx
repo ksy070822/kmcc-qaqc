@@ -1,11 +1,13 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MypageSummaryCard } from "@/components/mypage/mypage-summary-card"
 import { MypageTrendChart } from "@/components/mypage/mypage-trend-chart"
 import { useMypageProfile } from "@/hooks/use-mypage-profile"
 import type { UserInfo } from "@/lib/auth"
-import { ShieldCheck, Star, ClipboardCheck, BookOpen, Loader2 } from "lucide-react"
+import { ShieldCheck, Star, ClipboardCheck, BookOpen, Loader2, Phone, MessageSquare } from "lucide-react"
 
 function getPerformanceLevel(qcRate: number): { label: string; color: string } {
   if (qcRate <= 2.0) return { label: "우수", color: "bg-emerald-50 text-emerald-700 border-emerald-200" }
@@ -22,6 +24,32 @@ interface MypageMainViewProps {
 
 export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProps) {
   const { data, loading } = useMypageProfile(agentId)
+  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
+
+  useEffect(() => {
+    async function fetchProductivity() {
+      if (!user?.center) return
+      try {
+        const ldRes = await fetch("/api/data?type=latest-date")
+        const ldData = await ldRes.json()
+        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
+        const params = new URLSearchParams({
+          type: "multi-domain-metrics",
+          refDate,
+          center: user.center,
+        })
+        const res = await fetch(`/api/role-metrics?${params}`)
+        const d = await res.json()
+        if (d.success) {
+          setProductivity({
+            voice: d.metrics.voiceResponseRate ?? 0,
+            chat: d.metrics.chatResponseRate ?? 0,
+          })
+        }
+      } catch { /* silent */ }
+    }
+    fetchProductivity()
+  }, [user?.center])
 
   if (loading) {
     return (
@@ -112,6 +140,40 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
           onDetailClick={() => onNavigate("quiz")}
         />
       </div>
+
+      {/* 생산성 (센터 기준) */}
+      {productivity && (
+        <div>
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Phone className="h-3.5 w-3.5" />
+            생산성 (센터 기준)
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            <Card>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-50">
+                    <Phone className="h-3.5 w-3.5 text-indigo-600" />
+                  </div>
+                  <span className="text-xs text-slate-500">유선 응대율</span>
+                </div>
+                <span className="text-xl font-bold text-slate-900">{productivity.voice.toFixed(1)}%</span>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-50">
+                    <MessageSquare className="h-3.5 w-3.5 text-violet-600" />
+                  </div>
+                  <span className="text-xs text-slate-500">채팅 응대율</span>
+                </div>
+                <span className="text-xl font-bold text-slate-900">{productivity.chat.toFixed(1)}%</span>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* Trend Chart */}
       <MypageTrendChart data={data?.trendData ?? []} />

@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   CalendarDays,
   CalendarRange,
+  MessageSquare,
   LogOut,
   Loader2,
   User,
@@ -22,6 +23,7 @@ const mypageNavItems = [
   { id: "/mypage", label: "통합 현황", icon: LayoutDashboard, exact: true },
   { id: "/mypage/weekly", label: "주간 리포트", icon: CalendarDays },
   { id: "/mypage/monthly", label: "월간 리포트", icon: CalendarRange },
+  { id: "/mypage/coaching", label: "코칭 피드백", icon: MessageSquare },
 ]
 
 const adminNavItems = [

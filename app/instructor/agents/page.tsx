@@ -6,49 +6,31 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { useAuth } from "@/hooks/use-auth"
 import { Users, Search, Loader2, ArrowUpDown } from "lucide-react"
+import type { AgentMultiDomainRow } from "@/lib/bigquery-role-metrics"
 
-interface AgentRow {
-  id: string
-  name: string
-  center: string
-  service: string
-  channel: string
-  totalEvaluations: number
-  attitudeErrorRate: number
-  opsErrorRate: number
-}
-
-type SortKey = "name" | "totalEvaluations" | "attitudeErrorRate" | "opsErrorRate"
+type SortKey = keyof Pick<AgentMultiDomainRow, "agentName" | "qcEvalCount" | "qcAttRate" | "qcOpsRate" | "qaScore" | "csatScore" | "quizScore">
 
 export default function InstructorAgentsPage() {
   const { user } = useAuth()
-  const [agents, setAgents] = useState<AgentRow[]>([])
+  const [agents, setAgents] = useState<AgentMultiDomainRow[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
-  const [sortKey, setSortKey] = useState<SortKey>("attitudeErrorRate")
+  const [sortKey, setSortKey] = useState<SortKey>("qcAttRate")
   const [sortDesc, setSortDesc] = useState(true)
 
   useEffect(() => {
     async function fetchAgents() {
       try {
         setLoading(true)
-        // 최신 날짜 기준으로 해당 주 데이터
-        const ldRes = await fetch("/api/data?type=latest-date")
-        const ldData = await ldRes.json()
-        const latestDate = ldData.latestDate || new Date().toISOString().split("T")[0]
-
-        const params = new URLSearchParams({ type: "agents", date: latestDate })
+        const month = new Date().toISOString().slice(0, 7)
+        const params = new URLSearchParams({ type: "agent-list", month })
         if (user?.center) params.append("center", user.center)
 
-        const res = await fetch(`/api/data?${params}`)
+        const res = await fetch(`/api/role-metrics?${params}`)
         const data = await res.json()
 
-        if (data.success && Array.isArray(data.data)) {
-          // center 필터 (API가 center 파라미터 안 받을 경우 대비)
-          const filtered = user?.center
-            ? data.data.filter((a: AgentRow) => a.center === user.center)
-            : data.data
-          setAgents(filtered)
+        if (data.success && Array.isArray(data.agents)) {
+          setAgents(data.agents)
         }
       } catch {
         setAgents([])
@@ -65,13 +47,19 @@ export default function InstructorAgentsPage() {
   }
 
   const filtered = agents
-    .filter((a) => !search || a.name.includes(search) || a.id.includes(search) || a.service.includes(search))
+    .filter((a) => !search || a.agentName.includes(search) || a.agentId.includes(search) || a.service.includes(search))
     .sort((a, b) => {
-      const av = a[sortKey] ?? 0
-      const bv = b[sortKey] ?? 0
+      const av = a[sortKey] ?? -999
+      const bv = b[sortKey] ?? -999
       if (typeof av === "string") return sortDesc ? (bv as string).localeCompare(av) : av.localeCompare(bv as string)
       return sortDesc ? (bv as number) - (av as number) : (av as number) - (bv as number)
     })
+
+  // 도메인별 데이터 보유 상담사 수
+  const qcCount = agents.filter((a) => a.qcEvalCount > 0).length
+  const qaCount = agents.filter((a) => a.qaScore != null).length
+  const csatCount = agents.filter((a) => a.csatScore != null).length
+  const quizCount = agents.filter((a) => a.quizScore != null).length
 
   if (loading) {
     return (
@@ -86,8 +74,17 @@ export default function InstructorAgentsPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">상담사 분석</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {user?.center ? `${user.center} 센터` : "전체"} 상담사별 오류율 현황
+          {user?.center ? `${user.center} 센터` : "전체"} 상담사별 7도메인 현황
         </p>
+      </div>
+
+      {/* 도메인별 데이터 현황 */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <MiniStat label="전체 상담사" value={`${agents.length}명`} />
+        <MiniStat label="QC 검수" value={`${qcCount}명`} />
+        <MiniStat label="QA 평가" value={`${qaCount}명`} />
+        <MiniStat label="CSAT 리뷰" value={`${csatCount}명`} />
+        <MiniStat label="직무테스트" value={`${quizCount}명`} />
       </div>
 
       <div className="flex items-center gap-3">
@@ -107,7 +104,7 @@ export default function InstructorAgentsPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
             <Users className="h-4 w-4 text-[#7c3aed]" />
-            상담사 목록
+            상담사 목록 (7도메인)
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -115,44 +112,48 @@ export default function InstructorAgentsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="py-2 px-3 text-left font-medium text-slate-500">상담사</th>
-                  <th className="py-2 px-3 text-left font-medium text-slate-500">서비스/채널</th>
-                  <th className="py-2 px-3 text-right font-medium text-slate-500 cursor-pointer select-none" onClick={() => handleSort("totalEvaluations")}>
-                    <span className="inline-flex items-center gap-1">검수건수 <ArrowUpDown className="h-3 w-3" /></span>
-                  </th>
-                  <th className="py-2 px-3 text-right font-medium text-slate-500 cursor-pointer select-none" onClick={() => handleSort("attitudeErrorRate")}>
-                    <span className="inline-flex items-center gap-1">태도 오류율 <ArrowUpDown className="h-3 w-3" /></span>
-                  </th>
-                  <th className="py-2 px-3 text-right font-medium text-slate-500 cursor-pointer select-none" onClick={() => handleSort("opsErrorRate")}>
-                    <span className="inline-flex items-center gap-1">오상담 오류율 <ArrowUpDown className="h-3 w-3" /></span>
-                  </th>
+                  <Th label="상담사" />
+                  <Th label="서비스/채널" />
+                  <ThSort label="검수건수" sortKey="qcEvalCount" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="태도 오류율" sortKey="qcAttRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="오상담 오류율" sortKey="qcOpsRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="QA" sortKey="qaScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="CSAT" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="직무테스트" sortKey="quizScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="py-12 text-center text-slate-400">
+                    <td colSpan={8} className="py-12 text-center text-slate-400">
                       상담사 데이터가 없습니다
                     </td>
                   </tr>
                 ) : (
                   filtered.map((agent) => (
-                    <tr key={agent.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
+                    <tr key={agent.agentId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-slate-900">{agent.name}</div>
-                        <div className="text-xs text-slate-400">{agent.id}</div>
+                        <div className="font-medium text-slate-900">{agent.agentName}</div>
+                        <div className="text-xs text-slate-400">{agent.agentId}</div>
                       </td>
-                      <td className="py-2.5 px-3 text-slate-700">{agent.service}/{agent.channel}</td>
-                      <td className="py-2.5 px-3 text-right text-slate-900">{agent.totalEvaluations}건</td>
+                      <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">
+                        {agent.service ? `${agent.service}/${agent.channel}` : agent.channel || "-"}
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-slate-900">{agent.qcEvalCount}건</td>
                       <td className="py-2.5 px-3 text-right">
-                        <span className={agent.attitudeErrorRate > 3.3 ? "text-red-600 font-medium" : "text-slate-900"}>
-                          {agent.attitudeErrorRate.toFixed(1)}%
-                        </span>
+                        <RateCell value={agent.qcAttRate} threshold={3.3} suffix="%" />
                       </td>
                       <td className="py-2.5 px-3 text-right">
-                        <span className={agent.opsErrorRate > 3.9 ? "text-red-600 font-medium" : "text-slate-900"}>
-                          {agent.opsErrorRate.toFixed(1)}%
-                        </span>
+                        <RateCell value={agent.qcOpsRate} threshold={3.9} suffix="%" />
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <ScoreCell value={agent.qaScore} low={85} suffix="점" />
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <ScoreCell value={agent.csatScore} low={3.5} suffix="점" decimals={2} />
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <ScoreCell value={agent.quizScore} low={70} suffix="점" />
                       </td>
                     </tr>
                   ))
@@ -163,5 +164,59 @@ export default function InstructorAgentsPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// ── 공통 컴포넌트 ──
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-4 pb-3">
+        <div className="text-lg font-bold text-slate-900">{value}</div>
+        <p className="text-xs text-slate-500">{label}</p>
+      </CardContent>
+    </Card>
+  )
+}
+
+function Th({ label }: { label: string }) {
+  return <th className="py-2 px-3 text-left font-medium text-slate-500">{label}</th>
+}
+
+function ThSort({ label, sortKey, currentKey, desc, onClick, align = "left" }: {
+  label: string; sortKey: SortKey; currentKey: SortKey; desc: boolean
+  onClick: (key: SortKey) => void; align?: "left" | "right"
+}) {
+  const active = currentKey === sortKey
+  return (
+    <th
+      className={`py-2 px-3 font-medium text-slate-500 cursor-pointer select-none text-${align}`}
+      onClick={() => onClick(sortKey)}
+    >
+      <span className={`inline-flex items-center gap-1 ${active ? "text-slate-900" : ""}`}>
+        {label} <ArrowUpDown className="h-3 w-3" />
+      </span>
+    </th>
+  )
+}
+
+/** 오류율 셀: threshold 초과 시 빨강 */
+function RateCell({ value, threshold, suffix }: { value: number | null; threshold: number; suffix: string }) {
+  if (value == null) return <span className="text-slate-300">-</span>
+  return (
+    <span className={value > threshold ? "text-red-600 font-medium" : "text-slate-900"}>
+      {value.toFixed(1)}{suffix}
+    </span>
+  )
+}
+
+/** 점수 셀: low 미만이면 빨강 */
+function ScoreCell({ value, low, suffix, decimals = 1 }: { value: number | null; low: number; suffix: string; decimals?: number }) {
+  if (value == null) return <span className="text-slate-300">-</span>
+  return (
+    <span className={value < low ? "text-red-600 font-medium" : "text-slate-900"}>
+      {value.toFixed(decimals)}{suffix}
+    </span>
   )
 }
