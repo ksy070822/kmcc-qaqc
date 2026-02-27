@@ -64,9 +64,11 @@ export default function LoginPage() {
         <CardHeader className="items-center pb-2">
           <div className="flex items-center gap-3 mb-1">
             <Image src="/kakaot_logo1.png" alt="Komi" width={48} height={48} className="rounded-lg" />
-            <h1 className="text-xl font-bold text-foreground">Komi</h1>
+            <div>
+              <h1 className="text-xl font-bold text-foreground">Komi</h1>
+              <p className="text-xs text-muted-foreground">KMCC 통합 관리 시스템</p>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground">KMCC 통합 관리 시스템</p>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* 사번/비밀번호 로그인 */}

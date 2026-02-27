@@ -139,50 +139,55 @@ export async function getAgentProfile(
     ORDER BY m.month
   `
 
-  const [mainRows] = await bq.query({ query: mainQuery, params })
-  const rows = mainRows as Record<string, unknown>[]
-
   // CSAT trend (cross-project, separate query)
+  const csatQuery = `
+    WITH agent_trend AS (
+      SELECT
+        FORMAT_DATE('%Y-%m', DATE(r.created_at)) AS month,
+        AVG(r.score) AS avg_score
+      FROM ${CHAT_INQUIRE} ci
+      JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+      JOIN ${REVIEW} r ON r.review_request_id = rr.id
+      JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+      WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
+        AND DATE(r.created_at) >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH)
+      GROUP BY month
+    ),
+    center_avg AS (
+      SELECT AVG(r.score) AS avg_score
+      FROM ${CHAT_INQUIRE} ci
+      JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+      JOIN ${REVIEW} r ON r.review_request_id = rr.id
+      JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+      WHERE u.team_id1 = (
+        SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
+      )
+      AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = FORMAT_DATE('%Y-%m', CURRENT_DATE('Asia/Seoul'))
+    )
+    SELECT t.month, t.avg_score, (SELECT avg_score FROM center_avg) AS center_avg
+    FROM agent_trend t
+    ORDER BY t.month
+  `
+
+  // 두 BQ 쿼리 병렬 실행 (순차 → 병렬로 로딩 시간 ~50% 단축)
+  const [mainResult, csatResult] = await Promise.all([
+    bq.query({ query: mainQuery, params }),
+    bq.query({ query: csatQuery, params }).catch((err) => {
+      console.error("[bigquery-mypage] CSAT cross-project query failed:", err)
+      return [[] as Record<string, unknown>[]] as const
+    }),
+  ])
+
+  const rows = mainResult[0] as Record<string, unknown>[]
+
   let csatMap = new Map<string, number>()
   let csatGroupAvg = 0
-  try {
-    const csatQuery = `
-      WITH agent_trend AS (
-        SELECT
-          FORMAT_DATE('%Y-%m', DATE(r.created_at)) AS month,
-          AVG(r.score) AS avg_score
-        FROM ${CHAT_INQUIRE} ci
-        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
-        JOIN ${REVIEW} r ON r.review_request_id = rr.id
-        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
-        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-        WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
-          AND DATE(r.created_at) >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH)
-        GROUP BY month
-      ),
-      center_avg AS (
-        SELECT AVG(r.score) AS avg_score
-        FROM ${CHAT_INQUIRE} ci
-        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
-        JOIN ${REVIEW} r ON r.review_request_id = rr.id
-        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
-        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-        WHERE u.team_id1 = (
-          SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
-        )
-        AND FORMAT_DATE('%Y-%m', DATE(r.created_at)) = FORMAT_DATE('%Y-%m', CURRENT_DATE('Asia/Seoul'))
-      )
-      SELECT t.month, t.avg_score, (SELECT avg_score FROM center_avg) AS center_avg
-      FROM agent_trend t
-      ORDER BY t.month
-    `
-    const [csatRows] = await bq.query({ query: csatQuery, params })
-    for (const row of csatRows as Record<string, unknown>[]) {
-      csatMap.set(String(row.month), Number(row.avg_score) || 0)
-      if (row.center_avg != null) csatGroupAvg = Number(row.center_avg) || 0
-    }
-  } catch (err) {
-    console.error("[bigquery-mypage] CSAT cross-project query failed:", err)
+  const csatRows = csatResult[0] as Record<string, unknown>[]
+  for (const row of csatRows) {
+    csatMap.set(String(row.month), Number(row.avg_score) || 0)
+    if (row.center_avg != null) csatGroupAvg = Number(row.center_avg) || 0
   }
 
   // Build trend data — 데이터 없는 월은 null (선 끊김 처리)

@@ -30,9 +30,7 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
     async function fetchProductivity() {
       if (!user?.center) return
       try {
-        const ldRes = await fetch("/api/data?type=latest-date")
-        const ldData = await ldRes.json()
-        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
+        const refDate = new Date().toISOString().slice(0, 10)
         const params = new URLSearchParams({
           type: "multi-domain-metrics",
           refDate,

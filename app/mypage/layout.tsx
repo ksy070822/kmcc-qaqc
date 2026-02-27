@@ -190,7 +190,10 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
       <div className={cn("transition-all duration-300", collapsed ? "ml-16" : "ml-60")}>
         {/* 상단 헤더 */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm">
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-green-50 border-green-200 text-green-700 font-medium">
+              상담사
+            </Badge>
             {user && (
               <>
                 {user.center && (
@@ -205,14 +208,23 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
                 )}
                 {user.channel && (
                   <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-emerald-50 border-emerald-200 text-emerald-700">
-                    {user.channel === "유선" ? "유선" : user.channel === "채팅" ? "채팅" : user.channel}
+                    {user.channel}
                   </Badge>
                 )}
-                {user.workHours && (
-                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-amber-50 border-amber-200 text-amber-700">
-                    {user.workHours}
-                  </Badge>
-                )}
+                {user.workHours && (() => {
+                  const startHour = parseInt(user.workHours!.split("~")[0]?.split(":")[0] || "9", 10)
+                  const shift = startHour >= 6 && startHour < 13 ? "주간" : startHour >= 13 && startHour < 20 ? "야간" : "심야"
+                  const shiftStyle = shift === "주간"
+                    ? "bg-amber-50 border-amber-200 text-amber-700"
+                    : shift === "야간"
+                      ? "bg-indigo-50 border-indigo-200 text-indigo-700"
+                      : "bg-purple-50 border-purple-200 text-purple-700"
+                  return (
+                    <Badge variant="outline" className={`text-[11px] px-2 py-0.5 ${shiftStyle}`}>
+                      {shift} ({user.workHours})
+                    </Badge>
+                  )
+                })()}
               </>
             )}
           </div>
