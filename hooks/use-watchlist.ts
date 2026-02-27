@@ -18,6 +18,7 @@ export interface WatchListAgent {
   reason: string
   topErrors: string[]
   registeredAt?: string
+  weeklyStatus?: "new" | "continuing" | "resolving"
 }
 
 interface UseWatchListOptions {
@@ -25,6 +26,8 @@ interface UseWatchListOptions {
   channel?: string
   tenure?: string
   month?: string
+  weekStart?: string
+  weekEnd?: string
 }
 
 export function useWatchList(options: UseWatchListOptions = {}) {
@@ -42,6 +45,8 @@ export function useWatchList(options: UseWatchListOptions = {}) {
       if (options.channel && options.channel !== "all") params.append("channel", options.channel)
       if (options.tenure && options.tenure !== "all") params.append("tenure", options.tenure)
       if (options.month) params.append("month", options.month)
+      if (options.weekStart) params.append("weekStart", options.weekStart)
+      if (options.weekEnd) params.append("weekEnd", options.weekEnd)
 
       const response = await fetch(`/api/watchlist?${params.toString()}`)
       const result = await response.json()
@@ -56,7 +61,7 @@ export function useWatchList(options: UseWatchListOptions = {}) {
     } finally {
       setLoading(false)
     }
-  }, [options.center, options.channel, options.tenure, options.month])
+  }, [options.center, options.channel, options.tenure, options.month, options.weekStart, options.weekEnd])
 
   useEffect(() => {
     fetchWatchList()

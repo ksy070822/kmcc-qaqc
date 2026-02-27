@@ -9,7 +9,8 @@ export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders });
 }
 
-// GET /api/watchlist?center=용산&channel=유선&tenure=3개월%20이상&month=2026-01
+// GET /api/watchlist?center=용산&channel=유선&weekStart=2026-02-19&weekEnd=2026-02-25
+// GET /api/watchlist?month=2026-01 (월간 모드)
 // GET /api/watchlist?action=count (집중관리 대상 수만 반환)
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -19,15 +20,20 @@ export async function GET(request: NextRequest) {
   const channel = searchParams.get('channel') || undefined;
   const tenure = searchParams.get('tenure') || undefined;
   const month = searchParams.get('month') || undefined;
+  const weekStart = searchParams.get('weekStart') || undefined;
+  const weekEnd = searchParams.get('weekEnd') || undefined;
 
   try {
-    console.log('[API] WatchList request:', { action, center, channel, tenure, month });
+    console.log('[API] WatchList request:', { action, center, channel, tenure, month, weekStart, weekEnd });
 
     const result = await getWatchList({
       center,
       channel,
       tenure,
+      // week 파라미터가 있으면 주간 모드, month가 있으면 월간 모드
       month,
+      weekStart,
+      weekEnd,
     });
 
     if (!result.success) {

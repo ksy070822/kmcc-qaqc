@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
 import { useAuth } from "@/hooks/use-auth"
+import { usePeriodNavigation } from "@/hooks/use-period-navigation"
 import {
   Target,
   Search,
@@ -15,6 +17,9 @@ import {
   ClipboardCheck,
   Star,
   BookOpen,
+  ChevronLeft,
+  ChevronRight,
+  Calendar,
 } from "lucide-react"
 
 interface WatchAgent {
@@ -26,7 +31,11 @@ interface WatchAgent {
   evaluationCount: number
   attitudeRate: number
   opsRate: number
+  totalRate: number
+  trend: number
   reason: string
+  topErrors: string[]
+  weeklyStatus?: "new" | "continuing" | "resolving"
   // 7도메인 확장 필드 (API가 아직 미제공 가능 — optional)
   qaScore?: number | null
   csatScore?: number | null
@@ -37,6 +46,7 @@ type SortKey = "agentName" | "evaluationCount" | "attitudeRate" | "opsRate" | "q
 
 export default function InstructorWatchlistPage() {
   const { user } = useAuth()
+  const period = usePeriodNavigation("weekly")
   const [agents, setAgents] = useState<WatchAgent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState("")
@@ -49,6 +59,8 @@ export default function InstructorWatchlistPage() {
         setLoading(true)
         const params = new URLSearchParams()
         if (user?.center) params.append("center", user.center)
+        if (period.startDate) params.append("weekStart", period.startDate)
+        if (period.endDate) params.append("weekEnd", period.endDate)
 
         const res = await fetch(`/api/watchlist?${params}`)
         const data = await res.json()
@@ -63,7 +75,7 @@ export default function InstructorWatchlistPage() {
       }
     }
     fetchWatchlist()
-  }, [user?.center])
+  }, [user?.center, period.startDate, period.endDate])
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDesc(!sortDesc)
@@ -80,6 +92,8 @@ export default function InstructorWatchlistPage() {
     })
 
   const highRiskCount = agents.filter((a) => a.attitudeRate > 3.3 || a.opsRate > 3.9).length
+  const newCount = agents.filter((a) => a.weeklyStatus === "new").length
+  const continuingCount = agents.filter((a) => a.weeklyStatus === "continuing").length
 
   // 도메인별 데이터 보유 상담사 수
   const qaCount = agents.filter((a) => a.qaScore != null).length
@@ -100,17 +114,36 @@ export default function InstructorWatchlistPage() {
       <div>
         <h1 className="text-xl font-bold text-slate-900">집중관리 대상</h1>
         <p className="text-sm text-slate-500 mt-1">
-          {user?.center ? `${user.center} 센터` : "전체"} 오류율 기준 초과 상담사 (QC 기준 선정 + 다도메인 현황)
+          {user?.center ? `${user.center} 센터` : "전체"} 주간 오류율 기준 초과 상담사 (태도 3.0% / 오상담 0.91%, 최소 5건)
         </p>
       </div>
 
-      {/* ═══ KPI 카드: QC 기준 + 도메인 현황 ═══ */}
+      {/* ═══ 주간 네비게이터 ═══ */}
+      <Card>
+        <CardContent className="py-3 px-4">
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={period.goBack} className="h-8 px-2">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex items-center gap-2 text-sm font-medium text-slate-700">
+              <Calendar className="h-4 w-4 text-[#7c3aed]" />
+              <span>{period.label}</span>
+              <Badge variant="outline" className="text-xs font-normal">목~수</Badge>
+            </div>
+            <Button variant="ghost" size="sm" onClick={period.goForward} className="h-8 px-2">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ═══ KPI 카드: QC 기준 + 상태별 현황 ═══ */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <ShieldCheck className="h-4 w-4" />
           QC 기준 현황
         </h2>
-        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <Card>
             <CardContent className="pt-5 pb-4">
               <div className="text-2xl font-bold text-slate-900">{agents.length}명</div>
@@ -120,13 +153,19 @@ export default function InstructorWatchlistPage() {
           <Card>
             <CardContent className="pt-5 pb-4">
               <div className="text-2xl font-bold text-red-600">{highRiskCount}명</div>
-              <p className="text-xs text-slate-500 mt-1">기준 초과 (태도 3.3% 또는 오상담 3.9%)</p>
+              <p className="text-xs text-slate-500 mt-1">센터 목표 초과</p>
             </CardContent>
           </Card>
           <Card>
             <CardContent className="pt-5 pb-4">
-              <div className="text-2xl font-bold text-green-600">{agents.length - highRiskCount}명</div>
-              <p className="text-xs text-slate-500 mt-1">기준 이내</p>
+              <div className="text-2xl font-bold text-orange-600">{newCount}명</div>
+              <p className="text-xs text-slate-500 mt-1">신규 편입</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-5 pb-4">
+              <div className="text-2xl font-bold text-blue-600">{continuingCount}명</div>
+              <p className="text-xs text-slate-500 mt-1">연속 초과 (2주+)</p>
             </CardContent>
           </Card>
         </div>
@@ -204,14 +243,14 @@ export default function InstructorWatchlistPage() {
                   <ThSort label="QA" sortKey="qaScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <ThSort label="CSAT" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <ThSort label="직무테스트" sortKey="quizScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
-                  <th className="py-2 px-3 text-left font-medium text-slate-500">사유</th>
+                  <th className="py-2 px-3 text-left font-medium text-slate-500">상태</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="py-12 text-center text-slate-400">
-                      집중관리 대상이 없습니다
+                      해당 주간 집중관리 대상이 없습니다
                     </td>
                   </tr>
                 ) : (
@@ -231,13 +270,13 @@ export default function InstructorWatchlistPage() {
                         <td className="py-2.5 px-3 text-slate-700 whitespace-nowrap">{agent.service}/{agent.channel}</td>
                         <td className="py-2.5 px-3 text-right text-slate-900">{agent.evaluationCount}건</td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={agent.attitudeRate > 3.3 ? "text-red-600 font-medium" : "text-slate-900"}>
+                          <span className={agent.attitudeRate >= 3.0 ? "text-red-600 font-medium" : "text-slate-900"}>
                             {agent.attitudeRate.toFixed(1)}%
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right">
-                          <span className={agent.opsRate > 3.9 ? "text-red-600 font-medium" : "text-slate-900"}>
-                            {agent.opsRate.toFixed(1)}%
+                          <span className={agent.opsRate >= 0.91 ? "text-red-600 font-medium" : "text-slate-900"}>
+                            {agent.opsRate.toFixed(2)}%
                           </span>
                         </td>
                         <td className="py-2.5 px-3 text-right">
@@ -249,8 +288,8 @@ export default function InstructorWatchlistPage() {
                         <td className="py-2.5 px-3 text-right">
                           <ScoreCell value={agent.quizScore} low={70} suffix="점" />
                         </td>
-                        <td className="py-2.5 px-3 text-slate-600 text-xs max-w-[150px] truncate">
-                          {agent.reason || "-"}
+                        <td className="py-2.5 px-3">
+                          <WeeklyStatusBadge status={agent.weeklyStatus} trend={agent.trend} />
                         </td>
                       </tr>
                     )
@@ -266,6 +305,25 @@ export default function InstructorWatchlistPage() {
 }
 
 // ── 공통 컴포넌트 ──
+
+function WeeklyStatusBadge({ status, trend }: { status?: string; trend?: number }) {
+  if (status === "continuing") {
+    return (
+      <div className="flex flex-col items-start gap-0.5">
+        <Badge className="bg-red-50 text-red-700 border-red-200 text-[10px] px-1.5 py-0">연속</Badge>
+        {trend != null && trend !== 0 && (
+          <span className={`text-[10px] ${trend > 0 ? "text-red-500" : "text-green-600"}`}>
+            {trend > 0 ? "+" : ""}{trend.toFixed(1)}%p
+          </span>
+        )}
+      </div>
+    )
+  }
+  if (status === "resolving") {
+    return <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-[10px] px-1.5 py-0">해소예정</Badge>
+  }
+  return <Badge className="bg-orange-50 text-orange-700 border-orange-200 text-[10px] px-1.5 py-0">신규</Badge>
+}
 
 function DomainMiniCard({ icon: Icon, iconBg, iconColor, label, value, total }: {
   icon: React.ComponentType<{ className?: string }>
