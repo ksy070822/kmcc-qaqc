@@ -13,6 +13,7 @@ import {
   Users,
   Target,
   FileText,
+  Megaphone,
   LogOut,
   Loader2,
   User,
@@ -23,6 +24,7 @@ const instructorNavItems = [
   { id: "/instructor/agents", label: "상담사 분석", icon: Users },
   { id: "/instructor/watchlist", label: "집중관리 대상", icon: Target },
   { id: "/instructor/reports", label: "리포트", icon: FileText },
+  { id: "/instructor/notices", label: "공지/교육 관리", icon: Megaphone },
 ]
 
 export default function InstructorLayout({ children }: { children: React.ReactNode }) {

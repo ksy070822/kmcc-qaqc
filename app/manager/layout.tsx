@@ -13,6 +13,7 @@ import {
   ClipboardList,
   UserX,
   Users,
+  Megaphone,
   LogOut,
   Loader2,
   User,
@@ -23,6 +24,7 @@ const managerNavItems = [
   { id: "/manager/weekly-report", label: "주간보고 작성", icon: ClipboardList },
   { id: "/manager/underperforming", label: "부진상담사 관리", icon: UserX },
   { id: "/manager/agents", label: "상담사 목록", icon: Users },
+  { id: "/manager/notices", label: "공지/교육 관리", icon: Megaphone },
 ]
 
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {
