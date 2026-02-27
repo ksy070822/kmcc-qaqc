@@ -628,8 +628,8 @@ export async function getWeaknessHeatmapData(
       COUNTIF(history_error OR flag_keyword_error OR consult_type_error) AS cat_records,
       COUNT(*) AS total_evals
     FROM ${EVALUATIONS} e
-    LEFT JOIN ${HR_YONGSAN} hy ON e.agent_id = hy.id
-    LEFT JOIN ${HR_GWANGJU} hg ON e.agent_id = hg.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
     WHERE e.evaluation_date BETWEEN @startDate AND @endDate
       ${center ? "AND CASE WHEN hy.id IS NOT NULL THEN '용산' WHEN hg.id IS NOT NULL THEN '광주' ELSE '' END = @center" : ''}
     GROUP BY 1, 2, 3
@@ -756,8 +756,8 @@ export async function generateCoachingPlans(
         COUNT(*) * 11
       ) * 100 AS ops_rate
     FROM ${EVALUATIONS} e
-    LEFT JOIN ${HR_YONGSAN} hy ON e.agent_id = hy.id
-    LEFT JOIN ${HR_GWANGJU} hg ON e.agent_id = hg.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
     WHERE e.evaluation_date BETWEEN @startDate AND @endDate
       ${center ? "AND CASE WHEN hy.id IS NOT NULL THEN '용산' WHEN hg.id IS NOT NULL THEN '광주' ELSE '' END = @center" : ''}
     GROUP BY 1
@@ -952,8 +952,8 @@ export async function generateCoachingAlerts(
       r.error_rate,
       r.prev_rate
     FROM ranked r
-    LEFT JOIN ${HR_YONGSAN} hy ON r.agent_id = hy.id
-    LEFT JOIN ${HR_GWANGJU} hg ON r.agent_id = hg.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON r.agent_id = hy.id
+    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON r.agent_id = hg.id
     WHERE r.prev_rate IS NOT NULL
       AND r.prev_rate > 0
       AND (r.error_rate - r.prev_rate) / r.prev_rate >= @threshold

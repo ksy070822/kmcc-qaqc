@@ -30,7 +30,7 @@ const THRESHOLDS = {
 } as const
 
 export default function UnderperformingPage() {
-  const { user } = useAuth()
+  const { user, loading: authLoading } = useAuth()
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<UnderperformingAgent | null>(null)
   const [channelFilter, setChannelFilter] = useState("")
@@ -174,6 +174,15 @@ export default function UnderperformingPage() {
 
     return { qcAtt, qcOps, qa, csat, quiz, total: underperformingIds.size }
   }, [filteredAgentList])
+
+  // user 로딩 전 렌더링 방지 (hooks 이후에 배치)
+  if (authLoading || !user?.center) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      </div>
+    )
+  }
 
   const handleViewDetail = (agent: UnderperformingAgent) => {
     setSelectedAgent(agent)
