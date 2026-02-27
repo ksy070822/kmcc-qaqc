@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { useAuth } from "@/hooks/use-auth"
 import Image from "next/image"
 import { NoticeBell } from "@/components/mypage/notice-bell"
+import { useUnreadNoticeCount } from "@/hooks/use-notices"
 import {
   ChevronLeft,
   LayoutDashboard,
@@ -37,6 +38,7 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
   const router = useRouter()
   const pathname = usePathname()
   const { user, loading, logout } = useAuth()
+  const { count: unreadCount } = useUnreadNoticeCount(user?.userId ?? null, user?.center ?? null)
   const [collapsed, setCollapsed] = useState(false)
 
   if (loading) {
@@ -188,21 +190,43 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
       <div className={cn("transition-all duration-300", collapsed ? "ml-16" : "ml-60")}>
         {/* 상단 헤더 */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200 bg-white px-6 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700">
-              상담사
-            </Badge>
+          <div className="flex items-center gap-2 flex-wrap">
             {user && (
-              <span className="text-sm text-slate-500">
-                {user.center} {user.service && `- ${user.service}`}
-              </span>
+              <>
+                {user.center && (
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-blue-50 border-blue-200 text-blue-700">
+                    {user.center}
+                  </Badge>
+                )}
+                {user.service && (
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-slate-50 border-slate-200 text-slate-600">
+                    {user.service}
+                  </Badge>
+                )}
+                {user.channel && (
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-emerald-50 border-emerald-200 text-emerald-700">
+                    {user.channel === "유선" ? "유선" : user.channel === "채팅" ? "채팅" : user.channel}
+                  </Badge>
+                )}
+                {user.workHours && (
+                  <Badge variant="outline" className="text-[11px] px-2 py-0.5 bg-amber-50 border-amber-200 text-amber-700">
+                    {user.workHours}
+                  </Badge>
+                )}
+              </>
             )}
           </div>
           <div className="flex items-center gap-2">
+            {unreadCount > 0 && (
+              <button
+                onClick={() => router.push("/mypage/notices")}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 rounded-full text-xs text-red-600 font-medium hover:bg-red-100 transition-colors animate-pulse"
+              >
+                <Megaphone className="h-3.5 w-3.5" />
+                새로운 공지를 확인해주세요
+              </button>
+            )}
             <NoticeBell agentId={user?.userId ?? null} center={user?.center ?? null} />
-            <span className="text-xs text-slate-400">
-              KMCC 통합 관리 시스템 (Komi)
-            </span>
           </div>
         </header>
 

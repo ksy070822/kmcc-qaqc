@@ -119,14 +119,14 @@ export async function getHrHeadcount(
         WHERE date <= @endDate AND date >= @startDate
       ),
       hr_union AS (
-        SELECT '용산' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
+        SELECT DISTINCT '용산' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
         FROM ${HR_YONGSAN}
         WHERE date = (SELECT snap_date FROM snapshot_date)
           AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > @endDate)
           AND position IN ('유선', '채팅')
         UNION ALL
-        SELECT '광주' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
+        SELECT DISTINCT '광주' AS center, ${HR_VERTICAL_SQL} AS vertical, position, id
         FROM ${HR_GWANGJU}
         WHERE date = (SELECT snap_date FROM snapshot_date)
           AND type = '상담사'

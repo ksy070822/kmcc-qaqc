@@ -335,14 +335,14 @@ export async function getNewHireList(
   // 2개월 미만 신입 조회 (용산 + 광주 HR, 중복 제거)
   const hrQuery = `
     WITH hr_raw AS (
-      SELECT id AS agent_id, name, '용산' AS center,
+      SELECT DISTINCT id AS agent_id, name, '용산' AS center,
         \`group\` AS service, position AS channel, hire_date
       FROM ${HR_YONGSAN}
       WHERE type = '상담사'
         AND hire_date IS NOT NULL
         AND DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 2
       UNION ALL
-      SELECT id, name, '광주',
+      SELECT DISTINCT id, name, '광주',
         \`group\`, position, hire_date
       FROM ${HR_GWANGJU}
       WHERE type = '상담사'
@@ -436,9 +436,9 @@ export async function getNewHireList(
         ) / COUNT(*) * 100 AS error_rate
       FROM ${EVALUATIONS} e
       JOIN (
-        SELECT id, hire_date FROM ${HR_YONGSAN} WHERE hire_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+        SELECT DISTINCT id, hire_date FROM ${HR_YONGSAN} WHERE hire_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
         UNION ALL
-        SELECT id, hire_date FROM ${HR_GWANGJU} WHERE hire_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
+        SELECT DISTINCT id, hire_date FROM ${HR_GWANGJU} WHERE hire_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 12 MONTH)
       ) hr ON e.agent_id = hr.id
       WHERE DATE_DIFF(e.evaluation_date, hr.hire_date, MONTH) < 3
       GROUP BY 1, 2
@@ -920,6 +920,9 @@ export async function generateCoachingAlerts(
   const now = new Date()
 
   // 주간 오류율 급등 감지 (이번주 vs 지난주)
+  // - 최소 검수 5건 이상 (소수건 노이즈 방지)
+  // - 현재 오류율 10% 이상 (의미 있는 수준만)
+  // - 에이전트당 최신 주차 1건만 (중복 방지)
   const deteriorationQuery = `
     WITH weekly AS (
       SELECT
@@ -936,13 +939,14 @@ export async function generateCoachingAlerts(
         COUNT(*) AS eval_count
       FROM ${EVALUATIONS}
       WHERE evaluation_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 3 WEEK)
-        ${center ? "AND agent_id IN (SELECT id FROM " + HR_YONGSAN + " WHERE @center = '용산' UNION ALL SELECT id FROM " + HR_GWANGJU + " WHERE @center = '광주')" : ''}
+        ${center ? "AND agent_id IN (SELECT DISTINCT id FROM " + HR_YONGSAN + " WHERE @center = '용산' UNION ALL SELECT DISTINCT id FROM " + HR_GWANGJU + " WHERE @center = '광주')" : ''}
       GROUP BY 1, 2
-      HAVING eval_count >= 2
+      HAVING eval_count >= 5
     ),
     ranked AS (
       SELECT *,
-        LAG(error_rate) OVER (PARTITION BY agent_id ORDER BY week_start) AS prev_rate
+        LAG(error_rate) OVER (PARTITION BY agent_id ORDER BY week_start) AS prev_rate,
+        ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY week_start DESC) AS rn
       FROM weekly
     )
     SELECT
@@ -954,8 +958,10 @@ export async function generateCoachingAlerts(
     FROM ranked r
     LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON r.agent_id = hy.id
     LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON r.agent_id = hg.id
-    WHERE r.prev_rate IS NOT NULL
+    WHERE r.rn = 1
+      AND r.prev_rate IS NOT NULL
       AND r.prev_rate > 0
+      AND r.error_rate >= 10
       AND (r.error_rate - r.prev_rate) / r.prev_rate >= @threshold
     ORDER BY (r.error_rate - r.prev_rate) / r.prev_rate DESC
     LIMIT 20
@@ -1044,7 +1050,7 @@ export async function getCoachingEffectiveness(
         COUNT(*) AS eval_count
       FROM ${EVALUATIONS}
       WHERE FORMAT_DATE('%Y-%m', evaluation_date) IN (@currentMonth, @previousMonth)
-        ${center ? `AND agent_id IN (SELECT id FROM ${HR_YONGSAN} WHERE @center = '용산' UNION ALL SELECT id FROM ${HR_GWANGJU} WHERE @center = '광주')` : ''}
+        ${center ? `AND agent_id IN (SELECT DISTINCT id FROM ${HR_YONGSAN} WHERE @center = '용산' UNION ALL SELECT DISTINCT id FROM ${HR_GWANGJU} WHERE @center = '광주')` : ''}
       GROUP BY 1, 2
       HAVING eval_count >= 2
     )
@@ -1147,12 +1153,12 @@ export async function getUnderperformingAgents(
 
   const query = `
     WITH hr AS (
-      SELECT id AS emp_no, name, '용산' AS center, \`group\` AS service, position AS channel,
+      SELECT DISTINCT id AS emp_no, name, '용산' AS center, \`group\` AS service, position AS channel,
         hire_date, DATE_DIFF(CURRENT_DATE(), hire_date, DAY) / 30.44 AS tenure_months
       FROM ${HR_YONGSAN}
       WHERE type = '상담사' AND \`group\` IS NOT NULL
       UNION ALL
-      SELECT id, name, '광주', \`group\`, position,
+      SELECT DISTINCT id, name, '광주', \`group\`, position,
         hire_date, DATE_DIFF(CURRENT_DATE(), hire_date, DAY) / 30.44
       FROM ${HR_GWANGJU}
       WHERE type = '상담사' AND \`group\` IS NOT NULL

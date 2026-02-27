@@ -20,12 +20,12 @@ export async function getAttendanceOverview(
 
     const query = `
       WITH hr_union AS (
-        SELECT '용산' AS center, attendance
+        SELECT DISTINCT '용산' AS center, id, attendance
         FROM ${HR_YONGSAN}
         WHERE date = @date AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > @date)
         UNION ALL
-        SELECT '광주' AS center, attendance
+        SELECT DISTINCT '광주' AS center, id, attendance
         FROM ${HR_GWANGJU}
         WHERE date = @date AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > @date)
@@ -75,13 +75,13 @@ export async function getAttendanceDetail(
 
     const query = `
       WITH hr_union AS (
-        SELECT '용산' AS center, position, \`group\`, shift_type, attendance,
+        SELECT DISTINCT '용산' AS center, id, position, \`group\`, shift_type, attendance,
           ${HR_VERTICAL_SQL} AS vertical
         FROM ${HR_YONGSAN}
         WHERE date = @date AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > @date)
         UNION ALL
-        SELECT '광주' AS center, position, \`group\`, shift_type, attendance,
+        SELECT DISTINCT '광주' AS center, id, position, \`group\`, shift_type, attendance,
           ${HR_VERTICAL_SQL} AS vertical
         FROM ${HR_GWANGJU}
         WHERE date = @date AND type = '상담사'
@@ -140,12 +140,12 @@ export async function getAttendanceDailyTrend(
 
     const query = `
       WITH hr_union AS (
-        SELECT '용산' AS center, date, attendance
+        SELECT DISTINCT '용산' AS center, id, date, attendance
         FROM ${HR_YONGSAN}
         WHERE date BETWEEN @startDate AND @endDate AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > date)
         UNION ALL
-        SELECT '광주' AS center, date, attendance
+        SELECT DISTINCT '광주' AS center, id, date, attendance
         FROM ${HR_GWANGJU}
         WHERE date BETWEEN @startDate AND @endDate AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > date)
@@ -200,14 +200,14 @@ export async function getAgentAbsenceList(
 
     const query = `
       WITH hr_union AS (
-        SELECT '용산' AS center, date, name, id, \`group\`, position, attendance
+        SELECT DISTINCT '용산' AS center, date, name, id, \`group\`, position, attendance
         FROM ${HR_YONGSAN}
         WHERE date BETWEEN @startDate AND @endDate
           AND type = '상담사'
           AND (resign_date IS NULL OR resign_date > @endDate)
           AND position IN ('유선', '채팅')
         UNION ALL
-        SELECT '광주' AS center, date, name, id, \`group\`, position, attendance
+        SELECT DISTINCT '광주' AS center, date, name, id, \`group\`, position, attendance
         FROM ${HR_GWANGJU}
         WHERE date BETWEEN @startDate AND @endDate
           AND type = '상담사'
