@@ -26,6 +26,10 @@ interface DashboardFiltersProps {
   onSearch?: () => void
   /** 커스텀 서비스 목록 (CSAT 등 QC와 다른 서비스 체계일 때) */
   customServices?: readonly string[]
+  /** 센터 드롭다운 비활성화 (관리자 스코핑) */
+  disableCenter?: boolean
+  /** 서비스 드롭다운 비활성화 (관리자 스코핑) */
+  disableService?: boolean
 }
 
 export function DashboardFilters({
@@ -42,6 +46,8 @@ export function DashboardFilters({
   onDateChange,
   onSearch,
   customServices,
+  disableCenter,
+  disableService,
 }: DashboardFiltersProps) {
   // 기본값: 이번 주 목~수 (목요일 시작, 수요일 종료)
   const getThursdayToWednesday = () => {
@@ -264,7 +270,7 @@ export function DashboardFilters({
 
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">센터</span>
-        <Select value={selectedCenter} onValueChange={handleCenterChange}>
+        <Select value={selectedCenter} onValueChange={handleCenterChange} disabled={disableCenter}>
           <SelectTrigger className="w-[100px] bg-white">
             <SelectValue placeholder="전체" />
           </SelectTrigger>
@@ -278,7 +284,7 @@ export function DashboardFilters({
 
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">서비스</span>
-        <Select value={selectedService} onValueChange={setSelectedService}>
+        <Select value={selectedService} onValueChange={setSelectedService} disabled={disableService}>
           <SelectTrigger className="w-[130px] bg-white">
             <SelectValue placeholder="전체" />
           </SelectTrigger>

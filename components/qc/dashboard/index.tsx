@@ -15,16 +15,22 @@ import { useDashboardData, defaultStats } from "@/lib/use-dashboard-data"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+export interface DashboardScope {
+  center?: string
+  service?: string
+}
+
 interface DashboardProps {
-  onNavigateToFocus: () => void
+  onNavigateToFocus?: () => void
   selectedDate?: string
   externalStartDate?: string
   externalEndDate?: string
+  scope?: DashboardScope
 }
 
-export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, externalEndDate }: DashboardProps) {
-  const [selectedCenter, setSelectedCenter] = useState("all")
-  const [selectedService, setSelectedService] = useState("all")
+export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, externalEndDate, scope }: DashboardProps) {
+  const [selectedCenter, setSelectedCenter] = useState(scope?.center || "all")
+  const [selectedService, setSelectedService] = useState(scope?.service || "all")
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
@@ -173,10 +179,11 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
         consultErrorByCenter={consultErrorByCenter}
         overallErrorByCenter={overallErrorByCenter}
         weekLabel={weekLabel}
+        scopeCenter={scope?.center}
       />
 
-      {/* 목표 달성 현황 전광판 */}
-      <GoalStatusBoard selectedDate={selectedDate} />
+      {/* 목표 달성 현황 전광판 (스코핑 시 숨김) */}
+      {!scope?.center && <GoalStatusBoard selectedDate={selectedDate} />}
 
       {/* 센터별 오류율 추이 */}
       <ErrorTrendChart
@@ -184,6 +191,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
         weeklyData={weeklyTrendData}
         targetRate={2.5}
         dateRange={filterStartDate && filterEndDate ? { startDate: filterStartDate, endDate: filterEndDate } : undefined}
+        scopeCenter={scope?.center}
       />
 
       {/* 필터 */}
@@ -203,10 +211,12 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
           setFilterEndDate(end)
         }}
         onSearch={refresh}
+        disableCenter={!!scope?.center}
+        disableService={!!scope?.service}
       />
 
-      {/* 서비스별 현황 */}
-      <CenterComparison centers={filteredCenters} />
+      {/* 서비스별 현황 (스코핑 시 숨김 — 센터 1개이므로 비교 불필요) */}
+      {!scope?.center && <CenterComparison centers={filteredCenters} />}
 
       {/* 상세 분석 탭 */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">

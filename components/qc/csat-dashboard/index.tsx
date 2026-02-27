@@ -19,11 +19,12 @@ const CSAT_SERVICES = ["택시", "대리", "배송", "내비"] as const
 interface CSATDashboardProps {
   externalStartDate?: string
   externalEndDate?: string
+  scope?: { center?: string; service?: string }
 }
 
-export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashboardProps) {
-  const [selectedCenter, setSelectedCenter] = useState("all")
-  const [selectedService, setSelectedService] = useState("all")
+export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSATDashboardProps) {
+  const [selectedCenter, setSelectedCenter] = useState(scope?.center || "all")
+  const [selectedService, setSelectedService] = useState(scope?.service || "all")
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
@@ -78,8 +79,8 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
         </div>
       )}
 
-      <CSATOverviewSection stats={stats} />
-      <CSATScoreTrendChart dailyData={dailyData} />
+      <CSATOverviewSection stats={stats} scopeCenter={scope?.center} />
+      <CSATScoreTrendChart dailyData={dailyData} scopeCenter={scope?.center} />
 
       <DashboardFilters
         selectedCenter={selectedCenter}
@@ -98,6 +99,8 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
         }}
         onSearch={refresh}
         customServices={CSAT_SERVICES}
+        disableCenter={!!scope?.center}
+        disableService={!!scope?.service}
       />
 
       <div className="bg-white border border-slate-200 rounded-xl p-5">

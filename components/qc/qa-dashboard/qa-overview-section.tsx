@@ -72,9 +72,11 @@ function getStatusConfig(status: string) {
 interface QAOverviewSectionProps {
   stats: QADashboardStats | null
   underperformerCount: { yongsan: number; gwangju: number; total: number }
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터 뷰 */
+  scopeCenter?: string
 }
 
-export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSectionProps) {
+export function QAOverviewSection({ stats, underperformerCount, scopeCenter }: QAOverviewSectionProps) {
   const s = stats || {
     avgScore: 0, totalEvaluations: 0, evaluatedAgents: 0,
     yongsanAvgScore: 0, gwangjuAvgScore: 0,
@@ -82,13 +84,23 @@ export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSect
     voiceAvgScore: 0, chatAvgScore: 0, monthLabel: "-",
   }
 
+  const isScoped = !!scopeCenter
+  const isYongsan = scopeCenter === "용산"
+
+  // 스코핑 시 해당 센터 점수를 메인 값으로
+  const mainAvg = isScoped ? (isYongsan ? s.yongsanAvgScore : s.gwangjuAvgScore) || 0 : s.avgScore
+  const mainVoice = isScoped ? (isYongsan ? (s.yongsanVoiceAvg || 0) : (s.gwangjuVoiceAvg || 0)) : (s.voiceAvgScore || 0)
+  const mainChat = isScoped ? (isYongsan ? (s.yongsanChatAvg || 0) : (s.gwangjuChatAvg || 0)) : (s.chatAvgScore || 0)
+  const mainEvals = isScoped ? (isYongsan ? (s.yongsanEvaluations || 0) : (s.gwangjuEvaluations || 0)) : s.totalEvaluations
+  const mainUnder = isScoped ? (isYongsan ? underperformerCount.yongsan : underperformerCount.gwangju) : underperformerCount.total
+
   const underVariant: Variant =
-    underperformerCount.total === 0 ? "success"
-    : underperformerCount.total <= 5 ? "warning"
+    mainUnder === 0 ? "success"
+    : mainUnder <= 5 ? "warning"
     : "destructive"
 
-  // 센터 × 채널 매트릭스 데이터
-  const matrix: Array<{
+  // 센터 × 채널 매트릭스 데이터 — 스코핑 시 해당 센터만
+  const allMatrix: Array<{
     center: string
     cells: Array<{ label: string; score: number; target: number; prevTarget: number }>
   }> = [
@@ -118,55 +130,60 @@ export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSect
     },
   ]
 
+  // 스코핑 시 해당 센터 행만 표시
+  const matrix = isScoped
+    ? allMatrix.filter(r => r.center === scopeCenter)
+    : allMatrix
+
   return (
     <div className="space-y-3">
       {/* 메인 KPI 카드 */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="QA 평균 점수"
-          value={`${s.avgScore.toFixed(1)}점`}
-          subtitle={`${s.totalEvaluations}건 · ${s.evaluatedAgents}명 평가`}
+          value={`${mainAvg.toFixed(1)}점`}
+          subtitle={`${mainEvals}건 · ${s.evaluatedAgents}명 평가`}
           trend={s.scoreTrend}
           trendLabel="전월 대비"
-          variant={totalVar(s.avgScore)}
-          centerBreakdown={{
+          variant={totalVar(mainAvg)}
+          centerBreakdown={!isScoped ? {
             yongsan: `${(s.yongsanAvgScore || 0).toFixed(1)}점`,
             gwangju: `${(s.gwangjuAvgScore || 0).toFixed(1)}점`,
-          }}
+          } : undefined}
         />
         <StatsCard
           title="유선 평균"
-          value={`${(s.voiceAvgScore || 0).toFixed(1)}점`}
+          value={`${mainVoice.toFixed(1)}점`}
           subtitle="목표 88점"
           trend={s.voiceTrend}
           trendLabel="전월 대비"
-          variant={voiceVar(s.voiceAvgScore || 0)}
-          centerBreakdown={{
+          variant={voiceVar(mainVoice)}
+          centerBreakdown={!isScoped ? {
             yongsan: `${(s.yongsanVoiceAvg || 0).toFixed(1)}점`,
             gwangju: `${(s.gwangjuVoiceAvg || 0).toFixed(1)}점`,
-          }}
+          } : undefined}
         />
         <StatsCard
           title="채팅 평균"
-          value={`${(s.chatAvgScore || 0).toFixed(1)}점`}
+          value={`${mainChat.toFixed(1)}점`}
           subtitle="목표 90점"
           trend={s.chatTrend}
           trendLabel="전월 대비"
-          variant={chatVar(s.chatAvgScore || 0)}
-          centerBreakdown={{
+          variant={chatVar(mainChat)}
+          centerBreakdown={!isScoped ? {
             yongsan: `${(s.yongsanChatAvg || 0).toFixed(1)}점`,
             gwangju: `${(s.gwangjuChatAvg || 0).toFixed(1)}점`,
-          }}
+          } : undefined}
         />
         <StatsCard
           title="유의 상담사"
-          value={`${underperformerCount.total}명`}
+          value={`${mainUnder}명`}
           subtitle="그룹평균 이하 (5회+ 평가)"
           variant={underVariant}
-          centerBreakdown={{
+          centerBreakdown={!isScoped ? {
             yongsan: `${underperformerCount.yongsan}명`,
             gwangju: `${underperformerCount.gwangju}명`,
-          }}
+          } : undefined}
         />
       </div>
 

@@ -6,9 +6,11 @@ import { CSAT_TARGET_SCORE } from "@/lib/constants"
 
 interface Props {
   stats: CSATDashboardStats | null
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터 뷰 */
+  scopeCenter?: string
 }
 
-export function CSATOverviewSection({ stats }: Props) {
+export function CSATOverviewSection({ stats, scopeCenter }: Props) {
   const s = stats || {
     avgScore: 0, totalReviews: 0,
     score5Rate: 0, score4Rate: 0, score3Rate: 0, score2Rate: 0, score1Rate: 0,
@@ -28,10 +30,10 @@ export function CSATOverviewSection({ stats }: Props) {
         trend={s.scoreTrend}
         trendLabel="전주 대비"
         variant={s.avgScore >= CSAT_TARGET_SCORE ? "success" : s.avgScore >= 4.0 ? "default" : "warning"}
-        centerBreakdown={{
+        centerBreakdown={!scopeCenter ? {
           yongsan: `${(s.yongsanAvgScore || 0).toFixed(2)}점`,
           gwangju: `${(s.gwangjuAvgScore || 0).toFixed(2)}점`,
-        }}
+        } : undefined}
       />
       <StatsCard
         title="평가 현황"

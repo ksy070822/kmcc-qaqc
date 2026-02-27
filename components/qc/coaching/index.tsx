@@ -31,12 +31,13 @@ interface CoachingDashboardProps {
   crossNavAgentId?: string | null
   onCrossNavHandled?: () => void
   onNavigateToIntegrated?: (agentId: string) => void
+  scope?: { center?: string; service?: string }
 }
 
-export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHandled, onNavigateToIntegrated }: CoachingDashboardProps) {
+export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHandled, onNavigateToIntegrated, scope }: CoachingDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabId>("plan")
   const [month, setMonth] = useState(() => externalMonth || format(new Date(), "yyyy-MM"))
-  const [center, setCenter] = useState<string>("")
+  const [center, setCenter] = useState<string>(scope?.center || "")
 
   // 코칭 플랜 데이터
   const [plans, setPlans] = useState<AgentCoachingPlan[]>([])
@@ -157,6 +158,7 @@ export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHa
                 value={center}
                 onChange={e => setCenter(e.target.value)}
                 className="border rounded-md px-3 py-1.5 text-sm bg-background"
+                disabled={!!scope?.center}
               >
                 <option value="">전체</option>
                 <option value="용산">용산</option>

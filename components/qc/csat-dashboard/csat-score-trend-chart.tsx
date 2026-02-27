@@ -29,6 +29,8 @@ const COLORS = {
 
 interface Props {
   dailyData: CSATDailyRow[]
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터만 표시 */
+  scopeCenter?: string
 }
 
 function aggregateByDay(data: CSATDailyRow[]): TrendPoint[] {
@@ -132,7 +134,7 @@ const VIEW_LABELS: Record<ViewMode, string> = {
   monthly: "월별",
 }
 
-export function CSATScoreTrendChart({ dailyData }: Props) {
+export function CSATScoreTrendChart({ dailyData, scopeCenter }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("daily")
 
   const chartData = useMemo(() => {
@@ -158,7 +160,7 @@ export function CSATScoreTrendChart({ dailyData }: Props) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm">저점비율(1~2점) 추이</CardTitle>
+        <CardTitle className="text-sm">{scopeCenter ? `${scopeCenter} 저점비율(1~2점) 추이` : "저점비율(1~2점) 추이"}</CardTitle>
         <div className="flex gap-1">
           {(["daily", "weekly", "monthly"] as ViewMode[]).map((mode) => (
             <button
@@ -193,10 +195,16 @@ export function CSATScoreTrendChart({ dailyData }: Props) {
                 return [`${value}%${detail}`, name]
               }}
             />
-            <Legend />
-            <Line type="monotone" dataKey="용산" stroke={COLORS.용산} strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="광주" stroke={COLORS.광주} strokeWidth={2} dot={{ r: 3 }} />
-            <Line type="monotone" dataKey="전체" stroke={COLORS.전체} strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+            {!scopeCenter && <Legend />}
+            {(!scopeCenter || scopeCenter === "용산") && (
+              <Line type="monotone" dataKey="용산" stroke={COLORS.용산} strokeWidth={2} dot={{ r: 3 }} />
+            )}
+            {(!scopeCenter || scopeCenter === "광주") && (
+              <Line type="monotone" dataKey="광주" stroke={COLORS.광주} strokeWidth={2} dot={{ r: 3 }} />
+            )}
+            {!scopeCenter && (
+              <Line type="monotone" dataKey="전체" stroke={COLORS.전체} strokeWidth={1.5} strokeDasharray="5 5" dot={false} />
+            )}
           </LineChart>
         </ResponsiveContainer>
       </CardContent>

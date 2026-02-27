@@ -10,10 +10,11 @@ import { cn } from "@/lib/utils"
 
 interface QuizDashboardProps {
   externalMonth?: string
+  scope?: { center?: string; service?: string }
 }
 
-export function QuizDashboard({ externalMonth }: QuizDashboardProps) {
-  const [selectedCenter, setSelectedCenter] = useState("all")
+export function QuizDashboard({ externalMonth, scope }: QuizDashboardProps) {
+  const [selectedCenter, setSelectedCenter] = useState(scope?.center || "all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("service-trend")
   const [filterStartMonth, setFilterStartMonth] = useState<string | undefined>(externalMonth)
@@ -51,7 +52,7 @@ export function QuizDashboard({ externalMonth }: QuizDashboardProps) {
       )}
 
       {/* 센터 평균 + 차이 */}
-      <QuizOverviewSection stats={stats} />
+      <QuizOverviewSection stats={stats} scopeCenter={scope?.center} />
 
       {/* 필터 - 센터 + 기간 */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap gap-3 items-end">
@@ -61,6 +62,7 @@ export function QuizDashboard({ externalMonth }: QuizDashboardProps) {
             value={selectedCenter}
             onChange={(e) => setSelectedCenter(e.target.value)}
             className="border border-slate-200 rounded-md px-3 py-1.5 text-sm"
+            disabled={!!scope?.center}
           >
             <option value="all">전체</option>
             <option value="용산">용산</option>

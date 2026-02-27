@@ -35,6 +35,8 @@ interface ErrorTrendChartProps {
     startDate: string
     endDate: string
   }
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터 라인만 표시 */
+  scopeCenter?: string
 }
 
 const COLORS = {
@@ -43,7 +45,7 @@ const COLORS = {
   target: "#DD2222",
 }
 
-export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }: ErrorTrendChartProps) {
+export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange, scopeCenter }: ErrorTrendChartProps) {
   const [viewMode, setViewMode] = useState<"daily" | "weekly">("daily")
 
   const activeData = viewMode === "weekly" ? weeklyData : data
@@ -55,6 +57,10 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
     }
     return "최근 14일";
   };
+
+  // 스코핑: 단일 센터일 때 해당 센터 라인만 렌더링
+  const showYongsan = !scopeCenter || scopeCenter === "용산"
+  const showGwangju = !scopeCenter || scopeCenter === "광주"
 
   const renderChart = (yongsanKey: keyof TrendData, gwangjuKey: keyof TrendData, title: string) => (
     <div className="h-[300px]">
@@ -88,10 +94,12 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
               return [`${value.toFixed(2)}%`, displayName]
             }}
           />
-          <Legend
-            formatter={(value) => (value.includes("용산") ? "용산" : "광주")}
-            wrapperStyle={{ paddingTop: "10px" }}
-          />
+          {!scopeCenter && (
+            <Legend
+              formatter={(value) => (value.includes("용산") ? "용산" : "광주")}
+              wrapperStyle={{ paddingTop: "10px" }}
+            />
+          )}
           <ReferenceLine
             y={targetRate}
             stroke={COLORS.target}
@@ -104,24 +112,28 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
               position: "insideTopRight",
             }}
           />
-          <Line
-            type="monotone"
-            dataKey={yongsanKey}
-            stroke={COLORS.yongsan}
-            strokeWidth={2.5}
-            dot={{ fill: COLORS.yongsan, r: 4 }}
-            activeDot={{ r: 6, fill: COLORS.yongsan }}
-            name={`용산_${title}`}
-          />
-          <Line
-            type="monotone"
-            dataKey={gwangjuKey}
-            stroke={COLORS.gwangju}
-            strokeWidth={3}
-            dot={{ fill: COLORS.gwangju, r: 4 }}
-            activeDot={{ r: 6, fill: COLORS.gwangju }}
-            name={`광주_${title}`}
-          />
+          {showYongsan && (
+            <Line
+              type="monotone"
+              dataKey={yongsanKey}
+              stroke={COLORS.yongsan}
+              strokeWidth={2.5}
+              dot={{ fill: COLORS.yongsan, r: 4 }}
+              activeDot={{ r: 6, fill: COLORS.yongsan }}
+              name={`용산_${title}`}
+            />
+          )}
+          {showGwangju && (
+            <Line
+              type="monotone"
+              dataKey={gwangjuKey}
+              stroke={COLORS.gwangju}
+              strokeWidth={3}
+              dot={{ fill: COLORS.gwangju, r: 4 }}
+              activeDot={{ r: 6, fill: COLORS.gwangju }}
+              name={`광주_${title}`}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -139,7 +151,7 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
     <Card className="border shadow-sm">
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-lg">
-          <span>센터별 오류율 추이</span>
+          <span>{scopeCenter ? `${scopeCenter} 오류율 추이` : "센터별 오류율 추이"}</span>
           <div className="flex items-center gap-2">
             <div className="flex rounded-md border border-gray-200 overflow-hidden text-xs">
               <button
@@ -180,77 +192,80 @@ export function ErrorTrendChart({ data, weeklyData = [], targetRate, dateRange }
           <TabsContent value="태도">
             {renderChart("용산_태도", "광주_태도", "태도")}
             <div className="mt-3 flex items-center justify-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
-                <span className="font-medium">
-                  용산: {getLatestValues("용산_태도", "광주_태도").yongsan?.toFixed(2)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: COLORS.gwangju }}
-                />
-                <span className="font-medium">
-                  광주: {getLatestValues("용산_태도", "광주_태도").gwangju?.toFixed(2)}%
-                </span>
-              </div>
+              {showYongsan && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
+                  <span className="font-medium">
+                    용산: {getLatestValues("용산_태도", "광주_태도").yongsan?.toFixed(2)}%
+                  </span>
+                </div>
+              )}
+              {showGwangju && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.gwangju }} />
+                  <span className="font-medium">
+                    광주: {getLatestValues("용산_태도", "광주_태도").gwangju?.toFixed(2)}%
+                  </span>
+                </div>
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="오상담">
             {renderChart("용산_오상담", "광주_오상담", "오상담")}
             <div className="mt-3 flex items-center justify-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
-                <span className="font-medium">
-                  용산: {getLatestValues("용산_오상담", "광주_오상담").yongsan?.toFixed(2)}%
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: COLORS.gwangju }}
-                />
-                <span className="font-medium">
-                  광주: {getLatestValues("용산_오상담", "광주_오상담").gwangju?.toFixed(2)}%
-                </span>
-              </div>
+              {showYongsan && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
+                  <span className="font-medium">
+                    용산: {getLatestValues("용산_오상담", "광주_오상담").yongsan?.toFixed(2)}%
+                  </span>
+                </div>
+              )}
+              {showGwangju && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.gwangju }} />
+                  <span className="font-medium">
+                    광주: {getLatestValues("용산_오상담", "광주_오상담").gwangju?.toFixed(2)}%
+                  </span>
+                </div>
+              )}
             </div>
           </TabsContent>
 
           <TabsContent value="합계">
             {renderChart("용산_합계", "광주_합계", "합계")}
             <div className="mt-3 flex items-center justify-center gap-6 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
-                <span className="font-medium">
-                  용산: {getLatestValues("용산_합계", "광주_합계").yongsan?.toFixed(2)}%
-                </span>
-                <span
-                  className={
-                    getLatestValues("용산_합계", "광주_합계").yongsan > targetRate ? "text-red-500" : "text-green-600"
-                  }
-                >
-                  ({getLatestValues("용산_합계", "광주_합계").yongsan > targetRate ? "목표 초과" : "목표 달성"})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div
-                  className="h-3 w-3 rounded-full"
-                  style={{ backgroundColor: COLORS.gwangju }}
-                />
-                <span className="font-medium">
-                  광주: {getLatestValues("용산_합계", "광주_합계").gwangju?.toFixed(2)}%
-                </span>
-                <span
-                  className={
-                    getLatestValues("용산_합계", "광주_합계").gwangju > targetRate ? "text-red-500" : "text-green-600"
-                  }
-                >
-                  ({getLatestValues("용산_합계", "광주_합계").gwangju > targetRate ? "목표 초과" : "목표 달성"})
-                </span>
-              </div>
+              {showYongsan && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.yongsan }} />
+                  <span className="font-medium">
+                    용산: {getLatestValues("용산_합계", "광주_합계").yongsan?.toFixed(2)}%
+                  </span>
+                  <span
+                    className={
+                      getLatestValues("용산_합계", "광주_합계").yongsan > targetRate ? "text-red-500" : "text-green-600"
+                    }
+                  >
+                    ({getLatestValues("용산_합계", "광주_합계").yongsan > targetRate ? "목표 초과" : "목표 달성"})
+                  </span>
+                </div>
+              )}
+              {showGwangju && (
+                <div className="flex items-center gap-2">
+                  <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.gwangju }} />
+                  <span className="font-medium">
+                    광주: {getLatestValues("용산_합계", "광주_합계").gwangju?.toFixed(2)}%
+                  </span>
+                  <span
+                    className={
+                      getLatestValues("용산_합계", "광주_합계").gwangju > targetRate ? "text-red-500" : "text-green-600"
+                    }
+                  >
+                    ({getLatestValues("용산_합계", "광주_합계").gwangju > targetRate ? "목표 초과" : "목표 달성"})
+                  </span>
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

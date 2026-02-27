@@ -5,14 +5,18 @@ import { cn } from "@/lib/utils"
 
 interface Props {
   stats: QuizDashboardStats | null
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터 뷰 */
+  scopeCenter?: string
 }
 
-export function QuizOverviewSection({ stats }: Props) {
+export function QuizOverviewSection({ stats, scopeCenter }: Props) {
   const s = stats || {
     avgScore: 0, totalSubmissions: 0, uniqueAgents: 0, passRate: 0,
     yongsanAvgScore: 0, gwangjuAvgScore: 0,
   }
 
+  const isScoped = !!scopeCenter
+  const isYongsan = scopeCenter === "용산"
   const diff = Math.abs((s.yongsanAvgScore || 0) - (s.gwangjuAvgScore || 0))
   const higherCenter = (s.yongsanAvgScore || 0) >= (s.gwangjuAvgScore || 0) ? "용산" : "광주"
 
@@ -22,22 +26,26 @@ export function QuizOverviewSection({ stats }: Props) {
   return (
     <div className="space-y-3">
       {/* 센터 평균 카드 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        {/* 용산 평균 */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 mb-1">용산 평균</p>
-          <p className={cn("text-2xl font-bold tabular-nums", scoreColor(s.yongsanAvgScore || 0))}>
-            {(s.yongsanAvgScore || 0).toFixed(1)}<span className="text-sm font-normal text-gray-400">점</span>
-          </p>
-        </div>
+      <div className={cn("grid gap-4", isScoped ? "md:grid-cols-3" : "md:grid-cols-4")}>
+        {/* 용산 평균 — 스코핑 시 해당 센터만 */}
+        {(!isScoped || isYongsan) && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">{isScoped ? "센터 평균" : "용산 평균"}</p>
+            <p className={cn("text-2xl font-bold tabular-nums", scoreColor(s.yongsanAvgScore || 0))}>
+              {(s.yongsanAvgScore || 0).toFixed(1)}<span className="text-sm font-normal text-gray-400">점</span>
+            </p>
+          </div>
+        )}
 
         {/* 광주 평균 */}
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <p className="text-xs text-gray-500 mb-1">광주 평균 <span className="text-[10px] text-gray-400">(2회 평균)</span></p>
-          <p className={cn("text-2xl font-bold tabular-nums", scoreColor(s.gwangjuAvgScore || 0))}>
-            {(s.gwangjuAvgScore || 0).toFixed(1)}<span className="text-sm font-normal text-gray-400">점</span>
-          </p>
-        </div>
+        {(!isScoped || !isYongsan) && (
+          <div className="bg-white border border-slate-200 rounded-xl p-4">
+            <p className="text-xs text-gray-500 mb-1">{isScoped ? "센터 평균" : "광주 평균"} {!isScoped && <span className="text-[10px] text-gray-400">(2회 평균)</span>}</p>
+            <p className={cn("text-2xl font-bold tabular-nums", scoreColor(s.gwangjuAvgScore || 0))}>
+              {(s.gwangjuAvgScore || 0).toFixed(1)}<span className="text-sm font-normal text-gray-400">점</span>
+            </p>
+          </div>
+        )}
 
         {/* 전체 평균 */}
         <div className="bg-white border border-slate-200 rounded-xl p-4">
@@ -64,23 +72,25 @@ export function QuizOverviewSection({ stats }: Props) {
         </div>
       </div>
 
-      {/* 센터간 차이 바 */}
-      <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="text-xs text-gray-500">센터간 차이</span>
-          <span className="text-lg font-bold text-[#2c6edb] tabular-nums">{diff.toFixed(1)}점</span>
-          <span className="text-xs text-gray-400">({higherCenter}이 높음)</span>
+      {/* 센터간 차이 바 — 스코핑 시 숨김 */}
+      {!isScoped && (
+        <div className="bg-slate-50 border border-slate-200 rounded-xl px-5 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <span className="text-xs text-gray-500">센터간 차이</span>
+            <span className="text-lg font-bold text-[#2c6edb] tabular-nums">{diff.toFixed(1)}점</span>
+            <span className="text-xs text-gray-400">({higherCenter}이 높음)</span>
+          </div>
+          <div className="flex items-center gap-6 text-xs">
+            <span className="text-gray-500">
+              용산 <span className="font-semibold text-gray-700">{(s.yongsanAvgScore || 0).toFixed(1)}</span>
+            </span>
+            <span className="text-gray-300">vs</span>
+            <span className="text-gray-500">
+              광주 <span className="font-semibold text-gray-700">{(s.gwangjuAvgScore || 0).toFixed(1)}</span>
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-6 text-xs">
-          <span className="text-gray-500">
-            용산 <span className="font-semibold text-gray-700">{(s.yongsanAvgScore || 0).toFixed(1)}</span>
-          </span>
-          <span className="text-gray-300">vs</span>
-          <span className="text-gray-500">
-            광주 <span className="font-semibold text-gray-700">{(s.gwangjuAvgScore || 0).toFixed(1)}</span>
-          </span>
-        </div>
-      </div>
+      )}
     </div>
   )
 }

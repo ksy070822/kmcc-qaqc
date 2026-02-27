@@ -16,11 +16,12 @@ import { cn } from "@/lib/utils"
 
 interface QADashboardProps {
   externalMonth?: string
+  scope?: { center?: string; service?: string }
 }
 
-export function QADashboard({ externalMonth }: QADashboardProps) {
-  const [selectedCenter, setSelectedCenter] = useState("all")
-  const [selectedService, setSelectedService] = useState("all")
+export function QADashboard({ externalMonth, scope }: QADashboardProps) {
+  const [selectedCenter, setSelectedCenter] = useState(scope?.center || "all")
+  const [selectedService, setSelectedService] = useState(scope?.service || "all")
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
@@ -73,10 +74,10 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
       )}
 
       {/* KPI 카드 */}
-      <QAOverviewSection stats={stats} underperformerCount={underperformerCount} />
+      <QAOverviewSection stats={stats} underperformerCount={underperformerCount} scopeCenter={scope?.center} />
 
       {/* 점수 추이 차트 */}
-      <QAScoreTrendChart data={trendData} />
+      <QAScoreTrendChart data={trendData} scopeCenter={scope?.center} />
 
       {/* 필터 */}
       <DashboardFilters
@@ -95,10 +96,12 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
           setFilterEndDate(end)
         }}
         onSearch={refresh}
+        disableCenter={!!scope?.center}
+        disableService={!!scope?.service}
       />
 
-      {/* 센터별 비교 */}
-      <QACenterComparison centers={centerStats} selectedCenter={selectedCenter} />
+      {/* 센터별 비교 (스코핑 시 숨김) */}
+      {!scope?.center && <QACenterComparison centers={centerStats} selectedCenter={selectedCenter} />}
 
       {/* 상세 분석 탭 */}
       <div className="bg-white border border-slate-200 rounded-xl p-5">

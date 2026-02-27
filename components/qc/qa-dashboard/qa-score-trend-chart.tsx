@@ -17,9 +17,11 @@ const MODI = {
 
 interface QAScoreTrendChartProps {
   data: QATrendData[]
+  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터만 표시 */
+  scopeCenter?: string
 }
 
-export function QAScoreTrendChart({ data }: QAScoreTrendChartProps) {
+export function QAScoreTrendChart({ data, scopeCenter }: QAScoreTrendChartProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -35,7 +37,7 @@ export function QAScoreTrendChart({ data }: QAScoreTrendChartProps) {
 
   return (
     <Card>
-      <CardHeader><CardTitle className="text-sm">월별 QA 평균 점수 추이</CardTitle></CardHeader>
+      <CardHeader><CardTitle className="text-sm">{scopeCenter ? `${scopeCenter} QA 평균 점수 추이` : "월별 QA 평균 점수 추이"}</CardTitle></CardHeader>
       <CardContent>
         <ResponsiveContainer width="100%" height={350}>
           <ComposedChart data={data} margin={{ top: 25, right: 60, left: 0, bottom: 5 }}>
@@ -52,13 +54,17 @@ export function QAScoreTrendChart({ data }: QAScoreTrendChartProps) {
             <Legend />
             <ReferenceLine y={90} stroke={MODI.brandWarning} strokeDasharray="6 3" label={{ value: "목표 90", position: "insideTopRight", fontSize: 11, fill: MODI.brandWarning }} />
             <ReferenceLine y={88} stroke={MODI.brandWarning} strokeDasharray="6 3" strokeOpacity={0.5} label={{ value: "목표 88", position: "insideTopRight", fontSize: 11, fill: MODI.brandWarning }} />
-            <Area type="monotone" dataKey="전체" fill="url(#areaTotal)" stroke={MODI.brandPrimary} strokeWidth={1.5} strokeOpacity={0.4} dot={false} />
-            <Bar dataKey="용산" fill={MODI.brandPrimary} stroke="#1d5ab9" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
-              <LabelList dataKey="용산" position="top" formatter={(v: number) => v.toFixed(1)} style={{ fontSize: 10, fontWeight: 700, fill: MODI.brandPrimary }} />
-            </Bar>
-            <Bar dataKey="광주" fill="#1e3a5f" stroke="#0f172a" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
-              <LabelList dataKey="광주" position="top" formatter={(v: number) => v.toFixed(1)} style={{ fontSize: 10, fontWeight: 700, fill: "#1e3a5f" }} />
-            </Bar>
+            {!scopeCenter && <Area type="monotone" dataKey="전체" fill="url(#areaTotal)" stroke={MODI.brandPrimary} strokeWidth={1.5} strokeOpacity={0.4} dot={false} />}
+            {(!scopeCenter || scopeCenter === "용산") && (
+              <Bar dataKey="용산" fill={MODI.brandPrimary} stroke="#1d5ab9" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
+                <LabelList dataKey="용산" position="top" formatter={(v: number) => v.toFixed(1)} style={{ fontSize: 10, fontWeight: 700, fill: MODI.brandPrimary }} />
+              </Bar>
+            )}
+            {(!scopeCenter || scopeCenter === "광주") && (
+              <Bar dataKey="광주" fill="#1e3a5f" stroke="#0f172a" strokeWidth={1} radius={[4, 4, 0, 0]} barSize={24}>
+                <LabelList dataKey="광주" position="top" formatter={(v: number) => v.toFixed(1)} style={{ fontSize: 10, fontWeight: 700, fill: "#1e3a5f" }} />
+              </Bar>
+            )}
           </ComposedChart>
         </ResponsiveContainer>
       </CardContent>
