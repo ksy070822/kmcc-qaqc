@@ -45,20 +45,47 @@ export function CSATOverviewSection({ stats }: Props) {
         value={`${s.score5Rate.toFixed(1)}%`}
         variant={s.score5Rate >= 80 ? "success" : s.score5Rate >= 60 ? "default" : "warning"}
       />
-      <StatsCard
-        title="1~2점 비율"
-        value={`${lowRate.toFixed(1)}%`}
-        subtitle={`1점 ${s.score1Rate.toFixed(1)}% · 2점 ${s.score2Rate.toFixed(1)}%`}
-        variant={lowRate > 10 ? "destructive" : lowRate > 5 ? "warning" : "success"}
-      />
-      <StatsCard
-        title="저점건수"
-        value={`${(s.lowScoreCount || 0).toLocaleString("ko-KR")}건`}
-        subtitle={`1점 ${(s.score1Count || 0)}건 · 2점 ${(s.score2Count || 0)}건`}
-        trend={s.lowScoreTrend}
-        trendLabel="전주 대비"
-        variant={(s.lowScoreCount || 0) > 50 ? "destructive" : (s.lowScoreCount || 0) > 30 ? "warning" : "success"}
-      />
+      {/* 1·2점 비율 — 개별 Badge 분리 */}
+      <div className="border shadow-sm rounded-xl transition-colors border-border bg-card">
+        <div className="p-4 space-y-1">
+          <p className="text-sm font-medium text-muted-foreground">1·2점 비율</p>
+          <p className={`text-2xl font-bold tracking-tight ${lowRate > 10 ? "text-red-600" : lowRate > 5 ? "text-orange-600" : "text-foreground"}`}>
+            {lowRate.toFixed(1)}%
+          </p>
+          <div className="flex gap-2 mt-1">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+              1점 {s.score1Rate.toFixed(1)}%
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+              2점 {s.score2Rate.toFixed(1)}%
+            </span>
+          </div>
+        </div>
+      </div>
+      {/* 저점건수 — 1점/2점 개별 강조 */}
+      <div className={`border shadow-sm rounded-xl transition-colors ${
+        (s.lowScoreCount || 0) > 50 ? "border-red-500/40 bg-red-50" : (s.lowScoreCount || 0) > 30 ? "border-amber-500/40 bg-amber-50" : "border-emerald-500/40 bg-emerald-50"
+      }`}>
+        <div className="p-4 space-y-1">
+          <p className="text-sm font-medium text-muted-foreground">저점건수</p>
+          <p className="text-2xl font-bold tracking-tight text-foreground">
+            {(s.lowScoreCount || 0).toLocaleString("ko-KR")}건
+          </p>
+          <div className="flex gap-2 mt-1">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
+              1점 {(s.score1Count || 0)}건
+            </span>
+            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-700">
+              2점 {(s.score2Count || 0)}건
+            </span>
+          </div>
+          {s.lowScoreTrend !== undefined && (
+            <p className={`text-xs font-medium ${s.lowScoreTrend > 0 ? "text-red-600" : "text-blue-600"}`}>
+              {s.lowScoreTrend > 0 ? "▲" : "▼"}{Math.abs(s.lowScoreTrend).toFixed(1)}% 전주 대비
+            </p>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

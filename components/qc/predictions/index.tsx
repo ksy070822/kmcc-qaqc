@@ -55,6 +55,7 @@ import { getStatusColorsByProbability } from "@/lib/utils"
 import { usePredictions } from "@/hooks/use-predictions"
 import { useAgents } from "@/hooks/use-agents"
 import { usePredictionAI } from "@/hooks/use-prediction-ai"
+import { QualitySimulator } from "./quality-simulator"
 import { Loader2, Bot } from "lucide-react"
 
 interface PredictionsProps {
@@ -573,6 +574,7 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
               <Badge variant="destructive" className="ml-2">{watchListGroups.length + watchListAgents.length}</Badge>
             )}
           </TabsTrigger>
+          <TabsTrigger value="simulation" className="data-[state=active]:bg-white">시뮬레이션</TabsTrigger>
             </TabsList>
             
             {/* 센터별 예측 탭 */}
@@ -1086,6 +1088,11 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
               )}
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            {/* 품질 시뮬레이션 탭 */}
+            <TabsContent value="simulation">
+              <QualitySimulator />
             </TabsContent>
           </Tabs>
         </div>

@@ -283,10 +283,22 @@ CREATE TABLE IF NOT EXISTS `csopp-25f2.KMCC_QC.qa_evaluations` (
   knowledge_feedback STRING,
   satisfaction_comment STRING,
 
+  -- 추가 메타 (2026-02 리빌드)
+  work_hours STRING,                        -- 근무시간 (e.g. "09:00~18:00")
+  start_date DATE,                          -- 투입일
+  tenure_group STRING,                      -- 근속그룹 (e.g. "3개월미만","12개월이상")
+  sla_included BOOL,                        -- SLA 포함여부 (2025 시트)
+
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP()
 )
 PARTITION BY evaluation_date
 CLUSTER BY center, channel, service;
+
+-- 기존 테이블 마이그레이션용 ALTER (IF NOT EXISTS 미지원 시 무시)
+-- ALTER TABLE `csopp-25f2.KMCC_QC.qa_evaluations` ADD COLUMN work_hours STRING;
+-- ALTER TABLE `csopp-25f2.KMCC_QC.qa_evaluations` ADD COLUMN start_date DATE;
+-- ALTER TABLE `csopp-25f2.KMCC_QC.qa_evaluations` ADD COLUMN tenure_group STRING;
+-- ALTER TABLE `csopp-25f2.KMCC_QC.qa_evaluations` ADD COLUMN sla_included BOOL;
 
 -- ============================================================
 -- 상담사별 월간 종합 요약 테이블

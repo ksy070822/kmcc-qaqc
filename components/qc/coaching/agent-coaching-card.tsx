@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { ResponsiveContainer, LineChart, Line, ReferenceLine, Tooltip } from "recharts"
 import type {
   AgentCoachingPlan,
   ConsultTypeErrorAnalysis,
@@ -10,16 +11,17 @@ import type {
 } from "@/lib/types"
 
 const TIER_COLORS: Record<CoachingTier, string> = {
-  "자립": "#22c55e", "관찰": "#eab308", "집중": "#f97316", "긴급": "#ef4444",
+  "일반": "#22c55e", "주의": "#0ea5e9", "위험": "#eab308", "심각": "#f97316", "긴급": "#ef4444",
 }
 
 interface AgentCoachingCardProps {
   plan: AgentCoachingPlan
   month: string
   onClose: () => void
+  onNavigateToIntegrated?: (agentId: string) => void
 }
 
-export function AgentCoachingCard({ plan, month, onClose }: AgentCoachingCardProps) {
+export function AgentCoachingCard({ plan, month, onClose, onNavigateToIntegrated }: AgentCoachingCardProps) {
   const [drilldown, setDrilldown] = useState<{
     errors: ConsultTypeErrorAnalysis[]
     corrections: ConsultTypeCorrectionAnalysis
@@ -81,6 +83,14 @@ export function AgentCoachingCard({ plan, month, onClose }: AgentCoachingCardPro
               {plan.tier}
             </span>
             <span className="text-xl font-mono font-bold">{plan.riskScore.toFixed(1)}</span>
+            {onNavigateToIntegrated && (
+              <button
+                onClick={() => { onClose(); onNavigateToIntegrated(plan.agentId); }}
+                className="ml-2 px-2.5 py-1 text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+              >
+                통합 프로파일
+              </button>
+            )}
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-xl ml-2">&times;</button>
           </div>
         </div>
@@ -91,16 +101,46 @@ export function AgentCoachingCard({ plan, month, onClose }: AgentCoachingCardPro
             {plan.tierReason}
           </div>
 
-          {/* 추세 */}
-          {trend?.analysis && (
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium">QC 추세:</span>
-              <span className={trendLabel[trend.analysis.direction]?.color || ""}>
-                {trendLabel[trend.analysis.direction]?.text || trend.analysis.direction}
-              </span>
-              <span className="text-gray-400">
-                (기울기 {trend.analysis.slope > 0 ? "+" : ""}{trend.analysis.slope.toFixed(3)}, p={trend.analysis.pValue.toFixed(3)})
-              </span>
+          {/* 추세 스파크라인 */}
+          {trend && trend.trend && trend.trend.length > 1 && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-sm font-medium">QC 추세 (최근 {trend.trend.length}주)</span>
+                {trend.analysis && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className={trendLabel[trend.analysis.direction]?.color || ""}>
+                      {trendLabel[trend.analysis.direction]?.text || trend.analysis.direction}
+                    </span>
+                    <span className="text-gray-400">
+                      기울기 {trend.analysis.slope > 0 ? "+" : ""}{trend.analysis.slope.toFixed(3)}
+                    </span>
+                  </div>
+                )}
+              </div>
+              <div className="bg-gray-50 rounded-lg p-2" style={{ height: 72 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trend.trend}>
+                    <ReferenceLine y={5} stroke="#d1d5db" strokeDasharray="3 3" />
+                    <Line
+                      type="monotone"
+                      dataKey="value"
+                      stroke={
+                        trend.analysis?.direction === "improving" ? "#22c55e"
+                          : trend.analysis?.direction === "deteriorating" ? "#ef4444"
+                          : "#6b7280"
+                      }
+                      strokeWidth={2}
+                      dot={{ r: 3, fill: "#fff", strokeWidth: 2 }}
+                      activeDot={{ r: 4 }}
+                    />
+                    <Tooltip
+                      formatter={(v: number) => [`${v.toFixed(1)}%`, "오류율"]}
+                      labelFormatter={(i: number) => `${i + 1}주차`}
+                      contentStyle={{ fontSize: 12, padding: "4px 8px" }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </div>
           )}
 

@@ -25,8 +25,8 @@ const SERVICE_PATH_SQL = `CASE c.incoming_path
     WHEN 'c2_kakaot_picker_walk' THEN '배송'
     WHEN 'c2_kakaot_picker_onecar' THEN '배송'
     WHEN 'c2_kakaot_trucker' THEN '배송'
-    WHEN 'c2_kakaot_quick' THEN '배송'
-    WHEN 'c2_kakaot_quick_delivery' THEN '배송'
+    WHEN 'c2_kakaot_quick' THEN '퀵'
+    WHEN 'c2_kakaot_quick_delivery' THEN '퀵'
     WHEN 'c2_kakaot_navi' THEN '내비'
     WHEN 'c2_kakaot_taxidriver' THEN '택시'
     WHEN 'c2_kakaot_biz_join' THEN '비즈'
@@ -91,7 +91,8 @@ function buildCSATFilters(
     const servicePathsMap: Record<string, string[]> = {
       "택시": ["c2_kakaot", "c2_kakaot_taxidriver"],
       "대리": ["c2_kakaot_wheeldriver", "c2_kakaot_wheelc"],
-      "배송": ["c2_kakaot_picker", "c2_kakaot_picker_walk", "c2_kakaot_picker_onecar", "c2_kakaot_trucker", "c2_kakaot_quick", "c2_kakaot_quick_delivery"],
+      "배송": ["c2_kakaot_picker", "c2_kakaot_picker_walk", "c2_kakaot_picker_onecar", "c2_kakaot_trucker"],
+      "퀵": ["c2_kakaot_quick", "c2_kakaot_quick_delivery"],
       "내비": ["c2_kakaot_navi"],
       "비즈": ["c2_kakaot_biz_join"],
       "주차": ["c2_kakaot_parking"],

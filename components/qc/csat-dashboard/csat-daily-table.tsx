@@ -3,12 +3,15 @@
 import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2 } from "lucide-react"
+import { isWeekend, getDayLabel } from "@/lib/utils"
 
 interface Props {
   center: string
+  startDate?: string
+  endDate?: string
 }
 
-export function CSATDailyTable({ center }: Props) {
+export function CSATDailyTable({ center, startDate, endDate }: Props) {
   const [data, setData] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -18,6 +21,8 @@ export function CSATDailyTable({ center }: Props) {
       try {
         const params = new URLSearchParams({ type: "csat-daily" })
         if (center !== "all") params.set("center", center)
+        if (startDate) params.set("startDate", startDate)
+        if (endDate) params.set("endDate", endDate)
         const res = await fetch(`/api/data?${params}`)
         const json = await res.json()
         if (json.success && json.data) setData(json.data)
@@ -28,7 +33,7 @@ export function CSATDailyTable({ center }: Props) {
       }
     }
     fetchData()
-  }, [center])
+  }, [center, startDate, endDate])
 
   if (loading) {
     return <div className="flex justify-center py-8"><Loader2 className="h-5 w-5 animate-spin" /></div>
@@ -57,9 +62,21 @@ export function CSATDailyTable({ center }: Props) {
           const lowCount = (Number(row.score1Count) || 0) + (Number(row.score2Count) || 0)
           const total = Number(row.reviewCount) || 0
           const lowRate = total > 0 ? (lowCount / total) * 100 : 0
+          const weekend = isWeekend(row.date)
+          const dayLabel = getDayLabel(row.date)
           return (
-            <TableRow key={i}>
-              <TableCell className="text-xs">{row.date}</TableCell>
+            <TableRow key={i} className={weekend ? "bg-slate-50" : ""}>
+              <TableCell className="text-xs">
+                <span>{row.date}</span>
+                <span className={`ml-1 text-[10px] ${weekend ? "text-red-500 font-medium" : "text-muted-foreground"}`}>
+                  ({dayLabel})
+                </span>
+                {weekend && (
+                  <span className="ml-1 inline-flex items-center px-1.5 py-0 rounded text-[9px] font-medium bg-red-100 text-red-600">
+                    휴일
+                  </span>
+                )}
+              </TableCell>
               <TableCell className="text-xs">{row.center}</TableCell>
               <TableCell className="text-xs text-right">{row.reviewCount}</TableCell>
               <TableCell className="text-xs text-right font-medium">{Number(row.avgScore).toFixed(2)}</TableCell>

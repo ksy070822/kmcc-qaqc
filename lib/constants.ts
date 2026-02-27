@@ -260,8 +260,32 @@ export const CSAT_SCORE_COLORS: Record<number, string> = {
   1: "#ef4444",
 }
 
-// CSAT 목표 평점
-export const CSAT_TARGET_SCORE = 4.5
+// CSAT 목표 평점 (전체)
+export const CSAT_TARGET_SCORE = 4.70
+
+// CSAT 서비스별 목표 평점
+export const CSAT_SERVICE_TARGETS: Record<string, number> = {
+  "택시": 4.53,
+  "바이크": 4.90,
+  "주차": 4.87,
+  "대리": 4.51,
+  "퀵": 4.43,
+}
+
+// CSAT 태그 한글 매핑
+export const CSAT_TAG_LABELS: Record<string, string> = {
+  FAST: "빠른 상담 연결",
+  EASY: "알기쉬운 설명",
+  EXACT: "정확한 문의파악",
+  KIND: "친절한 상담",
+  ACTIVE: "적극적인 상담",
+  WAIT: "상담 연결 지연",
+  DIFFICULT: "어려운 설명",
+  INEXACT: "문의내용 이해못함",
+  UNKIND: "불친절한 상담",
+  PASSIVE: "형식적인 상담",
+  ETC: "기타",
+}
 
 // ============================================================
 // 통합 리스크 가중치
@@ -276,9 +300,9 @@ export const RISK_WEIGHTS = {
 
 export const RISK_THRESHOLDS = {
   low: 30,
-  medium: 50,
-  high: 70,
-  critical: 85,
+  medium: 30,
+  high: 50,
+  critical: 70,
 } as const
 
 // 리스크 레벨 UI 설정
@@ -310,6 +334,7 @@ import type {
   CoachingTierConfig,
   TenureBand,
   ChannelRiskWeights,
+  ChannelRiskWeightsV3,
 } from "./types"
 
 // 8개 코칭 카테고리 매핑 (QC 오류항목 ↔ QA 채점항목)
@@ -398,10 +423,11 @@ for (const cat of COACHING_CATEGORIES) {
 
 // 코칭 티어 설정
 export const COACHING_TIERS: CoachingTierConfig[] = [
-  { tier: '자립', minRisk: 0, maxRisk: 30, frequency: '월 1회', monthlySessions: 0 },
-  { tier: '관찰', minRisk: 30, maxRisk: 50, frequency: '격주', monthlySessions: 2 },
-  { tier: '집중', minRisk: 50, maxRisk: 70, frequency: '주 1회', monthlySessions: 4 },
-  { tier: '긴급', minRisk: 70, maxRisk: 100, frequency: '주 2회', monthlySessions: 8 },
+  { tier: '일반', minRisk: 0, maxRisk: 20, frequency: '자율' },
+  { tier: '주의', minRisk: 20, maxRisk: 40, frequency: '월1회' },
+  { tier: '위험', minRisk: 40, maxRisk: 60, frequency: '격주' },
+  { tier: '심각', minRisk: 60, maxRisk: 80, frequency: '주1회' },
+  { tier: '긴급', minRisk: 80, maxRisk: 100, frequency: '주2회' },
 ]
 
 // 근속 구간 판정
@@ -431,6 +457,52 @@ export const RISK_WEIGHTS_NEW_HIRE: Record<'voice' | 'chat', ChannelRiskWeights>
   voice: { qa: 0.50, qc: 0.50, csat: 0.00, quiz: 0.00 },
   chat:  { qa: 0.40, qc: 0.35, csat: 0.25, quiz: 0.00 },
 }
+
+// 데이터 커버리지 댐프닝 (활성 도메인 수 → 리스크 상한 계수)
+// 1개 도메인만 있으면 최대 50점, 4개 모두 있으면 100점까지 가능
+export const COVERAGE_DAMPENING: Record<number, number> = {
+  1: 0.50,
+  2: 0.70,
+  3: 0.90,
+  4: 1.00,
+}
+
+// ============================================================
+// 7도메인 리스크 가중치 (Pulse 2)
+// 기존 4도메인(RISK_WEIGHTS_V2) 비율 유지 + 생산성/근태/SLA 신규 추가, 재정규화
+// ============================================================
+
+// 7도메인 채널별 리스크 가중치 (standard + new_hire 통합)
+export const RISK_WEIGHTS_V3: Record<'voice' | 'chat', {
+  standard: ChannelRiskWeightsV3
+  new_hire: ChannelRiskWeightsV3
+}> = {
+  voice: {
+    standard: { qa: 0.35, qc: 0.25, csat: 0.00, quiz: 0.15, productivity: 0.12, attendance: 0.05, sla: 0.08 },
+    new_hire: { qa: 0.40, qc: 0.40, csat: 0.00, quiz: 0.00, productivity: 0.12, attendance: 0.05, sla: 0.03 },
+  },
+  chat: {
+    standard: { qa: 0.25, qc: 0.18, csat: 0.15, quiz: 0.15, productivity: 0.12, attendance: 0.05, sla: 0.10 },
+    new_hire: { qa: 0.30, qc: 0.22, csat: 0.23, quiz: 0.00, productivity: 0.12, attendance: 0.05, sla: 0.08 },
+  },
+} as const
+
+// 7도메인 커버리지 감쇄 (Pulse 2)
+// 활성 도메인 수 → 리스크 상한 계수 (1~7)
+export const COVERAGE_DAMPENING_V2: Record<number, number> = {
+  1: 0.35, 2: 0.50, 3: 0.65, 4: 0.80, 5: 0.90, 6: 0.95, 7: 1.00,
+}
+
+// 7도메인 부진 판정 기준 (Pulse 2)
+export const UNDERPERFORMING_THRESHOLDS_V2 = {
+  qc_attitude:  { underperforming: 1.5, severe: 2.5, exempt_min_evals: 5 },   // 목표 대비 배수
+  qc_misconsult: { underperforming: 1.5, severe: 2.5, exempt_min_evals: 5 },
+  qa:           { underperforming: 85, severe: 80, exempt_tenure_months: 1 },   // 점수 미만
+  csat:         { underperforming: 3.5, severe: 3.0, exempt_min_reviews: 10 },
+  quiz:         { underperforming: 70, severe: 60, exempt_current_month: true },
+  productivity: { underperforming: 80, severe: 70, exempt_tenure_weeks: 2 },    // 응답률 %
+  attendance:   { underperforming: 90, severe: 80, exempt_approved_leave: true },
+} as const
 
 // 베이지안 축소 파라미터
 export const BAYESIAN_CONFIG = {

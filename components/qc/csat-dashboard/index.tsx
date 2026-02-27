@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { CSATOverviewSection } from "./csat-overview-section"
 import { CSATScoreTrendChart } from "./csat-score-trend-chart"
 import { CSATWeeklyTable } from "./csat-weekly-table"
@@ -11,7 +11,10 @@ import { CSATTagAnalysis } from "./csat-tag-analysis"
 import { DashboardFilters } from "@/components/qc/dashboard/dashboard-filters"
 import { useCSATDashboardData } from "@/lib/use-csat-dashboard-data"
 import { Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn, getPrevBusinessDay, formatDate } from "@/lib/utils"
+
+// 실제 KMCC(용산/광주) CSAT 데이터가 존재하는 서비스만
+const CSAT_SERVICES = ["택시", "대리", "배송", "내비"] as const
 
 interface CSATDashboardProps {
   externalStartDate?: string
@@ -38,8 +41,16 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
     }
   }, [externalStartDate, externalEndDate])
 
-  const { stats, trendData, weeklyData, lowScoreData, tagData, loading, error, refresh } = useCSATDashboardData(
-    filterStartDate, filterEndDate
+  // 전영업일 적용: endDate가 오늘 이후면 전영업일로 cap
+  const effectiveEndDate = useMemo(() => {
+    if (!filterEndDate) return undefined
+    const today = formatDate(new Date())
+    const prevBiz = formatDate(getPrevBusinessDay())
+    return filterEndDate >= today ? prevBiz : filterEndDate
+  }, [filterEndDate])
+
+  const { stats, trendData, dailyData, weeklyData, lowScoreData, tagData, loading, error, refresh } = useCSATDashboardData(
+    filterStartDate, effectiveEndDate
   )
 
   const showLoading = isMounted && loading
@@ -68,7 +79,7 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
       )}
 
       <CSATOverviewSection stats={stats} />
-      <CSATScoreTrendChart data={trendData} />
+      <CSATScoreTrendChart dailyData={dailyData} />
 
       <DashboardFilters
         selectedCenter={selectedCenter}
@@ -86,6 +97,7 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
           setFilterEndDate(end)
         }}
         onSearch={refresh}
+        customServices={CSAT_SERVICES}
       />
 
       <div className="bg-white border border-slate-200 rounded-xl p-5">
@@ -108,8 +120,8 @@ export function CSATDashboard({ externalStartDate, externalEndDate }: CSATDashbo
 
         {activeTab === "weekly" && <CSATWeeklyTable data={weeklyData} />}
         {activeTab === "lowscore" && <CSATLowScoreDetail data={lowScoreData} />}
-        {activeTab === "daily" && <CSATDailyTable center={selectedCenter} />}
-        {activeTab === "service" && <CSATServiceTable center={selectedCenter} service={selectedService} />}
+        {activeTab === "daily" && <CSATDailyTable center={selectedCenter} startDate={filterStartDate} endDate={effectiveEndDate} />}
+        {activeTab === "service" && <CSATServiceTable center={selectedCenter} service={selectedService} startDate={filterStartDate} endDate={effectiveEndDate} />}
         {activeTab === "tags" && <CSATTagAnalysis data={tagData} />}
       </div>
     </div>

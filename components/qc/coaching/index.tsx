@@ -7,10 +7,12 @@ import { NewHireDashboard } from "./new-hire-dashboard"
 import { WeaknessHeatmap } from "./weakness-heatmap"
 import { AlertDashboard } from "./alert-dashboard"
 import { AgentCoachingCard } from "./agent-coaching-card"
+import { EarlyWarningSummary } from "./early-warning-summary"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import type {
   AgentCoachingPlan,
+  AgentMonthlySummary,
   NewHireProfile,
   CoachingAlert,
 } from "@/lib/types"
@@ -26,9 +28,12 @@ type TabId = typeof TABS[number]["id"]
 
 interface CoachingDashboardProps {
   externalMonth?: string
+  crossNavAgentId?: string | null
+  onCrossNavHandled?: () => void
+  onNavigateToIntegrated?: (agentId: string) => void
 }
 
-export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
+export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHandled, onNavigateToIntegrated }: CoachingDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabId>("plan")
   const [month, setMonth] = useState(() => externalMonth || format(new Date(), "yyyy-MM"))
   const [center, setCenter] = useState<string>("")
@@ -38,6 +43,7 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
   const [newHires, setNewHires] = useState<NewHireProfile[]>([])
   const [alerts, setAlerts] = useState<CoachingAlert[]>([])
   const [heatmapData, setHeatmapData] = useState<any[]>([])
+  const [integratedSummaries, setIntegratedSummaries] = useState<AgentMonthlySummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -47,6 +53,18 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
   useEffect(() => {
     if (externalMonth) setMonth(externalMonth)
   }, [externalMonth])
+
+  // 크로스 네비게이션: 통합분석에서 에이전트 클릭으로 코칭 탭 진입
+  useEffect(() => {
+    if (crossNavAgentId && plans.length > 0) {
+      const match = plans.find(p => p.agentId === crossNavAgentId)
+      if (match) {
+        setSelectedPlan(match)
+        setActiveTab("plan")
+      }
+      onCrossNavHandled?.()
+    }
+  }, [crossNavAgentId, plans, onCrossNavHandled])
 
   const fetchData = useCallback(async (tab: TabId) => {
     setLoading(true)
@@ -58,10 +76,19 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
       switch (tab) {
         case "plan": {
           params.set("action", "plans")
-          const res = await fetch(`/api/coaching?${params}`)
+          const intParams = new URLSearchParams({ type: "agent-summary", month })
+          if (center) intParams.set("center", center)
+          const [res, intRes] = await Promise.all([
+            fetch(`/api/coaching?${params}`),
+            fetch(`/api/data?${intParams}`),
+          ])
           const json = await res.json()
           if (json.success) setPlans(json.data)
           else setError(json.error)
+          try {
+            const intJson = await intRes.json()
+            if (intJson.success) setIntegratedSummaries(intJson.data)
+          } catch { /* 통합 데이터 실패해도 코칭은 표시 */ }
           break
         }
         case "newhire": {
@@ -187,10 +214,13 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
       {!loading && (
         <>
           {activeTab === "plan" && (
-            <MonthlyPlanView
-              plans={plans}
-              onSelectAgent={setSelectedPlan}
-            />
+            <>
+              <EarlyWarningSummary summaries={integratedSummaries} />
+              <MonthlyPlanView
+                plans={plans}
+                onSelectAgent={setSelectedPlan}
+              />
+            </>
           )}
           {activeTab === "newhire" && (
             <NewHireDashboard newHires={newHires} />
@@ -210,6 +240,7 @@ export function CoachingDashboard({ externalMonth }: CoachingDashboardProps) {
           plan={selectedPlan}
           month={month}
           onClose={() => setSelectedPlan(null)}
+          onNavigateToIntegrated={onNavigateToIntegrated}
         />
       )}
     </div>

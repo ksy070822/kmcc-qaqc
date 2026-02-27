@@ -1,15 +1,71 @@
 "use client"
 
+import { useMemo } from "react"
 import type { CrossAnalysisResult, IntegratedDashboardStats, AgentMonthlySummary } from "@/lib/types"
 import { RISK_LEVEL_CONFIG, DOMAIN_LABELS } from "@/lib/constants"
 
 interface CrossDomainInsightsProps {
   crossAnalysis: CrossAnalysisResult
   stats: IntegratedDashboardStats
+  summaries: AgentMonthlySummary[]
   onAgentClick: (agentId: string) => void
 }
 
-export function CrossDomainInsights({ crossAnalysis, stats, onAgentClick }: CrossDomainInsightsProps) {
+// 부진 판정 기준
+const WEAK_THRESHOLDS = {
+  qa: (s: AgentMonthlySummary) => s.qaScore != null && s.qaScore < 75,
+  qc: (s: AgentMonthlySummary) => s.qcEvalCount != null && s.qcEvalCount > 0 && s.qcTotalRate != null && s.qcTotalRate > 5,
+  csat: (s: AgentMonthlySummary) => s.csatReviewCount != null && s.csatReviewCount > 0 && s.csatAvgScore != null && s.csatAvgScore < 3.5,
+  quiz: (s: AgentMonthlySummary) => s.knowledgeScore != null && s.knowledgeScore < 60,
+}
+
+const DOMAIN_KEYS = ["qa", "qc", "csat", "quiz"] as const
+
+export function CrossDomainInsights({ crossAnalysis, stats, summaries, onAgentClick }: CrossDomainInsightsProps) {
+  // 다중 부진 패턴 분석
+  const multiWeakAnalysis = useMemo(() => {
+    // 각 상담사별 부진 도메인 추출
+    const agentWeakDomains: Array<{ s: AgentMonthlySummary; domains: string[] }> = []
+    for (const s of summaries) {
+      const domains: string[] = []
+      for (const key of DOMAIN_KEYS) {
+        if (WEAK_THRESHOLDS[key](s)) domains.push(key)
+      }
+      if (domains.length > 0) agentWeakDomains.push({ s, domains })
+    }
+
+    // 항목별 부진 인원수
+    const domainCounts: Record<string, number> = { qa: 0, qc: 0, csat: 0, quiz: 0 }
+    for (const { domains } of agentWeakDomains) {
+      for (const d of domains) domainCounts[d]++
+    }
+
+    // 2개 이상 동시 부진
+    const multiWeak = agentWeakDomains.filter(a => a.domains.length >= 2)
+    // 조합별 카운트
+    const comboCounts = new Map<string, { label: string; count: number; agents: AgentMonthlySummary[] }>()
+    for (const { s, domains } of multiWeak) {
+      // 2개 조합
+      for (let i = 0; i < domains.length; i++) {
+        for (let j = i + 1; j < domains.length; j++) {
+          const key = `${domains[i]}+${domains[j]}`
+          const label = `${DOMAIN_LABELS[domains[i]] || domains[i]} + ${DOMAIN_LABELS[domains[j]] || domains[j]}`
+          const entry = comboCounts.get(key) || { label, count: 0, agents: [] }
+          entry.count++
+          entry.agents.push(s)
+          comboCounts.set(key, entry)
+        }
+      }
+    }
+
+    return {
+      domainCounts,
+      totalWeak: agentWeakDomains.length,
+      multiWeak,
+      combos: Array.from(comboCounts.values()).sort((a, b) => b.count - a.count),
+    }
+  }, [summaries])
+
   return (
     <div className="space-y-6">
       <h3 className="text-base font-semibold text-gray-900">교차분석 인사이트</h3>
@@ -41,49 +97,42 @@ export function CrossDomainInsights({ crossAnalysis, stats, onAgentClick }: Cros
           })}
         </div>
 
-        {/* 항목 간 상관관계 */}
+        {/* 다중 부진 패턴 */}
         <div className="border border-gray-200 rounded-xl p-4 space-y-3">
-          <h4 className="text-sm font-semibold text-gray-700">항목 간 상관관계</h4>
-          <p className="text-xs text-gray-400">공통 데이터 5건 이상, Pearson r</p>
-          <div className="space-y-2">
-            {crossAnalysis.correlations
-              .filter(c => c.sampleSize >= 5)
-              .sort((a, b) => Math.abs(b.correlation) - Math.abs(a.correlation))
-              .map(c => {
-                const strength = Math.abs(c.correlation)
-                const direction = c.correlation > 0 ? "정상관" : "역상관"
-                const label = strength >= 0.5 ? "강한" : strength >= 0.3 ? "보통" : "약한"
-                const barColor = c.correlation > 0 ? "#3b82f6" : "#ef4444"
+          <h4 className="text-sm font-semibold text-gray-700">다중 부진 패턴</h4>
+          <p className="text-xs text-gray-400">2개 이상 항목 동시 부진 상담사 (QA&lt;75, QC&gt;5%, 평점&lt;3.5, 직무&lt;60)</p>
 
-                return (
-                  <div key={`${c.domainA}-${c.domainB}`} className="space-y-1">
-                    <div className="flex justify-between text-xs">
-                      <span className="text-gray-600">
-                        {DOMAIN_LABELS[c.domainA] || c.domainA} ↔ {DOMAIN_LABELS[c.domainB] || c.domainB}
-                      </span>
-                      <span className="font-medium" style={{ color: barColor }}>
-                        {c.correlation.toFixed(2)} ({label} {direction})
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${Math.abs(c.correlation) * 100}%`,
-                            backgroundColor: barColor,
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs text-gray-400 w-8 text-right">n={c.sampleSize}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            {crossAnalysis.correlations.filter(c => c.sampleSize >= 5).length === 0 && (
-              <p className="text-xs text-gray-400">충분한 데이터가 없습니다</p>
-            )}
+          {/* 항목별 부진 인원 */}
+          <div className="flex gap-1.5 flex-wrap">
+            {DOMAIN_KEYS.map(key => {
+              const count = multiWeakAnalysis.domainCounts[key]
+              return (
+                <span
+                  key={key}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                    count > 0 ? "bg-red-50 text-red-700 border border-red-200" : "bg-gray-50 text-gray-400 border border-gray-200"
+                  }`}
+                >
+                  {DOMAIN_LABELS[key]} {count}명
+                </span>
+              )
+            })}
           </div>
+
+          {/* 동시 부진 조합 */}
+          {multiWeakAnalysis.combos.length > 0 ? (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-gray-600">동시 부진 조합 ({multiWeakAnalysis.multiWeak.length}명)</p>
+              {multiWeakAnalysis.combos.slice(0, 5).map(combo => (
+                <div key={combo.label} className="flex items-center justify-between text-xs bg-orange-50/50 rounded-lg px-2.5 py-1.5">
+                  <span className="text-gray-700 font-medium">{combo.label}</span>
+                  <span className="text-orange-600 font-bold">{combo.count}명</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-gray-400 text-center py-2">2개 이상 동시 부진 없음</p>
+          )}
         </div>
 
         {/* 단일 항목 부진 패턴 */}

@@ -2,19 +2,21 @@
 
 import type { AgentCoachingPlan, CoachingTier } from "@/lib/types"
 import { StatsCard } from "@/components/qc/stats-card"
-import { AlertTriangle, Eye, Search, CheckCircle } from "lucide-react"
+import { AlertTriangle, ShieldAlert, Eye, Search, CheckCircle } from "lucide-react"
 
 const TIER_CONFIG: Record<CoachingTier, { variant: "destructive" | "warning" | "default" | "success"; icon: React.ReactNode }> = {
   "긴급": { variant: "destructive", icon: <AlertTriangle className="h-4 w-4" /> },
-  "집중": { variant: "warning", icon: <Eye className="h-4 w-4" /> },
-  "관찰": { variant: "default", icon: <Search className="h-4 w-4" /> },
-  "자립": { variant: "success", icon: <CheckCircle className="h-4 w-4" /> },
+  "심각": { variant: "destructive", icon: <ShieldAlert className="h-4 w-4" /> },
+  "위험": { variant: "warning", icon: <Eye className="h-4 w-4" /> },
+  "주의": { variant: "default", icon: <Search className="h-4 w-4" /> },
+  "일반": { variant: "success", icon: <CheckCircle className="h-4 w-4" /> },
 }
 
 const TIER_BADGE: Record<CoachingTier, { bg: string; text: string }> = {
-  "자립": { bg: "bg-emerald-50", text: "text-emerald-700" },
-  "관찰": { bg: "bg-gray-100", text: "text-gray-700" },
-  "집중": { bg: "bg-amber-50", text: "text-amber-700" },
+  "일반": { bg: "bg-emerald-50", text: "text-emerald-700" },
+  "주의": { bg: "bg-sky-50", text: "text-sky-700" },
+  "위험": { bg: "bg-amber-50", text: "text-amber-700" },
+  "심각": { bg: "bg-orange-50", text: "text-orange-700" },
   "긴급": { bg: "bg-red-50", text: "text-red-700" },
 }
 
@@ -32,14 +34,15 @@ interface MonthlyPlanViewProps {
 export function MonthlyPlanView({ plans, onSelectAgent }: MonthlyPlanViewProps) {
   // 티어별 통계
   const tierStats = {
-    "자립": plans.filter(p => p.tier === "자립").length,
-    "관찰": plans.filter(p => p.tier === "관찰").length,
-    "집중": plans.filter(p => p.tier === "집중").length,
+    "일반": plans.filter(p => p.tier === "일반").length,
+    "주의": plans.filter(p => p.tier === "주의").length,
+    "위험": plans.filter(p => p.tier === "위험").length,
+    "심각": plans.filter(p => p.tier === "심각").length,
     "긴급": plans.filter(p => p.tier === "긴급").length,
   }
 
-  // 긴급 > 집중 > 관찰 > 자립 순 정렬
-  const tierOrder: CoachingTier[] = ["긴급", "집중", "관찰", "자립"]
+  // 긴급 > 심각 > 위험 > 주의 > 일반 순 정렬
+  const tierOrder: CoachingTier[] = ["긴급", "심각", "위험", "주의", "일반"]
   const sorted = [...plans].sort((a, b) => {
     const ai = tierOrder.indexOf(a.tier)
     const bi = tierOrder.indexOf(b.tier)
@@ -50,7 +53,7 @@ export function MonthlyPlanView({ plans, onSelectAgent }: MonthlyPlanViewProps) 
   return (
     <div className="space-y-4">
       {/* 티어 요약 카드 */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {tierOrder.map(tier => (
           <StatsCard
             key={tier}
@@ -74,7 +77,7 @@ export function MonthlyPlanView({ plans, onSelectAgent }: MonthlyPlanViewProps) 
               <th className="text-center px-3 py-3 font-medium text-gray-600">티어</th>
               <th className="text-center px-3 py-3 font-medium text-gray-600">리스크</th>
               <th className="text-left px-3 py-3 font-medium text-gray-600">취약 카테고리</th>
-              <th className="text-center px-3 py-3 font-medium text-gray-600">세션</th>
+              <th className="text-center px-3 py-3 font-medium text-gray-600">코칭 빈도</th>
             </tr>
           </thead>
           <tbody className="divide-y">
@@ -116,8 +119,8 @@ export function MonthlyPlanView({ plans, onSelectAgent }: MonthlyPlanViewProps) 
                       ))}
                   </div>
                 </td>
-                <td className="px-3 py-3 text-center text-gray-600">
-                  {plan.completedSessions}/{plan.monthlySessions}
+                <td className="px-3 py-3 text-center text-gray-600 text-xs">
+                  {{ "일반": "자율", "주의": "월1회", "위험": "격주", "심각": "주1회", "긴급": "주2회" }[plan.tier]}
                 </td>
               </tr>
             ))}

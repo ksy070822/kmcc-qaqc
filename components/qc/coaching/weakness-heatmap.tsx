@@ -1,5 +1,6 @@
 "use client"
 
+import { useMemo } from "react"
 import type { CoachingCategoryId } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -36,6 +37,12 @@ function getCellColor(weak: number, critical: number, total: number): string {
   return "bg-green-50"
 }
 
+function getCellTooltip(catLabel: string, weak: number, critical: number, total: number): string {
+  if (total === 0) return `${catLabel}: 데이터 없음`
+  const rate = total > 0 ? Math.round(((weak + critical) / total) * 100) : 0
+  return `${catLabel}: 취약 ${weak}명, 심각 ${critical}명 / 전체 ${total}명 (${rate}%)`
+}
+
 interface WeaknessHeatmapProps {
   data: HeatmapGroup[]
 }
@@ -45,6 +52,34 @@ export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
     "greeting", "empathy", "inquiry", "knowledge",
     "processing", "records", "satisfaction", "communication",
   ]
+
+  // 카테고리별 전체 합계
+  const totals = useMemo(() => {
+    const sums: Record<string, { weak: number; critical: number; total: number }> = {}
+    for (const id of catIds) {
+      sums[id] = { weak: 0, critical: 0, total: 0 }
+    }
+    for (const group of data) {
+      for (const cat of group.categories) {
+        if (sums[cat.categoryId]) {
+          sums[cat.categoryId].weak += cat.weakAgentCount
+          sums[cat.categoryId].critical += cat.criticalAgentCount
+          sums[cat.categoryId].total += cat.totalAgents
+        }
+      }
+    }
+    return sums
+  }, [data])
+
+  // 그룹별 심각 카테고리 3개 이상이면 집중코칭필요 배지
+  function needsIntensiveCoaching(group: HeatmapGroup): boolean {
+    let criticalCats = 0
+    for (const catId of catIds) {
+      const cat = group.categories.find(c => c.categoryId === catId)
+      if (cat && cat.criticalAgentCount > 0) criticalCats++
+    }
+    return criticalCats >= 3
+  }
 
   return (
     <Card className="border shadow-sm">
@@ -69,7 +104,16 @@ export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
             <tbody className="divide-y">
               {data.map(group => (
                 <tr key={group.groupKey}>
-                  <td className="px-4 py-3 font-medium">{group.groupKey}</td>
+                  <td className="px-4 py-3 font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <span>{group.groupKey}</span>
+                      {needsIntensiveCoaching(group) && (
+                        <Badge variant="outline" className="bg-red-50 text-red-700 border-red-300 text-[10px] px-1 py-0 shrink-0">
+                          집중코칭필요
+                        </Badge>
+                      )}
+                    </div>
+                  </td>
                   <td className="px-2 py-3 text-center text-muted-foreground">
                     {group.categories[0]?.totalAgents || 0}
                   </td>
@@ -83,6 +127,7 @@ export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
                       <td
                         key={catId}
                         className={`px-2 py-3 text-center ${getCellColor(weak, critical, total)}`}
+                        title={getCellTooltip(CATEGORY_LABELS[catId], weak, critical, total)}
                       >
                         {weak + critical > 0 ? (
                           <div>
@@ -99,6 +144,35 @@ export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
                   })}
                 </tr>
               ))}
+
+              {/* 합계 행 */}
+              {data.length > 0 && (
+                <tr className="bg-muted/30 font-medium border-t-2">
+                  <td className="px-4 py-3">전체 합계</td>
+                  <td className="px-2 py-3 text-center text-muted-foreground">-</td>
+                  {catIds.map(catId => {
+                    const t = totals[catId]
+                    return (
+                      <td
+                        key={catId}
+                        className={`px-2 py-3 text-center ${getCellColor(t.weak, t.critical, t.total)}`}
+                        title={getCellTooltip(CATEGORY_LABELS[catId], t.weak, t.critical, t.total)}
+                      >
+                        {t.weak + t.critical > 0 ? (
+                          <div>
+                            <span className="font-mono text-sm">{t.weak + t.critical}</span>
+                            {t.critical > 0 && (
+                              <span className="text-red-600 text-xs ml-0.5">({t.critical})</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground/30">-</span>
+                        )}
+                      </td>
+                    )
+                  })}
+                </tr>
+              )}
             </tbody>
           </table>
           {data.length === 0 && (
@@ -106,13 +180,13 @@ export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
           )}
         </div>
 
-        {/* 범례 */}
+        {/* 범례 (수치 기준 포함) */}
         <div className="flex items-center gap-3 flex-wrap">
           <span className="text-xs text-muted-foreground">범례:</span>
-          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">양호</Badge>
-          <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-300">경계</Badge>
-          <Badge variant="outline" className="bg-orange-200 text-orange-700 border-orange-300">취약</Badge>
-          <Badge variant="outline" className="bg-red-200 text-red-700 border-red-300">심각</Badge>
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">양호 ≤10%</Badge>
+          <Badge variant="outline" className="bg-yellow-100 text-yellow-700 border-yellow-300">경계 10~30%</Badge>
+          <Badge variant="outline" className="bg-orange-200 text-orange-700 border-orange-300">취약 30~50%</Badge>
+          <Badge variant="outline" className="bg-red-200 text-red-700 border-red-300">심각 &gt;50%</Badge>
           <span className="text-xs text-muted-foreground ml-2">숫자 = 취약+심각 상담사 수, <span className="text-red-600">(n)</span> = 심각</span>
         </div>
       </CardContent>

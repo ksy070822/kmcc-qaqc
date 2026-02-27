@@ -410,6 +410,12 @@ export interface QAEvaluation {
   // 피드백
   knowledgeFeedback?: string
   satisfactionComment?: string
+
+  // 추가 메타 (2026-02 리빌드)
+  workHours?: string              // 근무시간 (e.g. "09:00~18:00")
+  startDate?: string              // 투입일 YYYY-MM-DD
+  tenureGroup?: string            // 근속그룹 (e.g. "3개월미만")
+  slaIncluded?: boolean           // SLA 포함여부
 }
 
 export interface QAEvaluationItem {
@@ -463,6 +469,7 @@ export interface QAItemStats {
   itemName: string
   shortName: string
   maxScore: number
+  rawMaxScore: number  // 실제 배점 (e.g., 15 for 업무지식)
   avgScore: number
   avgRate: number    // avgScore / maxScore * 100
   category: string
@@ -696,6 +703,7 @@ export interface AgentMonthlySummary {
   // 종합 리스크
   compositeRiskScore?: number
   riskLevel?: "low" | "medium" | "high" | "critical"
+  activeDomainCount?: number  // 리스크 계산에 사용된 도메인 수 (1~4)
   aiComment?: string
 
   // 최근 3개월 이력 태그
@@ -911,7 +919,7 @@ export interface CoachingCategoryDef {
 }
 
 // 코칭 티어
-export type CoachingTier = '자립' | '관찰' | '집중' | '긴급'
+export type CoachingTier = '일반' | '주의' | '위험' | '심각' | '긴급'
 
 // 코칭 티어 설정
 export interface CoachingTierConfig {
@@ -919,7 +927,6 @@ export interface CoachingTierConfig {
   minRisk: number
   maxRisk: number
   frequency: string       // 코칭 빈도 설명
-  monthlySessions: number
 }
 
 // 근속 구간
@@ -931,6 +938,17 @@ export interface ChannelRiskWeights {
   qc: number
   csat: number
   quiz: number
+}
+
+// 7도메인 채널별 리스크 가중치 (Pulse 2)
+export interface ChannelRiskWeightsV3 {
+  qa: number
+  qc: number
+  csat: number
+  quiz: number
+  productivity: number
+  attendance: number
+  sla: number
 }
 
 // 카테고리별 취약점 분석 결과
@@ -1004,8 +1022,7 @@ export interface AgentCoachingPlan {
   prescriptions: CoachingPrescription[]
   consultTypeErrors?: ConsultTypeErrorAnalysis[]
   consultTypeCorrections?: ConsultTypeCorrectionAnalysis
-  monthlySessions: number
-  completedSessions: number
+  coachingFrequency: string  // 자율/격주/주1회/주2회
   status: 'planned' | 'in_progress' | 'completed'
 }
 
@@ -1067,7 +1084,7 @@ export interface CoachingEffectiveness {
     improved: number
     rate: number
   }>
-  newHireStabilizationRate: number // 2개월 내 관찰 이하 도달 비율
+  newHireStabilizationRate: number // 2개월 내 주의 이하 도달 비율
   avgSessionsPerAgent: number
 }
 
@@ -1440,4 +1457,186 @@ export interface SLADailyTrackingData {
     direction: "higher_better" | "lower_better"
     trend: "improving" | "stable" | "declining"
   }[]
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ═══ Pulse 2 Types ═══
+// ═══════════════════════════════════════════════════════════════
+
+// ============================================================
+// 코칭 세션 (Coaching Sessions)
+// ============================================================
+
+/** 코칭 액션 아이템 */
+export interface CoachingActionItem {
+  description: string
+  due_date?: string
+  completed: boolean
+}
+
+/** 코칭 세션 — 강사 ↔ 상담사 1:1 코칭 기록 */
+export interface CoachingSession {
+  session_id: string
+  agent_id: string
+  agent_name: string
+  instructor_id: string
+  instructor_name: string
+  center: string
+  service?: string
+  channel?: string
+  session_date: string                          // YYYY-MM-DD
+  session_type: 'scheduled' | 'ad_hoc' | 'follow_up'
+  duration_minutes?: number
+  target_month: string                          // YYYY-MM
+  weakness_categories: string[]                 // 코칭 대상 카테고리 배열
+  coaching_content?: string
+  action_items?: CoachingActionItem[]
+  // 성과 스냅샷 (코칭 시점)
+  snapshot_qc_att_rate?: number
+  snapshot_qc_ops_rate?: number
+  snapshot_qa_score?: number
+  snapshot_csat_score?: number
+  snapshot_risk_score?: number
+  status: 'scheduled' | 'completed' | 'cancelled'
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
+// 코칭 피드백 (Coaching Feedback)
+// ============================================================
+
+/** 양방향 코칭 피드백 (강사→상담사, 상담사→강사) */
+export interface CoachingFeedback {
+  feedback_id: string
+  session_id: string
+  direction: 'instructor_to_agent' | 'agent_to_instructor'
+  from_user_id: string
+  to_user_id: string
+  feedback_date: string
+  rating?: number                               // 1~5
+  content: string
+  improvement_noted: boolean
+  created_at: string
+}
+
+// ============================================================
+// 활동 계획 (Activity Plans)
+// ============================================================
+
+/** 상담사 활동 계획 — 주간 개선 과제 */
+export interface ActivityPlan {
+  plan_id: string
+  agent_id: string
+  agent_name: string
+  center: string
+  plan_week: string                             // 목요일 시작 "YYYY-MM-DD"
+  plan_date: string
+  target_category_id: string
+  target_description: string
+  target_metric?: string
+  actual_result?: string
+  actual_metric_value?: number
+  achievement_status: 'pending' | 'in_progress' | 'completed' | 'missed'
+  coaching_session_id?: string
+  approved_by?: string
+  approved_at?: string
+  created_by: string
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
+// AI 리포트 (AI-Generated Reports)
+// ============================================================
+
+/** AI 생성 리포트 — LLM 기반 자동 분석 보고서 */
+export interface AIReport {
+  report_id: string
+  report_type: 'agent_daily' | 'agent_weekly' | 'center_weekly' | 'company_monthly'
+  scope_type: 'agent' | 'center' | 'all'
+  scope_id?: string
+  target_month?: string
+  target_week?: string
+  report_date: string
+  title: string
+  summary: string
+  full_content: string
+  data_snapshot?: string                        // JSON stringified
+  model_id?: string
+  prompt_tokens?: number
+  completion_tokens?: number
+  visibility: 'internal' | 'shared'
+  center?: string
+  status: 'generating' | 'generated' | 'failed'
+  created_by: string
+  created_at: string
+}
+
+// ============================================================
+// 자동 리스크 평가 (Risk Assessment — 7도메인)
+// ============================================================
+
+/** 5단계 리스크 레벨 (Pulse 2) */
+export type RiskLevel5 = 'normal' | 'caution' | 'warning' | 'severe' | 'critical'
+
+/** QC 신뢰도 */
+export type QcConfidence = 'low' | 'moderate' | 'high'
+
+/** 추세 방향 */
+export type TrendDirection = 'improving' | 'stable' | 'deteriorating'
+
+/** 자동 리스크 평가 — 7도메인(QC/QA/CSAT/Quiz/생산성/근태/SLA) 종합 */
+export interface RiskAssessment {
+  assessment_id: string
+  agent_id: string
+  center: string
+  assessment_date: string
+  assessment_month: string
+  // 원시 점수
+  raw_qc_att_rate?: number
+  raw_qc_ops_rate?: number
+  raw_qa_score?: number
+  raw_csat_score?: number
+  raw_quiz_score?: number
+  raw_productivity_rate?: number
+  raw_attendance_rate?: number
+  raw_sla_score?: number
+  // 베이지안 보정
+  adjusted_qc_rate?: number
+  qc_confidence?: QcConfidence
+  // 가중 리스크
+  risk_score: number
+  risk_level: RiskLevel5
+  coaching_tier?: string
+  coaching_frequency?: string
+  top_weaknesses?: string[]
+  trend_direction?: TrendDirection
+  prev_risk_score?: number
+  is_underperforming: boolean
+  consecutive_flagged_weeks: number
+  created_at: string
+}
+
+// ============================================================
+// 확장된 월간 요약 (7도메인 AgentMonthlySummaryV2)
+// ============================================================
+
+/** AgentMonthlySummary 확장 — 생산성/근태/SLA + 코칭 메타 추가 */
+export interface AgentMonthlySummaryV2 extends AgentMonthlySummary {
+  // 생산성
+  productivity_cph?: number
+  productivity_response_rate?: number
+  // 근태
+  attendance_rate?: number
+  // SLA
+  sla_score?: number
+  sla_grade?: string
+  // 종합 성과
+  performance_score?: number
+  active_domain_count_v2?: number               // 7도메인 기준 활성 도메인 수
+  // 코칭 연동
+  coaching_session_count?: number
+  last_coaching_date?: string
 }

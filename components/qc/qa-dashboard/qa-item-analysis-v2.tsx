@@ -17,6 +17,7 @@ interface ItemData {
   itemName: string
   shortName: string
   maxScore: number
+  rawMaxScore: number
   avgScore: number
   avgRate: number
   category: string
@@ -35,7 +36,7 @@ const isBonus = (d: ItemData) => d.itemName === "칭찬접수"
 const isPenalty = (d: ItemData) => d.maxScore < 0
 const isSpecial = (d: ItemData) => isBonus(d) || isPenalty(d)
 
-// MODI 색상 토큰 (brandPrimary = 앱 통일 블루 #2c6edb)
+// MODI 색상 토큰
 const MODI = {
   brandPrimary: "#2c6edb",
   brandWarning: "#DD2222",
@@ -98,29 +99,31 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
   // 일반 항목 (가점/감점 제외)
   const normalItems = byChannel.filter(d => !isSpecial(d) && d.maxScore > 0)
 
-  // 카테고리별 그룹, 감점 큰 순
+  // 카테고리별 그룹, 감점 큰 순 (100점환산 기준)
   const categories = [...new Set(normalItems.map(d => d.category))].filter(Boolean)
   const grouped = categories.map(cat => ({
     category: cat,
     items: normalItems.filter(d => d.category === cat).sort((a, b) =>
-      (b.maxScore - b.avgScore) - (a.maxScore - a.avgScore)
-    ),
+      (100 - a.avgScore) - (100 - b.avgScore)
+    ).reverse(),
   }))
 
   const uncategorized = normalItems.filter(d => !d.category)
   if (uncategorized.length > 0) {
     grouped.push({
       category: "기타",
-      items: uncategorized.sort((a, b) => (b.maxScore - b.avgScore) - (a.maxScore - a.avgScore)),
+      items: uncategorized.sort((a, b) => a.avgScore - b.avgScore),
     })
   }
+
+  const COL_SPAN = 6
 
   return (
     <div className="space-y-4">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <p className="text-xs" style={{ color: MODI.textTertiary }}>
-          항목별 배점 대비 획득 점수 · 감점 큰 순 · 통합 테이블 뷰
+          항목별 배점 대비 획득 점수 · 감점 큰 순
         </p>
         <div className="flex rounded-lg overflow-hidden" style={{ border: `1px solid ${MODI.stroke}` }}>
           {(["유선", "채팅"] as const).map(ch => (
@@ -139,16 +142,22 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
         </div>
       </div>
 
-      {/* 통합 테이블 (인라인 미니바 포함) */}
+      {/* 통합 테이블 */}
       <div className="overflow-x-auto">
         <table className="w-full text-sm" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
           <thead>
             <tr style={{ borderBottom: `2px solid ${MODI.stroke}` }}>
-              <th className="text-left py-2 px-3 text-xs font-semibold" style={{ color: MODI.textTertiary, width: 100 }}>항목</th>
-              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 200 }}>달성 현황</th>
-              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 56 }}>점수</th>
-              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 56 }}>달성율</th>
-              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 50 }}>감점</th>
+              <th className="text-left py-2 px-3 text-xs font-semibold" style={{ color: MODI.textTertiary, width: 90 }}>항목</th>
+              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 160 }}>달성 현황</th>
+              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 52 }}>달성율</th>
+              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 80 }}>
+                <span>기본점수</span>
+                <span className="text-[10px] font-normal ml-0.5" style={{ color: MODI.textPlaceholder }}>(감점)</span>
+              </th>
+              <th className="py-2 px-2 text-xs font-semibold text-center" style={{ color: MODI.textTertiary, width: 80 }}>
+                <span>환산점수</span>
+                <span className="text-[10px] font-normal ml-0.5" style={{ color: MODI.textPlaceholder }}>(감점)</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -157,7 +166,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                 {/* 카테고리 구분 행 */}
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={COL_SPAN}
                     className="pt-4 pb-1.5 px-3"
                     style={{ borderBottom: `1px solid ${MODI.stroke}` }}
                   >
@@ -171,9 +180,20 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                 </tr>
 
                 {items.map((item, i) => {
-                  const pct = Math.min((item.avgScore / item.maxScore) * 100, 100)
-                  const deduction = item.maxScore - item.avgScore
-                  const isWarn = deduction >= 2
+                  // 100점환산 값 (DB에서 온 원본)
+                  const normAvg = item.avgScore
+                  const normDed = 100 - normAvg
+
+                  // 기본점수 역산: (환산점수 / 100) × 배점
+                  const rawMax = item.rawMaxScore
+                  const rawAvg = (normAvg / 100) * rawMax
+                  const rawDed = rawMax - rawAvg
+
+                  // 바 차트 %
+                  const pct = Math.min(normAvg, 100)
+                  // 경고: 감점 10% 이상
+                  const dedPct = rawMax > 0 ? (rawDed / rawMax) * 100 : 0
+                  const isWarn = dedPct >= 10
 
                   return (
                     <tr
@@ -195,7 +215,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                         </span>
                       </td>
 
-                      {/* 인라인 미니바 */}
+                      {/* 달성 현황 바 */}
                       <td className="py-2.5 px-2">
                         <div className="flex items-center gap-1.5">
                           <div
@@ -210,20 +230,10 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                               }}
                             />
                           </div>
-                          <span className="text-[10px] w-[28px] text-right tabular-nums shrink-0" style={{ color: MODI.textPlaceholder }}>
-                            {item.maxScore}
+                          <span className="text-[10px] w-[20px] text-right tabular-nums shrink-0" style={{ color: MODI.textPlaceholder }}>
+                            {rawMax}
                           </span>
                         </div>
-                      </td>
-
-                      {/* 점수 */}
-                      <td className="py-2.5 px-2 text-center">
-                        <span
-                          className="text-xs font-medium tabular-nums"
-                          style={{ color: isWarn ? MODI.textPrimary : MODI.textSecondary }}
-                        >
-                          {item.avgScore.toFixed(1)}
-                        </span>
                       </td>
 
                       {/* 달성율 */}
@@ -241,19 +251,40 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
                         </span>
                       </td>
 
-                      {/* 감점 */}
+                      {/* 기본점수 (감점) */}
                       <td className="py-2.5 px-2 text-center">
-                        <span
-                          className="text-xs tabular-nums"
-                          style={{
-                            color: deduction >= 2 ? MODI.brandWarning
-                              : deduction >= 0.5 ? MODI.textPrimary
-                              : MODI.textSecondary,
-                            fontWeight: deduction >= 2 ? 700 : deduction >= 0.5 ? 500 : 400,
-                          }}
-                        >
-                          {deduction >= 0.01 ? `-${deduction.toFixed(1)}` : "-"}
+                        <span className="text-xs font-medium tabular-nums" style={{ color: isWarn ? MODI.textPrimary : MODI.textSecondary }}>
+                          {rawAvg.toFixed(1)}
                         </span>
+                        {rawDed >= 0.05 && (
+                          <span
+                            className="text-[10px] tabular-nums ml-0.5"
+                            style={{
+                              color: dedPct >= 10 ? MODI.brandWarning : dedPct >= 3 ? MODI.textPrimary : MODI.textPlaceholder,
+                              fontWeight: dedPct >= 10 ? 700 : 400,
+                            }}
+                          >
+                            (-{rawDed.toFixed(1)})
+                          </span>
+                        )}
+                      </td>
+
+                      {/* 환산점수 (감점) */}
+                      <td className="py-2.5 px-2 text-center">
+                        <span className="text-xs font-medium tabular-nums" style={{ color: isWarn ? MODI.textPrimary : MODI.textSecondary }}>
+                          {normAvg.toFixed(1)}
+                        </span>
+                        {normDed >= 0.05 && (
+                          <span
+                            className="text-[10px] tabular-nums ml-0.5"
+                            style={{
+                              color: dedPct >= 10 ? MODI.brandWarning : dedPct >= 3 ? MODI.textPrimary : MODI.textPlaceholder,
+                              fontWeight: dedPct >= 10 ? 700 : 400,
+                            }}
+                          >
+                            (-{normDed.toFixed(1)})
+                          </span>
+                        )}
                       </td>
                     </tr>
                   )
@@ -265,7 +296,7 @@ export function QAItemAnalysisV2({ center, service, channel, tenure, startMonth,
             {special && (
               <>
                 <tr>
-                  <td colSpan={5} className="pt-4 pb-1.5 px-3" style={{ borderBottom: `1px solid ${MODI.stroke}` }}>
+                  <td colSpan={COL_SPAN} className="pt-4 pb-1.5 px-3" style={{ borderBottom: `1px solid ${MODI.stroke}` }}>
                     <span className="text-xs font-semibold" style={{ color: MODI.textSecondary }}>
                       가점 · 감점
                     </span>

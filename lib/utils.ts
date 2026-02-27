@@ -57,6 +57,29 @@ export function formatDate(d: Date): string {
   return format(d, 'yyyy-MM-dd')
 }
 
+/** 전영업일 계산 (주말 제외, 공휴일은 미포함) */
+export function getPrevBusinessDay(date: Date = new Date()): Date {
+  const d = new Date(date)
+  d.setDate(d.getDate() - 1)
+  while (d.getDay() === 0 || d.getDay() === 6) {
+    d.setDate(d.getDate() - 1)
+  }
+  return d
+}
+
+/** 주말 여부 (토=6, 일=0) */
+export function isWeekend(dateStr: string): boolean {
+  const d = new Date(dateStr + "T00:00:00")
+  return d.getDay() === 0 || d.getDay() === 6
+}
+
+/** 요일 라벨 (한글 약어) */
+export function getDayLabel(dateStr: string): string {
+  const days = ["일", "월", "화", "수", "목", "금", "토"]
+  const d = new Date(dateStr + "T00:00:00")
+  return days[d.getDay()]
+}
+
 export interface StatusColors {
   bg: string
   text: string

@@ -56,6 +56,7 @@ function getWeeksInMonth(monthDate: Date): Array<{ start: Date; end: Date; label
 
 export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabValue>("qa")
+  const [crossNavAgentId, setCrossNavAgentId] = useState<string | null>(null)
   // 월간 탭(QA/Quiz/통합분석): 전월 기본
   const [monthlyMonth, setMonthlyMonth] = useState(() => subMonths(new Date(), 1))
   // 일간 탭(QC/CSAT): 당월 기본 (전주차 자동 선택)
@@ -276,8 +277,26 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
         />
       )}
       {activeTab === "quiz" && <QuizDashboard externalMonth={monthStr} />}
-      {activeTab === "integrated" && <IntegratedDashboard externalMonth={monthStr} />}
-      {activeTab === "coaching" && <CoachingDashboard externalMonth={monthStr} />}
+      {activeTab === "integrated" && (
+        <IntegratedDashboard
+          externalMonth={monthStr}
+          onNavigateToCoaching={(agentId) => {
+            setCrossNavAgentId(agentId)
+            setActiveTab("coaching")
+          }}
+        />
+      )}
+      {activeTab === "coaching" && (
+        <CoachingDashboard
+          externalMonth={monthStr}
+          crossNavAgentId={crossNavAgentId}
+          onCrossNavHandled={() => setCrossNavAgentId(null)}
+          onNavigateToIntegrated={(agentId) => {
+            setCrossNavAgentId(agentId)
+            setActiveTab("integrated")
+          }}
+        />
+      )}
     </div>
   )
 }

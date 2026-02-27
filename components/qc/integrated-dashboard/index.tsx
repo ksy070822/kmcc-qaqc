@@ -10,9 +10,10 @@ import { useIntegratedDashboardData, useAgentIntegratedProfile } from "@/lib/use
 
 interface IntegratedDashboardProps {
   externalMonth?: string
+  onNavigateToCoaching?: (agentId: string) => void
 }
 
-export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps) {
+export function IntegratedDashboard({ externalMonth, onNavigateToCoaching }: IntegratedDashboardProps) {
   // 현재월 기본값
   const [month, setMonth] = useState(() => externalMonth || format(new Date(), "yyyy-MM"))
   const [center, setCenter] = useState<string>("")
@@ -139,26 +140,32 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
 
           {/* 서비스/채널별 유의상담사 현황 */}
           {summaries.length > 0 && (() => {
-            const groupMap = new Map<string, { total: number; risk: number }>()
+            const groupMap = new Map<string, { total: number; medium: number; high: number; critical: number }>()
             for (const s of summaries) {
               const ctr = s.center || "기타"
               const svc = s.service || "기타"
               const ch = s.channel || "-"
               const key = `${ctr}__${svc}__${ch}`
-              const entry = groupMap.get(key) || { total: 0, risk: 0 }
+              const entry = groupMap.get(key) || { total: 0, medium: 0, high: 0, critical: 0 }
               entry.total++
-              if (s.riskLevel && s.riskLevel !== "low") entry.risk++
+              if (s.riskLevel === "medium") entry.medium++
+              else if (s.riskLevel === "high") entry.high++
+              else if (s.riskLevel === "critical") entry.critical++
               groupMap.set(key, entry)
             }
             const rows = Array.from(groupMap.entries())
               .map(([key, v]) => {
                 const [ctr, svc, ch] = key.split("__")
-                return { center: ctr, service: svc, channel: ch, ...v, rate: v.total > 0 ? Math.round((v.risk / v.total) * 1000) / 10 : 0 }
+                const risk = v.medium + v.high + v.critical
+                return { center: ctr, service: svc, channel: ch, ...v, risk, rate: v.total > 0 ? Math.round((risk / v.total) * 1000) / 10 : 0 }
               })
               .filter(r => r.risk > 0)
-              .sort((a, b) => b.risk - a.risk)
+              .sort((a, b) => (b.critical * 100 + b.high * 10 + b.medium) - (a.critical * 100 + a.high * 10 + a.medium))
             const totalAll = summaries.length
-            const riskAll = summaries.filter(s => s.riskLevel && s.riskLevel !== "low").length
+            const medAll = summaries.filter(s => s.riskLevel === "medium").length
+            const highAll = summaries.filter(s => s.riskLevel === "high").length
+            const critAll = summaries.filter(s => s.riskLevel === "critical").length
+            const riskAll = medAll + highAll + critAll
             const rateAll = totalAll > 0 ? Math.round((riskAll / totalAll) * 1000) / 10 : 0
 
             if (rows.length === 0) return null
@@ -169,7 +176,7 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
                   <h3 className="text-sm font-semibold text-gray-700">
                     센터/서비스/채널별 유의상담사 현황
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      전체 {totalAll}명 중 {riskAll}명 ({rateAll}%) 유의
+                      전체 {totalAll}명 중 {riskAll}명 ({rateAll}%) — 주의 {medAll} / 위험 {highAll} / 심각 {critAll}
                     </span>
                   </h3>
                 </div>
@@ -181,14 +188,16 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">서비스</th>
                         <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">채널</th>
                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">전체</th>
-                        <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">유의(주의+위험+심각)</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-amber-500">주의</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-orange-500">위험</th>
+                        <th className="px-3 py-2 text-right text-xs font-medium text-red-500">심각</th>
                         <th className="px-3 py-2 text-right text-xs font-medium text-gray-500">비율</th>
-                        <th className="px-3 py-2 text-xs font-medium text-gray-500 w-[120px]"></th>
+                        <th className="px-3 py-2 text-xs font-medium text-gray-500 w-[100px]"></th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {rows.map((r, i) => (
-                        <tr key={i} className={r.rate >= 30 ? "bg-red-50/50" : ""}>
+                        <tr key={i} className={r.critical > 0 ? "bg-red-50/50" : r.high > 0 ? "bg-orange-50/50" : ""}>
                           <td className="px-3 py-1.5 text-xs font-medium">{r.center}</td>
                           <td className="px-3 py-1.5 text-xs">{r.service}</td>
                           <td className="px-3 py-1.5 text-xs">
@@ -198,7 +207,13 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
                           </td>
                           <td className="px-3 py-1.5 text-xs text-right tabular-nums">{r.total}명</td>
                           <td className="px-3 py-1.5 text-xs text-right tabular-nums font-medium">
-                            <span className="text-red-600">{r.risk}명</span>
+                            {r.medium > 0 ? <span className="text-amber-600">{r.medium}</span> : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-right tabular-nums font-medium">
+                            {r.high > 0 ? <span className="text-orange-600">{r.high}</span> : <span className="text-gray-300">-</span>}
+                          </td>
+                          <td className="px-3 py-1.5 text-xs text-right tabular-nums font-medium">
+                            {r.critical > 0 ? <span className="text-red-600 font-bold">{r.critical}</span> : <span className="text-gray-300">-</span>}
                           </td>
                           <td className="px-3 py-1.5 text-xs text-right tabular-nums font-medium">
                             <span className={r.rate >= 30 ? "text-red-600" : r.rate >= 15 ? "text-amber-600" : ""}>{r.rate}%</span>
@@ -206,7 +221,7 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
                           <td className="px-3 py-1.5">
                             <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
                               <div
-                                className={`h-full rounded-full ${r.rate >= 30 ? "bg-red-400" : r.rate >= 15 ? "bg-amber-400" : "bg-emerald-400"}`}
+                                className={`h-full rounded-full ${r.critical > 0 ? "bg-red-400" : r.high > 0 ? "bg-orange-400" : "bg-amber-400"}`}
                                 style={{ width: `${Math.min(r.rate, 100)}%` }}
                               />
                             </div>
@@ -231,6 +246,7 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
             <CrossDomainInsights
               crossAnalysis={crossAnalysis}
               stats={stats}
+              summaries={summaries}
               onAgentClick={handleAgentClick}
             />
           )}
@@ -244,6 +260,7 @@ export function IntegratedDashboard({ externalMonth }: IntegratedDashboardProps)
           loading={profileLoading}
           error={profileError}
           onClose={handleCloseModal}
+          onNavigateToCoaching={onNavigateToCoaching}
         />
       )}
     </div>

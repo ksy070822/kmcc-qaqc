@@ -25,6 +25,12 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("item")
+  // round 탭 전용 월 내비게이션 (부모 필터와 독립)
+  const [roundMonth, setRoundMonth] = useState(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  })
   // 기본: externalMonth 또는 이전 달 (현재 월에는 데이터가 없을 수 있음)
   const defaultMonth = externalMonth || (() => {
     const d = new Date()
@@ -123,8 +129,8 @@ export function QADashboard({ externalMonth }: QADashboardProps) {
         )}
         {activeTab === "round" && (
           <div className="space-y-4">
-            <QARoundTrendChart center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
-            <QARoundTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+            <QARoundTrendChart center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} roundMonth={roundMonth} />
+            <QARoundTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} roundMonth={roundMonth} onRoundMonthChange={setRoundMonth} />
           </div>
         )}
         {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}

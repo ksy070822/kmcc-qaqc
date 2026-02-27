@@ -77,6 +77,13 @@ export function SLAScorecard({ data, monthLabel }: Props) {
         ))}
       </div>
 
+      {/* 품질 산정 기준 안내 */}
+      <div className="flex items-center gap-3 text-xs text-muted-foreground px-1">
+        <span>품질 산정 기준: QA/직무테스트/상담평점 — 근속 0개월차 제외 (QA 평가는 매월 5일까지 입사자 포함, SLA에서는 제외)</span>
+        <span className="text-slate-300">|</span>
+        <span>직무테스트: 당월 입사자 제외 (입사 익월부터 응시)</span>
+      </div>
+
       {/* 등급 기준표 - 심플 테이블 */}
       <Card>
         <CardHeader className="pb-2">

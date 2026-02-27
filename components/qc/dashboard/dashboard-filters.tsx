@@ -24,6 +24,8 @@ interface DashboardFiltersProps {
   endDate?: string
   onDateChange?: (startDate: string, endDate: string) => void
   onSearch?: () => void
+  /** 커스텀 서비스 목록 (CSAT 등 QC와 다른 서비스 체계일 때) */
+  customServices?: readonly string[]
 }
 
 export function DashboardFilters({
@@ -39,6 +41,7 @@ export function DashboardFilters({
   endDate: propEndDate,
   onDateChange,
   onSearch,
+  customServices,
 }: DashboardFiltersProps) {
   // 기본값: 이번 주 목~수 (목요일 시작, 수요일 종료)
   const getThursdayToWednesday = () => {
@@ -79,6 +82,7 @@ export function DashboardFilters({
 
   // 센터에 따른 서비스 목록
   const getServices = () => {
+    if (customServices) return [...customServices]
     if (selectedCenter === "all") {
       return [...new Set([...serviceGroups["용산"], ...serviceGroups["광주"]])]
     }

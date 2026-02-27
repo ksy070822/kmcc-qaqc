@@ -83,7 +83,8 @@ function buildFilterClause(
  */
 export async function getQADashboardStats(
   startMonth?: string | null,
-  endMonth?: string | null
+  endMonth?: string | null,
+  options?: { minTenureMonths?: number }
 ): Promise<{ success: boolean; data?: QADashboardStats; error?: string }> {
   try {
     const bq = getBigQueryClient()
@@ -96,13 +97,20 @@ export async function getQADashboardStats(
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`
 
     let monthFilter = "q.evaluation_month = @month"
-    const params: Record<string, string> = { month: targetMonth, prevMonth }
+    const params: Record<string, string | number> = { month: targetMonth, prevMonth }
 
     if (startMonth && endMonth && startMonth !== endMonth) {
       monthFilter = "q.evaluation_month >= @startMonth AND q.evaluation_month <= @endMonth"
       params.startMonth = startMonth
       params.endMonth = endMonth
       delete params.month
+    }
+
+    // SLA 산정 시 0개월차 제외 등 근속 필터
+    let tenureFilter = ""
+    if (options?.minTenureMonths != null) {
+      tenureFilter = ` AND q.tenure_months >= @minTenure`
+      params.minTenure = options.minTenureMonths
     }
 
     const query = `
@@ -122,7 +130,7 @@ export async function getQADashboardStats(
           AVG(CASE WHEN q.center = '광주' AND q.channel = '유선' THEN q.total_score END) AS gwangju_voice_avg,
           AVG(CASE WHEN q.center = '광주' AND q.channel = '채팅' THEN q.total_score END) AS gwangju_chat_avg
         FROM ${TABLE} q
-        WHERE ${monthFilter}
+        WHERE ${monthFilter}${tenureFilter}
       ),
       prev_period AS (
         SELECT
@@ -130,7 +138,7 @@ export async function getQADashboardStats(
           AVG(CASE WHEN q.channel = '유선' THEN q.total_score END) AS prev_voice_avg,
           AVG(CASE WHEN q.channel = '채팅' THEN q.total_score END) AS prev_chat_avg
         FROM ${TABLE} q
-        WHERE q.evaluation_month = @prevMonth
+        WHERE q.evaluation_month = @prevMonth${tenureFilter}
       )
       SELECT
         c.avg_score,
@@ -398,17 +406,18 @@ export async function getQAItemStats(
       { columnKey: "operationError", name: "조작오류", shortName: "조작오류", voiceMax: 0, chatMax: -1, category: "채팅전용" },
     ]
 
+    // 데이터가 100점환산(0~100)이므로 maxScore=100, avgRate=avgVal
     const data: QAItemStats[] = itemDefs.map(def => {
       const avgVal = Number(row[`${def.columnKey}_avg`]) || 0
-      // 채널에 따라 배점 결정
-      const maxScore = ch === "채팅" ? def.chatMax : def.voiceMax
-      const absMax = Math.abs(maxScore)
+      // 채널별 해당 항목 여부 확인 (배점 0이면 해당 채널에서 사용 안 함)
+      const rawMax = ch === "채팅" ? def.chatMax : def.voiceMax
       return {
         itemName: def.name,
         shortName: def.shortName,
-        maxScore,
+        maxScore: rawMax === 0 ? 0 : 100,  // 100점환산이므로 만점=100
+        rawMaxScore: rawMax,  // 실제 배점 (e.g., 15 for 업무지식)
         avgScore: Math.round(avgVal * 100) / 100,
-        avgRate: absMax > 0 ? Math.round((avgVal / absMax) * 10000) / 100 : 0,
+        avgRate: Math.round(avgVal * 100) / 100,  // 이미 0~100 스케일 = 달성율
         category: def.category,
       }
     })

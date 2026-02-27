@@ -20,6 +20,7 @@ import {
   determineCoachingTier,
   buildUnderperformingStatus,
 } from "@/lib/coaching-categories"
+import { calculateRiskScore } from "@/lib/bigquery-integrated"
 import { bayesianShrinkage, detectTrend, isStabilizationDelayed } from "@/lib/statistics"
 import type {
   CoachingCategoryId,
@@ -27,6 +28,7 @@ import type {
   ConsultTypeErrorAnalysis,
   ConsultTypeCorrectionAnalysis,
   AgentCoachingPlan,
+  AgentMonthlySummary,
   NewHireProfile,
   CoachingAlert,
   CoachingEffectiveness,
@@ -330,20 +332,26 @@ export async function getNewHireList(
   const startDate = `${month}-01`
   const endDate = getMonthEndDate(month)
 
-  // 2개월 미만 신입 조회 (용산 + 광주 HR)
+  // 2개월 미만 신입 조회 (용산 + 광주 HR, 중복 제거)
   const hrQuery = `
-    WITH hr AS (
+    WITH hr_raw AS (
       SELECT id AS agent_id, name, '용산' AS center,
         \`group\` AS service, position AS channel, hire_date
       FROM ${HR_YONGSAN}
       WHERE type = '상담사'
+        AND hire_date IS NOT NULL
         AND DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 2
       UNION ALL
       SELECT id, name, '광주',
         \`group\`, position, hire_date
       FROM ${HR_GWANGJU}
       WHERE type = '상담사'
+        AND hire_date IS NOT NULL
         AND DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 2
+    ),
+    hr AS (
+      SELECT * FROM hr_raw
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY agent_id ORDER BY hire_date DESC) = 1
     )
     SELECT * FROM hr
   `
@@ -815,10 +823,33 @@ export async function generateCoachingPlans(
       errorsByItem, totalEvals, qaScoreData, qaMaxScoreMap,
     )
 
-    // 리스크 점수 (간이 계산)
+    // 리스크 점수 — 통합 리스크 계산 (QA+QC+CSAT+Quiz 가중치 반영)
     const attRate = Number(row.att_rate) || 0
     const opsRate = Number(row.ops_rate) || 0
-    const riskScore = Math.min(100, (attRate + opsRate) * 5) // 간이
+    const qcTotalRate = attRate + opsRate
+
+    // QA 종합 점수 계산 (개별 항목에서 합산)
+    let qaScore: number | undefined
+    if (qaItems.length > 0) {
+      const totalScore = qaItems.reduce((s, i) => s + (i.score ?? 0), 0)
+      const totalMax = qaItems.reduce((s, i) => s + i.maxScore, 0)
+      qaScore = totalMax > 0 ? (totalScore / totalMax) * 100 : undefined
+    }
+
+    // 통합 리스크 계산용 부분 Summary 구성
+    const partialSummary = {
+      qcTotalRate,
+      qcEvalCount: totalEvals,
+      qaScore: qaScore ?? null,
+      csatAvgScore: null,
+      csatReviewCount: null,
+      knowledgeScore: null,
+    } as unknown as AgentMonthlySummary
+
+    const riskScore = calculateRiskScore(partialSummary, {
+      channel,
+      tenureMonths,
+    })
 
     // 코칭 티어
     const tierResult = determineCoachingTier(riskScore, tenureBand)
@@ -862,13 +893,13 @@ export async function generateCoachingPlans(
       month,
       tier,
       riskScore: Math.round(riskScore * 10) / 10,
+      riskScoreV1: Math.round(Math.min(100, (attRate + opsRate) * 5) * 10) / 10,
       tierReason: `${tierReason}. 취약: ${weakCats || '없음'}`,
       weaknesses,
       prescriptions,
       consultTypeErrors,
       consultTypeCorrections,
-      monthlySessions: { '자립': 0, '관찰': 2, '집중': 4, '긴급': 8 }[tier],
-      completedSessions: 0,
+      coachingFrequency: { '일반': '자율', '주의': '월1회', '위험': '격주', '심각': '주1회', '긴급': '주2회' }[tier] as string,
       status: 'planned',
     })
   }

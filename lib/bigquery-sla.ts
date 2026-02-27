@@ -51,11 +51,11 @@ export async function getSLAScorecard(
       getVoiceProductivity(null, startDate, endDate),
       getVoiceHandlingTime(null, startDate, endDate),
       getChatProductivity(null, startDate, endDate),
-      getQADashboardStats(targetMonth, targetMonth),
+      getQADashboardStats(targetMonth, targetMonth, { minTenureMonths: 1 }),
       getCSATDashboardStats(startDate, endDate),
       getQuizDashboardStats(targetMonth, targetMonth),
       // 전월 품질 (fallback용)
-      getQADashboardStats(prevMonth, prevMonth),
+      getQADashboardStats(prevMonth, prevMonth, { minTenureMonths: 1 }),
       getCSATDashboardStats(prevStart, prevEnd),
       getQuizDashboardStats(prevMonth, prevMonth),
     ])
@@ -318,7 +318,7 @@ export async function getSLADailyTracking(
         const [voiceTimeRes, chatRes, qaRes, csatRes, quizRes] = await Promise.all([
           getVoiceHandlingTime(null, monthStart, dataEnd),
           getChatProductivity(null, monthStart, dataEnd),
-          getQADashboardStats(targetMonth, targetMonth),
+          getQADashboardStats(targetMonth, targetMonth, { minTenureMonths: 1 }),
           getCSATDashboardStats(monthStart, dataEnd),
           getQuizDashboardStats(targetMonth, targetMonth),
         ])

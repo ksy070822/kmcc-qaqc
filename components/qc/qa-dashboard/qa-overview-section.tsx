@@ -9,21 +9,30 @@ import type { QADashboardStats } from "@/lib/types"
 
 type Variant = "success" | "warning" | "destructive" | "default"
 
-const voiceVar = (v: number): Variant => v >= 88 ? "success" : v >= 85 ? "warning" : "destructive"
-const chatVar = (v: number): Variant => v >= 90 ? "success" : v >= 87 ? "warning" : "destructive"
-const totalVar = (v: number): Variant => v >= 90 ? "success" : v >= 88 ? "warning" : "destructive"
-
-// QA 목표 (점수: 높을수록 좋음)
+// 2026년 목표
 const TARGETS = {
   voice: 88,
   chat: 90,
   total: 90,
 }
 
+// 2025년(전년도) 목표 — 주황(주의) 기준선
+const PREV_TARGETS = {
+  voice: 85,
+  chat: 87,
+  total: 88,
+}
+
+// StatsCard용 variant (전년도 목표 기준)
+const voiceVar = (v: number): Variant => v >= 88 ? "success" : v >= 85 ? "warning" : "destructive"
+const chatVar = (v: number): Variant => v >= 90 ? "success" : v >= 87 ? "warning" : "destructive"
+const totalVar = (v: number): Variant => v >= 90 ? "success" : v >= 88 ? "warning" : "destructive"
+
 // 상태 판정 (점수 기반: 높을수록 좋음)
-function getStatus(score: number, target: number): "achieved" | "on-track" | "missed" {
+// 달성(녹색): 올해 목표 이상 / 주의(주황): 전년도 목표 이상 / 미달(빨강): 전년도 목표 미만
+function getStatus(score: number, target: number, prevTarget: number): "achieved" | "on-track" | "missed" {
   if (score >= target) return "achieved"
-  if (score >= target - 3) return "on-track"
+  if (score >= prevTarget) return "on-track"
   return "missed"
 }
 
@@ -41,11 +50,11 @@ function getStatusConfig(status: string) {
     case "on-track":
       return {
         icon: TrendingDown,
-        label: "순항",
-        className: "bg-blue-100 text-blue-700 border-blue-300",
-        progressColor: "bg-blue-500",
-        borderColor: "border-blue-300",
-        valueColor: "text-blue-600",
+        label: "주의",
+        className: "bg-amber-100 text-amber-700 border-amber-300",
+        progressColor: "bg-amber-500",
+        borderColor: "border-amber-300",
+        valueColor: "text-amber-600",
       }
     case "missed":
     default:
@@ -81,30 +90,30 @@ export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSect
   // 센터 × 채널 매트릭스 데이터
   const matrix: Array<{
     center: string
-    cells: Array<{ label: string; score: number; target: number }>
+    cells: Array<{ label: string; score: number; target: number; prevTarget: number }>
   }> = [
     {
       center: "용산",
       cells: [
-        { label: "유선", score: s.yongsanVoiceAvg || 0, target: TARGETS.voice },
-        { label: "채팅", score: s.yongsanChatAvg || 0, target: TARGETS.chat },
-        { label: "합계", score: s.yongsanAvgScore || 0, target: TARGETS.total },
+        { label: "유선", score: s.yongsanVoiceAvg || 0, target: TARGETS.voice, prevTarget: PREV_TARGETS.voice },
+        { label: "채팅", score: s.yongsanChatAvg || 0, target: TARGETS.chat, prevTarget: PREV_TARGETS.chat },
+        { label: "합계", score: s.yongsanAvgScore || 0, target: TARGETS.total, prevTarget: PREV_TARGETS.total },
       ],
     },
     {
       center: "광주",
       cells: [
-        { label: "유선", score: s.gwangjuVoiceAvg || 0, target: TARGETS.voice },
-        { label: "채팅", score: s.gwangjuChatAvg || 0, target: TARGETS.chat },
-        { label: "합계", score: s.gwangjuAvgScore || 0, target: TARGETS.total },
+        { label: "유선", score: s.gwangjuVoiceAvg || 0, target: TARGETS.voice, prevTarget: PREV_TARGETS.voice },
+        { label: "채팅", score: s.gwangjuChatAvg || 0, target: TARGETS.chat, prevTarget: PREV_TARGETS.chat },
+        { label: "합계", score: s.gwangjuAvgScore || 0, target: TARGETS.total, prevTarget: PREV_TARGETS.total },
       ],
     },
     {
       center: "전체",
       cells: [
-        { label: "유선", score: s.voiceAvgScore || 0, target: TARGETS.voice },
-        { label: "채팅", score: s.chatAvgScore || 0, target: TARGETS.chat },
-        { label: "합계", score: s.avgScore || 0, target: TARGETS.total },
+        { label: "유선", score: s.voiceAvgScore || 0, target: TARGETS.voice, prevTarget: PREV_TARGETS.voice },
+        { label: "채팅", score: s.chatAvgScore || 0, target: TARGETS.chat, prevTarget: PREV_TARGETS.chat },
+        { label: "합계", score: s.avgScore || 0, target: TARGETS.total, prevTarget: PREV_TARGETS.total },
       ],
     },
   ]
@@ -207,7 +216,7 @@ export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSect
                         )
                       }
 
-                      const status = getStatus(cell.score, cell.target)
+                      const status = getStatus(cell.score, cell.target, cell.prevTarget)
                       const config = getStatusConfig(status)
                       const StatusIcon = config.icon
                       const achievementRate = cell.target > 0
@@ -260,6 +269,15 @@ export function QAOverviewSection({ stats, underperformerCount }: QAOverviewSect
           </div>
         </CardContent>
       </Card>
+
+      {/* 평가 기준 안내 */}
+      <div className="flex items-center gap-4 text-xs text-muted-foreground px-1">
+        <span>달성(녹색): 올해 목표 이상 | 주의(주황): 전년도 목표 이상 | 미달(빨강): 전년도 목표 미만</span>
+        <span className="text-slate-300">|</span>
+        <span>QA 평가: 매월 5일까지 입사자 해당 월 포함 (SLA 산정 시 0개월차 제외)</span>
+        <span className="text-slate-300">|</span>
+        <span>직무테스트: 당월 입사자 제외</span>
+      </div>
     </div>
   )
 }

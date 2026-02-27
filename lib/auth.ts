@@ -20,6 +20,19 @@ export const ROLE_CONFIG: Record<UserRole, { label: string; defaultRoute: string
 }
 
 const STORAGE_KEY = 'qc-auth'
+const COOKIE_NAME = 'qc-auth'
+
+// ── Cookie helpers (bridge: localStorage -> cookie for middleware) ──
+
+function setAuthCookie(user: UserInfo): void {
+  const value = encodeURIComponent(JSON.stringify(user))
+  // SameSite=Lax for CSRF protection; path=/ so middleware sees it on all routes
+  document.cookie = `${COOKIE_NAME}=${value}; path=/; SameSite=Lax; max-age=${60 * 60 * 24 * 7}`
+}
+
+function clearAuthCookie(): void {
+  document.cookie = `${COOKIE_NAME}=; path=/; SameSite=Lax; max-age=0`
+}
 
 // Test user presets
 const TEST_USERS: Record<UserRole, UserInfo> = {
@@ -44,6 +57,7 @@ const TEST_USERS: Record<UserRole, UserInfo> = {
 export function setAuth(user: UserInfo): void {
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(user))
+    setAuthCookie(user)
   }
 }
 
@@ -61,6 +75,7 @@ export function getRole(): UserRole | null {
 export function clearAuth(): void {
   if (typeof window !== 'undefined') {
     localStorage.removeItem(STORAGE_KEY)
+    clearAuthCookie()
   }
 }
 

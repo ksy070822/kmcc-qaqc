@@ -313,7 +313,13 @@ export function generatePrescriptions(
     .sort((a, b) => a.score - b.score) // 가장 약한 것부터
     .map(w => {
       const template = PRESCRIPTION_TEMPLATES[w.categoryId]
-      const description = w.severity === 'critical' ? template.critical : template.weak
+      let description = w.severity === 'critical' ? template.critical : template.weak
+
+      // 구체적 오류 항목이 있으면 처방 문구에 삽입
+      if (w.qcEvidence.errorItems.length > 0) {
+        const itemSummary = w.qcEvidence.errorItems.slice(0, 3).join(', ')
+        description = `[${itemSummary}] ${w.qcEvidence.errorCount}건 오류 — ${description}`
+      }
 
       // 업무지식 카테고리면 상담유형 상세 추가
       let consultTypeDetail: string | undefined
@@ -369,13 +375,13 @@ export function determineCoachingTier(
   const reasons: string[] = [`리스크 ${Math.round(riskScore)}점 → ${tier}`]
 
   // 자동 상향 규칙
-  const tierOrder: CoachingTier[] = ['자립', '관찰', '집중', '긴급']
+  const tierOrder: CoachingTier[] = ['일반', '주의', '위험', '심각', '긴급']
   const tierIdx = tierOrder.indexOf(tier)
 
-  // 1. 신입 (<2개월) → 최소 "관찰"
+  // 1. 신입 (<2개월) → 최소 "주의"
   if (tenureBand === 'new_hire' && tierIdx < 1) {
-    tier = '관찰'
-    reasons.push('신입(2개월 미만) → 최소 관찰')
+    tier = '주의'
+    reasons.push('신입(2개월 미만) → 최소 주의')
   }
 
   // 2. 초기적응 (2-6개월) → 한 단계 상향
@@ -393,10 +399,10 @@ export function determineCoachingTier(
     }
   }
 
-  // 4. 기존 부진상담사 → 최소 "집중"
+  // 4. 기존 부진상담사 → 최소 "위험"
   if (isExistingUnderperformer && tierOrder.indexOf(tier) < 2) {
-    tier = '집중'
-    reasons.push('기존 부진상담사 → 최소 집중')
+    tier = '위험'
+    reasons.push('기존 부진상담사 → 최소 위험')
   }
 
   return { tier, reason: reasons.join(' | ') }

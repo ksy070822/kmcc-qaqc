@@ -45,10 +45,22 @@ function formatTenure(months: number | undefined | null): string {
   return m > 0 ? `${y}년${m}개월` : `${y}년`
 }
 
+type TenureFilter = "all" | "under1" | "1to2" | "under3" | "3to12" | "over12"
+
+const TENURE_FILTERS: Array<{ id: TenureFilter; label: string; filter: (m: number | undefined | null) => boolean }> = [
+  { id: "all", label: "전체", filter: () => true },
+  { id: "under1", label: "1개월 미만", filter: (m) => m != null && m < 1 },
+  { id: "1to2", label: "1~2개월", filter: (m) => m != null && m >= 1 && m < 2 },
+  { id: "under3", label: "2~3개월", filter: (m) => m != null && m >= 2 && m < 3 },
+  { id: "3to12", label: "3~12개월", filter: (m) => m != null && m >= 3 && m < 12 },
+  { id: "over12", label: "12개월+", filter: (m) => m != null && m >= 12 },
+]
+
 export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTableProps) {
   const [sortKey, setSortKey] = useState<SortKey>("compositeRiskScore")
   const [sortDir, setSortDir] = useState<SortDir>("desc")
   const [search, setSearch] = useState("")
+  const [tenureFilter, setTenureFilter] = useState<TenureFilter>("all")
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -59,8 +71,24 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
     }
   }
 
+  // 각 근속 필터별 인원수
+  const tenureCounts = useMemo(() => {
+    const counts: Record<TenureFilter, number> = { all: summaries.length, under1: 0, "1to2": 0, under3: 0, "3to12": 0, over12: 0 }
+    for (const s of summaries) {
+      const m = s.tenureMonths
+      if (m == null) continue
+      if (m < 1) counts.under1++
+      else if (m < 2) counts["1to2"]++
+      else if (m < 3) counts.under3++
+      else if (m < 12) counts["3to12"]++
+      else counts.over12++
+    }
+    return counts
+  }, [summaries])
+
   const filtered = useMemo(() => {
-    let list = summaries
+    const tf = TENURE_FILTERS.find(t => t.id === tenureFilter)!
+    let list = summaries.filter(s => tf.filter(s.tenureMonths))
     if (search) {
       const q = search.toLowerCase()
       list = list.filter(s =>
@@ -79,7 +107,7 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
       }
       return sortDir === "asc" ? (av as number) - (bv as number) : (bv as number) - (av as number)
     })
-  }, [summaries, sortKey, sortDir, search])
+  }, [summaries, sortKey, sortDir, search, tenureFilter])
 
   const SortHeader = ({ label, field, note, className: cls }: { label: string; field: SortKey; note?: string; className?: string }) => (
     <th
@@ -96,8 +124,23 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h3 className="text-base font-semibold text-gray-900">상담사 리스크 테이블</h3>
+        <div className="flex items-center gap-1">
+          {TENURE_FILTERS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTenureFilter(t.id)}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                tenureFilter === t.id
+                  ? "bg-gray-800 text-white"
+                  : "text-gray-500 hover:bg-gray-100 border border-gray-200"
+              }`}
+            >
+              {t.label} ({tenureCounts[t.id]})
+            </button>
+          ))}
+        </div>
         <input
           type="text"
           placeholder="이름/ID/센터/그룹 검색..."
@@ -147,14 +190,21 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
                     <td className="px-2 py-2 text-sm font-medium text-gray-900 whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         <span className="truncate">{s.agentName || s.agentId}</span>
-                        {s.watchTags?.map(tag => (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200 shrink-0"
-                          >
-                            {tag}
-                          </span>
-                        ))}
+                        {s.watchTags && s.watchTags.length > 0 && (
+                          <>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-orange-100 text-orange-700 border border-orange-200 shrink-0">
+                              집중관리
+                            </span>
+                            {s.watchTags.map(tag => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center px-1 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200 shrink-0"
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </>
+                        )}
                       </div>
                       <div className="text-xs text-gray-400">{s.agentId}</div>
                     </td>
@@ -178,12 +228,27 @@ export function RiskHeatmapTable({ summaries, onAgentClick }: RiskHeatmapTablePr
                     <td className={`px-2 py-2 text-sm text-center font-medium ${hasQc ? getCellColor("qc", s.qcTotalRate) : "bg-gray-50 text-gray-400"}`}>
                       {hasQc && s.qcTotalRate != null ? `${s.qcTotalRate.toFixed(2)}%` : "-"}
                     </td>
-                    <td className={`px-2 py-2 text-sm text-center font-medium ${getCellColor("csat", s.csatAvgScore)}`}>
-                      {s.csatAvgScore != null && s.csatReviewCount && s.csatReviewCount > 0
-                        ? s.csatAvgScore.toFixed(2) : "-"}
+                    <td className={`px-2 py-2 text-sm text-center font-medium ${
+                      s.channel === "유선"
+                        ? "bg-gray-50 text-gray-400"
+                        : getCellColor("csat", s.csatAvgScore != null && s.csatReviewCount && s.csatReviewCount > 0 ? s.csatAvgScore : undefined)
+                    }`}>
+                      {s.channel === "유선" ? (
+                        <span className="text-gray-300 text-xs" title="유선 채널은 상담평점 없음">미해당</span>
+                      ) : s.csatAvgScore != null && s.csatReviewCount && s.csatReviewCount > 0
+                        ? s.csatAvgScore.toFixed(2)
+                        : "-"}
                     </td>
-                    <td className={`px-2 py-2 text-sm text-center font-medium ${getCellColor("quiz", s.knowledgeScore)}`}>
-                      {s.knowledgeScore != null ? s.knowledgeScore.toFixed(0) : "-"}
+                    <td className={`px-2 py-2 text-sm text-center font-medium ${
+                      s.tenureMonths != null && s.tenureMonths < 2
+                        ? "bg-gray-50 text-gray-400"
+                        : getCellColor("quiz", s.knowledgeScore)
+                    }`}>
+                      {s.tenureMonths != null && s.tenureMonths < 2 ? (
+                        <span className="text-gray-300 text-xs" title="2개월 미만 신입은 직무테스트 미대상">미해당</span>
+                      ) : s.knowledgeScore != null
+                        ? s.knowledgeScore.toFixed(0)
+                        : "-"}
                     </td>
                     <td className="px-2 py-2 text-sm text-center font-bold">
                       {(s.compositeRiskScore || 0).toFixed(1)}

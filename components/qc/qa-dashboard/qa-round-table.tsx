@@ -1,12 +1,32 @@
 "use client"
 
 import { useState, useEffect, useMemo } from "react"
-import { Loader2 } from "lucide-react"
+import { ChevronLeft, ChevronRight, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { QARoundStats } from "@/lib/types"
 
 const MAX_ROUNDS = 5
 const TARGETS = { total: 90, voice: 88, chat: 90 }
+const PREV_TARGETS = { total: 88, voice: 85, chat: 87 }
+
+// SLA QA 티어 매핑 (sla-config.ts quality.qa 8단계)
+const QA_SLA_TIERS = [
+  { minValue: 87, score: 15 },
+  { minValue: 85, score: 13 },
+  { minValue: 83, score: 11 },
+  { minValue: 81, score: 9 },
+  { minValue: 79, score: 7 },
+  { minValue: 77, score: 5 },
+  { minValue: 75, score: 3 },
+  { minValue: 0, score: 1 },
+]
+
+function getSLAQAScore(qaScore: number): number {
+  for (const tier of QA_SLA_TIERS) {
+    if (qaScore >= tier.minValue) return tier.score
+  }
+  return 1
+}
 
 // 선형회귀: 기존 값으로 미래 인덱스의 값 예측
 function linearPredict(values: number[], futureIdx: number): number {
@@ -36,19 +56,72 @@ interface RowData {
   isPredicted: boolean
 }
 
+// N회차 시점까지의 누적 월말 예측 계산
+function computeCumulativeForecast(
+  actualData: QARoundStats[],
+  atRound: number,
+  key: (d: QARoundStats) => number
+): number {
+  // atRound까지의 실제 데이터
+  const actuals = actualData.filter(d => d.round <= atRound).map(key).filter(v => v > 0)
+  if (actuals.length === 0) return 0
+
+  // 나머지 회차 예측
+  const allScores: number[] = [...actuals]
+  for (let i = actuals.length; i < MAX_ROUNDS; i++) {
+    allScores.push(linearPredict(actuals, i))
+  }
+  // 5회차 평균
+  const sum = allScores.reduce((s, v) => s + v, 0)
+  return Math.round((sum / MAX_ROUNDS) * 10) / 10
+}
+
 interface QARoundTableProps {
   center?: string
   service?: string
   channel?: string
   tenure?: string
-  startMonth?: string
-  endMonth?: string
+  roundMonth?: string            // 부모에서 전달하는 월
+  onRoundMonthChange?: (m: string) => void
 }
 
-export function QARoundTable({ center, service, channel, tenure, startMonth, endMonth }: QARoundTableProps) {
+export function QARoundTable({ center, service, channel, tenure, roundMonth, onRoundMonthChange }: QARoundTableProps) {
   const [data, setData] = useState<QARoundStats[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // 월 내비게이션: 부모 roundMonth가 없으면 전월 기본
+  const defaultMonth = useMemo(() => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 1)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  }, [])
+  const currentMonth = useMemo(() => {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+  }, [])
+  const month = roundMonth || defaultMonth
+
+  const isPrevMonth = month < currentMonth
+  const isCurrentMonth = month === currentMonth
+  const monthLabel = (() => {
+    const [y, m] = month.split("-")
+    return `${y}년 ${parseInt(m)}월`
+  })()
+
+  // 전월/당월 이동
+  const goPrev = () => {
+    const [y, m] = month.split("-").map(Number)
+    const d = new Date(y, m - 2, 1)
+    const prev = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    onRoundMonthChange?.(prev)
+  }
+  const goNext = () => {
+    const [y, m] = month.split("-").map(Number)
+    const d = new Date(y, m, 1)
+    const next = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+    if (next <= currentMonth) onRoundMonthChange?.(next)
+  }
 
   useEffect(() => {
     const fetchData = async () => {
@@ -60,8 +133,8 @@ export function QARoundTable({ center, service, channel, tenure, startMonth, end
         if (service && service !== "all") params.set("service", service)
         if (channel && channel !== "all") params.set("channel", channel)
         if (tenure && tenure !== "all") params.set("tenure", tenure)
-        if (startMonth) params.set("startMonth", startMonth)
-        if (endMonth) params.set("endMonth", endMonth)
+        params.set("startMonth", month)
+        params.set("endMonth", month)
 
         const res = await fetch(`/api/data?${params.toString()}`)
         const json = await res.json()
@@ -77,14 +150,11 @@ export function QARoundTable({ center, service, channel, tenure, startMonth, end
       }
     }
     fetchData()
-  }, [center, service, channel, tenure, startMonth, endMonth])
+  }, [center, service, channel, tenure, month])
 
   // 실제 + 예측 행 생성
   const allRows: RowData[] = useMemo(() => {
-    const existingRounds = new Set(data.map(d => d.round))
     const n = data.length
-
-    // 실제 데이터 배열 (컬럼별)
     const avgScores = data.map(d => d.avgScore)
     const yongsanScores = data.map(d => d.yongsanAvg)
     const gwangjuScores = data.map(d => d.gwangjuAvg)
@@ -112,20 +182,21 @@ export function QARoundTable({ center, service, channel, tenure, startMonth, end
     return rows
   }, [data])
 
-  // 월말 예측 (전체 5회차 평균)
-  const forecast = useMemo(() => {
-    if (data.length === 0 || data.length >= MAX_ROUNDS) return null
-    const avg = (key: keyof RowData) => {
-      const vals = allRows.map(r => r[key] as number).filter(v => v > 0)
-      return vals.length > 0 ? Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10 : 0
-    }
-    return {
-      total: avg("avgScore"),
-      yongsan: avg("yongsanAvg"),
-      gwangju: avg("gwangjuAvg"),
-      voice: avg("voiceAvg"),
-      chat: avg("chatAvg"),
-    }
+  // 누적 시점별 월말 예측 계산
+  const cumulativeForecasts = useMemo(() => {
+    if (data.length === 0) return []
+    const maxActual = Math.max(...data.map(d => d.round))
+    return allRows.map((row) => {
+      // 실제 회차까지만 누적 예측 의미 있음
+      const atRound = row.round
+      // atRound 시점의 실제 데이터 기반 월말 예측
+      const actualUpTo = data.filter(d => d.round <= atRound)
+      if (actualUpTo.length === 0 && row.isPredicted) {
+        // 순수 예측 회차: 이전 실제 데이터까지의 예측 사용
+        return computeCumulativeForecast(data, maxActual, d => d.avgScore)
+      }
+      return computeCumulativeForecast(data, Math.min(atRound, maxActual), d => d.avgScore)
+    })
   }, [data, allRows])
 
   // 전회차 대비 증감
@@ -149,11 +220,23 @@ export function QARoundTable({ center, service, channel, tenure, startMonth, end
     return "text-red-600 font-semibold"
   }
 
+  // 목표 대비 갭 배지
   const gapBadge = (predicted: number, target: number) => {
     const gap = Math.round((predicted - target) * 10) / 10
-    if (gap >= 0) return <span className="text-emerald-600 font-semibold">+{gap}</span>
-    return <span className="text-red-600 font-semibold">{gap}</span>
+    if (gap >= 0) return <span className="ml-1 text-xs text-emerald-600 font-semibold">+{gap}</span>
+    return <span className="ml-1 text-xs text-red-600 font-semibold">{gap}</span>
   }
+
+  // 최종 월말 예측 (마지막 회차 시점)
+  const finalForecast = useMemo(() => {
+    if (data.length === 0) return null
+    const maxActual = Math.max(...data.map(d => d.round))
+    return {
+      total: computeCumulativeForecast(data, maxActual, d => d.avgScore),
+      voice: computeCumulativeForecast(data, maxActual, d => d.voiceAvg),
+      chat: computeCumulativeForecast(data, maxActual, d => d.chatAvg),
+    }
+  }, [data])
 
   if (loading) {
     return (
@@ -165,118 +248,154 @@ export function QARoundTable({ center, service, channel, tenure, startMonth, end
   }
 
   if (error) {
-    return (
-      <div className="text-center py-6 text-red-600 text-sm">데이터 로딩 실패: {error}</div>
-    )
+    return <div className="text-center py-6 text-red-600 text-sm">데이터 로딩 실패: {error}</div>
   }
 
   if (data.length === 0) {
     return (
-      <div className="text-center py-8 text-slate-400 text-sm">해당 기간의 회차별 데이터가 없습니다</div>
+      <div>
+        {/* 월 내비게이션 */}
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <button onClick={goPrev} className="p-1 rounded hover:bg-slate-100 transition-colors">
+            <ChevronLeft className="h-4 w-4 text-slate-600" />
+          </button>
+          <span className="text-sm font-semibold text-slate-800">
+            {monthLabel}
+            {isPrevMonth && <span className="ml-1 text-xs text-emerald-600">(확정)</span>}
+            {isCurrentMonth && <span className="ml-1 text-xs text-amber-600">(진행중)</span>}
+          </span>
+          <button onClick={goNext} disabled={month >= currentMonth} className={cn("p-1 rounded transition-colors", month >= currentMonth ? "opacity-30 cursor-not-allowed" : "hover:bg-slate-100")}>
+            <ChevronRight className="h-4 w-4 text-slate-600" />
+          </button>
+        </div>
+        <div className="text-center py-8 text-slate-400 text-sm">해당 기간의 회차별 데이터가 없습니다</div>
+      </div>
     )
   }
 
   const scoreCell = (score: number, isPredicted: boolean) => {
     if (!score || score <= 0) return "-"
-    return (
-      <span className={isPredicted ? "italic" : ""}>
-        {score}점
-      </span>
-    )
+    return <span className={isPredicted ? "italic" : ""}>{score}점</span>
   }
 
+  const completedRounds = data.length
+
   return (
-    <div>
-      <h4 className="text-sm font-bold text-slate-800 mb-3">
-        회차별 QA 점수 현황
-        {data.length < MAX_ROUNDS && (
-          <span className="ml-2 text-xs font-normal text-amber-600">
-            (점선: {data.length}회차 기준 예측)
-          </span>
-        )}
-      </h4>
-      <div className="overflow-x-auto">
-        <table className="data-table w-full">
-          <thead>
-            <tr>
-              <th className="text-left min-w-[80px]">회차</th>
-              <th>평가건수</th>
-              <th>전체 평균</th>
-              <th>용산</th>
-              <th>광주</th>
-              <th>유선</th>
-              <th>채팅</th>
-              <th>전회차 대비</th>
-            </tr>
-          </thead>
-          <tbody>
-            {allRows.map((row, idx) => {
-              const diff = getDiff(idx)
-              return (
-                <tr
-                  key={row.round}
-                  className={cn(
-                    "border-b border-slate-100",
-                    row.isPredicted && "bg-amber-50/60 border-dashed border-amber-200"
-                  )}
-                >
-                  <td className={cn("p-2 font-semibold", row.isPredicted ? "text-amber-600" : "text-slate-700")}>
-                    {row.round}회차
-                    {row.isPredicted && <span className="ml-1 text-[10px] text-amber-500">(예측)</span>}
-                  </td>
-                  <td className="p-2 text-center text-slate-600">
-                    {row.isPredicted ? <span className="text-amber-500 text-xs">-</span> : `${row.evaluations}건`}
-                  </td>
-                  <td className={cn("p-2 text-center", scoreVariant(row.avgScore, row.isPredicted))}>
-                    {scoreCell(row.avgScore, row.isPredicted)}
-                  </td>
-                  <td className={cn("p-2 text-center", scoreVariant(row.yongsanAvg, row.isPredicted))}>
-                    {scoreCell(row.yongsanAvg, row.isPredicted)}
-                  </td>
-                  <td className={cn("p-2 text-center", scoreVariant(row.gwangjuAvg, row.isPredicted))}>
-                    {scoreCell(row.gwangjuAvg, row.isPredicted)}
-                  </td>
-                  <td className={cn("p-2 text-center", row.isPredicted ? "text-amber-600" : "text-slate-600")}>
-                    {scoreCell(row.voiceAvg, row.isPredicted)}
-                  </td>
-                  <td className={cn("p-2 text-center", row.isPredicted ? "text-amber-600" : "text-slate-600")}>
-                    {scoreCell(row.chatAvg, row.isPredicted)}
-                  </td>
-                  <td className={cn("p-2 text-center font-semibold", row.isPredicted ? "text-amber-400" : trendColor(diff))}>
-                    {diff === null ? "-" : (
-                      <>{diff > 0 ? "▲" : diff < 0 ? "▼" : "-"}{diff !== 0 ? Math.abs(diff) : ""}</>
-                    )}
-                  </td>
-                </tr>
-              )
-            })}
-            {/* 월말 예측 요약 행 — 5회차 미만일 때만 */}
-            {forecast && (
-              <tr className="bg-amber-100/80 border-t-2 border-amber-400 font-bold">
-                <td className="p-2 text-amber-800" colSpan={2}>
-                  월말 예측 평균
-                </td>
-                <td className="p-2 text-center text-amber-800">
-                  {forecast.total}점 {gapBadge(forecast.total, TARGETS.total)}
-                </td>
-                <td className="p-2 text-center text-amber-800">
-                  {forecast.yongsan > 0 ? <>{forecast.yongsan}점</> : "-"}
-                </td>
-                <td className="p-2 text-center text-amber-800">
-                  {forecast.gwangju > 0 ? <>{forecast.gwangju}점</> : "-"}
-                </td>
-                <td className="p-2 text-center text-amber-800">
-                  {forecast.voice > 0 ? <>{forecast.voice}점 {gapBadge(forecast.voice, TARGETS.voice)}</> : "-"}
-                </td>
-                <td className="p-2 text-center text-amber-800">
-                  {forecast.chat > 0 ? <>{forecast.chat}점 {gapBadge(forecast.chat, TARGETS.chat)}</> : "-"}
-                </td>
-                <td className="p-2 text-center text-amber-400">-</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+    <div className="space-y-5">
+      {/* 월 내비게이션 */}
+      <div className="flex items-center justify-center gap-3">
+        <button onClick={goPrev} className="p-1 rounded hover:bg-slate-100 transition-colors">
+          <ChevronLeft className="h-4 w-4 text-slate-600" />
+        </button>
+        <span className="text-sm font-semibold text-slate-800">
+          {monthLabel}
+          {isPrevMonth && <span className="ml-1 text-xs text-emerald-600">(확정)</span>}
+          {isCurrentMonth && (
+            <span className="ml-1 text-xs text-amber-600">
+              (진행중 · {completedRounds}회차 완료)
+            </span>
+          )}
+        </span>
+        <button onClick={goNext} disabled={month >= currentMonth} className={cn("p-1 rounded transition-colors", month >= currentMonth ? "opacity-30 cursor-not-allowed" : "hover:bg-slate-100")}>
+          <ChevronRight className="h-4 w-4 text-slate-600" />
+        </button>
       </div>
+
+      {/* 테이블 A: 회차별 점수 현황 */}
+      <div>
+        <h4 className="text-sm font-bold text-slate-800 mb-3">
+          회차별 QA 점수 현황
+          {data.length < MAX_ROUNDS && (
+            <span className="ml-2 text-xs font-normal text-amber-600">
+              (이탤릭: {data.length}회차 기준 예측)
+            </span>
+          )}
+        </h4>
+        <div className="overflow-x-auto">
+          <table className="data-table w-full">
+            <thead>
+              <tr>
+                <th className="text-left min-w-[70px]">회차</th>
+                <th>평가건수</th>
+                <th>전체 평균</th>
+                <th>용산</th>
+                <th>광주</th>
+                <th>유선</th>
+                <th>채팅</th>
+                <th>전회차대비</th>
+                <th className="min-w-[120px]">이 시점 월말 예측</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allRows.map((row, idx) => {
+                const diff = getDiff(idx)
+                const forecast = cumulativeForecasts[idx] || 0
+                return (
+                  <tr
+                    key={row.round}
+                    className={cn(
+                      "border-b border-slate-100",
+                      row.isPredicted && "bg-amber-50/60 border-dashed border-amber-200"
+                    )}
+                  >
+                    <td className={cn("p-2 font-semibold", row.isPredicted ? "text-amber-600" : "text-slate-700")}>
+                      {row.round}회차
+                      {row.isPredicted && <span className="ml-1 text-[10px] text-amber-500">(예측)</span>}
+                    </td>
+                    <td className="p-2 text-center text-slate-600">
+                      {row.isPredicted ? <span className="text-amber-500 text-xs">-</span> : `${row.evaluations}건`}
+                    </td>
+                    <td className={cn("p-2 text-center", scoreVariant(row.avgScore, row.isPredicted))}>
+                      {scoreCell(row.avgScore, row.isPredicted)}
+                    </td>
+                    <td className={cn("p-2 text-center", scoreVariant(row.yongsanAvg, row.isPredicted))}>
+                      {scoreCell(row.yongsanAvg, row.isPredicted)}
+                    </td>
+                    <td className={cn("p-2 text-center", scoreVariant(row.gwangjuAvg, row.isPredicted))}>
+                      {scoreCell(row.gwangjuAvg, row.isPredicted)}
+                    </td>
+                    <td className={cn("p-2 text-center", row.isPredicted ? "text-amber-600" : "text-slate-600")}>
+                      {scoreCell(row.voiceAvg, row.isPredicted)}
+                    </td>
+                    <td className={cn("p-2 text-center", row.isPredicted ? "text-amber-600" : "text-slate-600")}>
+                      {scoreCell(row.chatAvg, row.isPredicted)}
+                    </td>
+                    <td className={cn("p-2 text-center font-semibold", row.isPredicted ? "text-amber-400" : trendColor(diff))}>
+                      {diff === null ? "-" : (
+                        <>{diff > 0 ? "▲" : diff < 0 ? "▼" : "-"}{diff !== 0 ? Math.abs(diff) : ""}</>
+                      )}
+                    </td>
+                    <td className="p-2 text-center">
+                      {forecast > 0 ? (
+                        <span className="font-bold text-amber-700">
+                          {forecast}점
+                          {gapBadge(forecast, TARGETS.total)}
+                        </span>
+                      ) : "-"}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* SLA 영향 예측 */}
+      {finalForecast && finalForecast.total > 0 && data.length < MAX_ROUNDS && (
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+          <h4 className="text-sm font-bold text-slate-700 mb-2">SLA 영향 예측</h4>
+          <div className="text-sm text-slate-600 space-y-1">
+            <p>
+              QA 예측 <span className="font-bold text-amber-700">{finalForecast.total}점</span>
+              {" → "}SLA 품질(QA) 약 <span className="font-bold text-blue-700">{getSLAQAScore(finalForecast.total)}점</span>/15점
+            </p>
+            <p className="text-xs text-slate-400">
+              참고: SLA 품질 = QA(15) + 상담리뷰(15) + 직무테스트(10) = 40점
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -14,16 +14,17 @@ interface AgentProfileModalProps {
   loading: boolean
   error: string | null
   onClose: () => void
+  onNavigateToCoaching?: (agentId: string) => void
 }
 
 const LEVEL_BADGE: Record<string, { label: string; color: string }> = {
   strong: { label: "강점", color: "#22c55e" },
   normal: { label: "보통", color: "#3b82f6" },
   weak: { label: "약점", color: "#ef4444" },
-  nodata: { label: "데이터 없음", color: "#9ca3af" },
+  nodata: { label: "해당없음", color: "#9ca3af" },
 }
 
-export function AgentProfileModal({ profile, loading, error, onClose }: AgentProfileModalProps) {
+export function AgentProfileModal({ profile, loading, error, onClose, onNavigateToCoaching }: AgentProfileModalProps) {
   // ESC 키로 닫기
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -100,7 +101,17 @@ export function AgentProfileModal({ profile, loading, error, onClose }: AgentPro
             {loading && <h2 className="text-lg font-bold text-gray-400">로딩 중...</h2>}
             {error && <h2 className="text-lg font-bold text-red-500">오류 발생</h2>}
           </div>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          <div className="flex items-center gap-2">
+            {onNavigateToCoaching && profile && (
+              <button
+                onClick={() => { onClose(); onNavigateToCoaching(profile.agentId); }}
+                className="px-3 py-1.5 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-100 transition-colors"
+              >
+                코칭 카드 보기
+              </button>
+            )}
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">&times;</button>
+          </div>
         </div>
 
         {loading && (

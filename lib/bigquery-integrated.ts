@@ -6,6 +6,7 @@ import {
   RISK_WEIGHTS_V2,
   RISK_WEIGHTS_NEW_HIRE,
   TENURE_RISK_MULTIPLIER,
+  COVERAGE_DAMPENING,
   getTenureBand,
 } from "@/lib/constants"
 import type {
@@ -39,7 +40,7 @@ const QUIZ_CENTER_SQL = `CASE
 
 // ── 리스크 점수 계산 v2 (채널별/근속별 가중치, 베이지안 QC) ──
 
-function calculateRiskScore(
+export function calculateRiskScore(
   summary: AgentMonthlySummary,
   options?: {
     channel?: '유선' | '채팅' | string
@@ -106,6 +107,17 @@ function calculateRiskScore(
   if (totalWeight === 0) return 0
   let baseScore = weightedScore / totalWeight
 
+  // 데이터 커버리지 댐프닝: 도메인이 적으면 리스크 상한 제한
+  // 1개 도메인만 있으면 최대 50점 → 데이터 부족으로 고위험 판정 방지
+  let activeDomains = 0
+  if (summary.qaScore != null && weights.qa > 0) activeDomains++
+  if (summary.qcTotalRate != null && summary.qcEvalCount && summary.qcEvalCount > 0 && weights.qc > 0) activeDomains++
+  if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0 && weights.csat > 0) activeDomains++
+  if (summary.knowledgeScore != null && weights.quiz > 0) activeDomains++
+
+  const coverageFactor = COVERAGE_DAMPENING[activeDomains] ?? 1.0
+  baseScore = baseScore * coverageFactor
+
   // 근속별 리스크 증폭 (신입 강화 관리)
   const multiplier = TENURE_RISK_MULTIPLIER[tenureBand]
   baseScore = Math.min(100, baseScore * multiplier)
@@ -113,7 +125,22 @@ function calculateRiskScore(
   return baseScore
 }
 
-function getRiskLevel(score: number): "low" | "medium" | "high" | "critical" {
+export function getActiveDomainCount(summary: AgentMonthlySummary, channel?: string, tenureMonths?: number): number {
+  const ch = channel ?? summary.channel
+  const tm = tenureMonths ?? summary.tenureMonths
+  const tenureBand: TenureBand = tm != null ? getTenureBand(tm) : 'standard'
+  const channelKey = ch === '채팅' ? 'chat' : 'voice'
+  const weights = tenureBand === 'new_hire' ? RISK_WEIGHTS_NEW_HIRE[channelKey] : RISK_WEIGHTS_V2[channelKey]
+
+  let count = 0
+  if (summary.qaScore != null && weights.qa > 0) count++
+  if (summary.qcTotalRate != null && summary.qcEvalCount && summary.qcEvalCount > 0 && weights.qc > 0) count++
+  if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0 && weights.csat > 0) count++
+  if (summary.knowledgeScore != null && weights.quiz > 0) count++
+  return count
+}
+
+export function getRiskLevel(score: number): "low" | "medium" | "high" | "critical" {
   if (score >= RISK_THRESHOLDS.critical) return "critical"
   if (score >= RISK_THRESHOLDS.high) return "high"
   if (score >= RISK_THRESHOLDS.medium) return "medium"
@@ -266,7 +293,7 @@ export async function getAgentMonthlySummaries(
         GROUP BY agent_id
       ),
       qc_watch_history AS (
-        SELECT DISTINCT agent_id
+        SELECT agent_id, STRING_AGG(DISTINCT eval_month ORDER BY eval_month) AS watch_months
         FROM (
           SELECT
             e.agent_id,
@@ -297,6 +324,7 @@ export async function getAgentMonthlySummaries(
           GROUP BY e.agent_id, FORMAT_DATE('%Y-%m', e.evaluation_date)
         )
         WHERE att_rate > 5.0 OR ops_rate > 6.0
+        GROUP BY agent_id
       ),
       combined AS (
         SELECT
@@ -313,7 +341,7 @@ export async function getAgentMonthlySummaries(
           qz.avg_score AS quiz_score,
           qz.test_count AS quiz_test_count,
           hr.hire_date,
-          CASE WHEN wh.agent_id IS NOT NULL THEN TRUE ELSE FALSE END AS was_watched
+          wh.watch_months
         FROM qa_monthly qa
         FULL OUTER JOIN qc_monthly qc ON qa.agent_id = qc.agent_id
         FULL OUTER JOIN quiz_monthly qz ON COALESCE(qa.agent_id, qc.agent_id) = qz.agent_id
@@ -399,11 +427,14 @@ export async function getAgentMonthlySummaries(
         knowledgeScore: row.quiz_score != null ? Number(row.quiz_score) : undefined,
         knowledgeTestCount: row.quiz_test_count != null ? Number(row.quiz_test_count) : undefined,
         tenureMonths,
-        watchTags: row.was_watched ? ["집중관리이력"] : undefined,
+        watchTags: row.watch_months
+          ? (row.watch_months as string).split(",").map(m => `${parseInt(m.split("-")[1])}월`)
+          : undefined,
       }
 
       summary.compositeRiskScore = calculateRiskScore(summary)
       summary.riskLevel = getRiskLevel(summary.compositeRiskScore)
+      summary.activeDomainCount = getActiveDomainCount(summary)
 
       return summary
     })
@@ -421,6 +452,7 @@ export async function getAgentMonthlySummaries(
         }
         summary.compositeRiskScore = calculateRiskScore(summary)
         summary.riskLevel = getRiskLevel(summary.compositeRiskScore)
+        summary.activeDomainCount = getActiveDomainCount(summary)
         summaries.push(summary)
       }
     }
@@ -444,6 +476,7 @@ export async function getAgentMonthlySummaries(
           groupQcAvgRate: g.sum / g.count,
         })
         s.riskLevel = getRiskLevel(s.compositeRiskScore)
+        s.activeDomainCount = getActiveDomainCount(s)
       }
     }
 
@@ -680,6 +713,7 @@ export async function getAgentIntegratedProfile(
     }
     current.compositeRiskScore = calculateRiskScore(current)
     current.riskLevel = getRiskLevel(current.compositeRiskScore)
+    current.activeDomainCount = getActiveDomainCount(current)
 
     const strengthWeakness = assessStrengthWeakness(current, targets.att, targets.ops)
 
