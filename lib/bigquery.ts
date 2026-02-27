@@ -1131,8 +1131,8 @@ export async function getAgents(filters?: {
         e.agent_id as id,
         e.agent_name as name,
         e.center,
-        e.service,
-        e.channel,
+        STRING_AGG(DISTINCT e.service, ', ') as service,
+        STRING_AGG(DISTINCT e.channel, ', ') as channel,
         COUNT(*) as totalEvaluations,
         ROUND(SAFE_DIVIDE(SUM(e.attitude_error_count), COUNT(*) * 5) * 100, 2) as attitudeErrorRate,
         ROUND(SAFE_DIVIDE(SUM(e.business_error_count), COUNT(*) * 11) * 100, 2) as opsErrorRate,
@@ -1154,7 +1154,7 @@ export async function getAgents(filters?: {
         SUM(CAST(e.history_error AS INT64)) as history_errors
       FROM ${EVAL_TABLE} e
       ${evalWhereClause}
-      GROUP BY e.agent_id, e.agent_name, e.center, e.service, e.channel
+      GROUP BY e.agent_id, e.agent_name, e.center
       ORDER BY attitudeErrorRate + opsErrorRate DESC
     `;
 
@@ -1218,12 +1218,16 @@ export async function getAgents(filters?: {
           rate: e.rate,
         }));
 
+      // STRING_AGG 결과에서 개별 서비스명 매핑
+      const rawServices = String(row.service || '').split(', ').filter(Boolean);
+      const mappedService = [...new Set(rawServices.map(s => mapServiceName(s, row.center)).filter(Boolean))].join(', ');
+
       return {
         id: row.id,
         name: row.name,
         center: row.center,
-        service: mapServiceName(row.service, row.center) || '',
-        channel: row.channel,
+        service: mappedService,
+        channel: row.channel || '',
         tenureMonths,
         tenureGroup,
         isActive: true,
@@ -1235,10 +1239,16 @@ export async function getAgents(filters?: {
       };
     });
 
+    // 관리자 제외: HR 캐시에 있는 상담사(type='상담사')만 유지
+    const consultantsOnly = allAgents.filter(a => {
+      const agentIdLower = String(a.id || '').trim().toLowerCase();
+      return hrMap.has(agentIdLower);
+    });
+
     // tenure 필터는 JS에서 적용 (CTE JOIN 제거로 HAVING절 사용 불가)
     const result = filters?.tenure && filters.tenure !== 'all'
-      ? allAgents.filter(a => a.tenureGroup === filters.tenure)
-      : allAgents;
+      ? consultantsOnly.filter(a => a.tenureGroup === filters.tenure)
+      : consultantsOnly;
 
     return { success: true, data: result };
   } catch (error) {
