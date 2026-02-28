@@ -133,7 +133,7 @@ export function TrackingDetailModal({ open, onOpenChange, agent }: TrackingDetai
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-slate-900">
             <Target className="h-5 w-5 text-[#1e3a5f]" />
-            부진상담사 트래킹 상세
+            집중관리상담사 트래킹 상세
           </DialogTitle>
         </DialogHeader>
 

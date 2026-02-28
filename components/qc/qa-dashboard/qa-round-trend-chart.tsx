@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ComposedChart, Line, XAxis, YAxis, CartesianGrid,
@@ -49,7 +49,7 @@ interface QARoundTrendChartProps {
   roundMonth?: string
 }
 
-export function QARoundTrendChart({ center, service, channel, tenure, roundMonth }: QARoundTrendChartProps) {
+export const QARoundTrendChart = memo(function QARoundTrendChart({ center, service, channel, tenure, roundMonth }: QARoundTrendChartProps) {
   const [data, setData] = useState<QARoundStats[]>([])
   const [prevMonthData, setPrevMonthData] = useState<QARoundStats[]>([])
   const [loading, setLoading] = useState(false)
@@ -505,4 +505,4 @@ export function QARoundTrendChart({ center, service, channel, tenure, roundMonth
       </CardContent>
     </Card>
   )
-}
+})

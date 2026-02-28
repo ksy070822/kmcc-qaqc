@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo } from "react"
-import type { CoachingCategoryId } from "@/lib/types"
+import type { CoachingCategoryId, HeatmapDataRow } from "@/lib/types"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -15,6 +15,19 @@ interface HeatmapGroup {
     criticalAgentCount: number
     totalAgents: number
   }>
+}
+
+/** Convert flat HeatmapDataRow[] to grouped HeatmapGroup[] */
+function toHeatmapGroups(rows: HeatmapDataRow[]): HeatmapGroup[] {
+  // Build a single "전체" group from flat rows
+  const categories = rows.map(row => ({
+    categoryId: row.categoryId as CoachingCategoryId,
+    weakAgentCount: row.severity === 'weak' ? row.agentCount : 0,
+    criticalAgentCount: row.severity === 'critical' ? row.agentCount : 0,
+    totalAgents: row.agentCount,
+  }))
+  if (categories.length === 0) return []
+  return [{ groupKey: "전체", service: "전체", channel: "전체", categories }]
 }
 
 const CATEGORY_LABELS: Record<CoachingCategoryId, string> = {
@@ -44,10 +57,16 @@ function getCellTooltip(catLabel: string, weak: number, critical: number, total:
 }
 
 interface WeaknessHeatmapProps {
-  data: HeatmapGroup[]
+  data: HeatmapGroup[] | HeatmapDataRow[]
 }
 
-export function WeaknessHeatmap({ data }: WeaknessHeatmapProps) {
+function isHeatmapGroupArray(data: HeatmapGroup[] | HeatmapDataRow[]): data is HeatmapGroup[] {
+  if (data.length === 0) return true
+  return 'groupKey' in data[0]
+}
+
+export function WeaknessHeatmap({ data: rawData }: WeaknessHeatmapProps) {
+  const data: HeatmapGroup[] = isHeatmapGroupArray(rawData) ? rawData : toHeatmapGroups(rawData)
   const catIds: CoachingCategoryId[] = [
     "greeting", "empathy", "inquiry", "knowledge",
     "processing", "records", "satisfaction", "communication",

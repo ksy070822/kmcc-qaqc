@@ -34,19 +34,23 @@ interface ReportData {
   type: string
   period: string
   center: string
+  title?: string
   summary: {
     totalEvaluations: number
     totalAgents: number
     overallErrorRate: number
     errorRateTrend: number
-    targetAchievement: number
-    improvedAgents: number
-    needsAttention: number
+    attitudeErrorRate?: number
+    processErrorRate?: number
+    targetAchievement?: number
+    improvedAgents?: number
+    needsAttention?: number
   }
   topIssues: Array<{ name: string; count: number; rate: number }>
   centerComparison: Array<{ name: string; errorRate: number; agents: number }>
   dailyTrend: Array<{ date: string; errorRate: number; target: number }>
   groupRanking: Array<{ group: string; center: string; errorRate: number; trend: number }>
+  data?: Array<Record<string, unknown>>
 }
 
 interface ReportPreviewProps {

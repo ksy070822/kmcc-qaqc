@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 
 // API 기본 URL
 const API_BASE = "/api/data"
@@ -65,156 +65,113 @@ export interface TrendData {
   목표: number
 }
 
-// 목~수 주간 범위 계산 유틸
+// 목~수 주간 범위 계산 유틸 (Safari 호환: new Date(string) 대신 수동 파싱)
 function getThursdayWeek(dateStr?: string): { weekStart: string; weekEnd: string } {
-  const d = dateStr ? new Date(dateStr + 'T00:00:00') : new Date()
+  let d: Date
+  if (dateStr) {
+    // "YYYY-MM-DD" 수동 파싱 → Safari/모든 브라우저 안전
+    const [y, m, day] = dateStr.split('-').map(Number)
+    d = new Date(y, m - 1, day)
+  } else {
+    d = new Date()
+  }
   const dayOfWeek = d.getDay() // 0=Sun, 1=Mon, ..., 4=Thu, 6=Sat
   // 가장 최근 목요일 찾기
   const daysBack = (dayOfWeek - 4 + 7) % 7
-  const thursday = new Date(d)
-  thursday.setDate(d.getDate() - daysBack)
-  // 다음 수요일
-  const wednesday = new Date(thursday)
-  wednesday.setDate(thursday.getDate() + 6)
+  const thursday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysBack)
+  // 다음 수요일 (+6일) — new Date() 생성자가 월 경계를 자동 처리
+  const wednesday = new Date(thursday.getFullYear(), thursday.getMonth(), thursday.getDate() + 6)
   const fmt = (dt: Date) => `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
   return { weekStart: fmt(thursday), weekEnd: fmt(wednesday) }
+}
+
+// JSON fetch 헬퍼: 응답을 파싱하고 success 검증
+async function fetchJson<T>(url: string, label: string): Promise<T | null> {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (json.success && json.data) {
+    return json.data as T
+  }
+  console.warn(`[Dashboard] ${label} fetch failed:`, json)
+  if (json.error) throw new Error(json.error)
+  return null
 }
 
 // 대시보드 데이터 훅
 export function useDashboardData(
   selectedDate?: string,
   startDate?: string,
-  endDate?: string
+  endDate?: string,
+  scope?: { center?: string; service?: string }
 ) {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [centerStats, setCenterStats] = useState<CenterStats[]>([])
-  const [trendData, setTrendData] = useState<TrendData[]>([])
-  const [weeklyTrendData, setWeeklyTrendData] = useState<TrendData[]>([])
-  const [loading, setLoading] = useState(false) // 초기값을 false로 변경 (hydration 안전)
-  const [error, setError] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false) // hydration 완료 추적
-  const hasFetched = useRef(false)
+  const scopeParams = `${scope?.center ? `&center=${encodeURIComponent(scope.center)}` : ""}${scope?.service ? `&service=${encodeURIComponent(scope.service)}` : ""}`
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+  // 센터 API용 목~수 주간 범위
+  const thursdayWeek = getThursdayWeek(selectedDate)
+  const centersStartDate = startDate || thursdayWeek.weekStart
+  const centersEndDate = endDate || thursdayWeek.weekEnd
 
-    try {
-      // trend API: 일간 추이는 항상 최근 14일 고정
-      const trendUrl = `${API_BASE}?type=trend&days=14`;
-
-      // 센터 API에 목~수 주간 범위 전달 (단일 날짜 대신)
-      const thursdayWeek = getThursdayWeek(selectedDate)
-      const centersStartDate = startDate || thursdayWeek.weekStart
-      const centersEndDate = endDate || thursdayWeek.weekEnd
-
-      // 병렬로 데이터 fetch (선택한 날짜 기준)
-      const [statsRes, centersRes, trendRes, weeklyTrendRes] = await Promise.all([
-        fetch(`${API_BASE}?type=dashboard${selectedDate ? `&date=${selectedDate}` : ""}${startDate ? `&startDate=${startDate}` : ""}${endDate ? `&endDate=${endDate}` : ""}`),
-        fetch(`${API_BASE}?type=centers&startDate=${centersStartDate}&endDate=${centersEndDate}`),
-        fetch(trendUrl),
-        fetch(`${API_BASE}?type=weekly-trend&weeks=7`),
-      ])
-
-      const [statsData, centersData, trendDataRes, weeklyTrendDataRes] = await Promise.all([
-        statsRes.json(),
-        centersRes.json(),
-        trendRes.json(),
-        weeklyTrendRes.json(),
-      ])
-
-      // 응답 로깅
-      console.log('[Dashboard] Stats response:', statsData)
-      console.log('[Dashboard] Centers response:', centersData)
-      console.log('[Dashboard] Trend response:', trendDataRes)
-
-      // Stats 데이터 유효성 검사 강화
-      if (statsData.success && statsData.data) {
-        // data가 빈 객체가 아니고 필수 필드가 있는지 확인
-        const data = statsData.data as DashboardStats
-        const hasRequiredFields = 
-          typeof data.totalAgentsYongsan === 'number' &&
-          typeof data.totalAgentsGwangju === 'number' &&
-          typeof data.totalEvaluations === 'number'
-        
-        if (hasRequiredFields) {
-          console.log('[Dashboard] Stats data:', data)
-          setStats(data)
-          setError(null) // 성공 시 에러 초기화
-        } else {
-          console.warn('[Dashboard] Stats data missing required fields:', data)
-          // 필수 필드가 없으면 기본값 사용
-          setStats(defaultStats)
-          setError('Stats data is missing required fields')
-        }
-      } else {
-        console.warn('[Dashboard] Stats fetch failed:', statsData)
-        // 에러는 표시하지만 다른 데이터는 계속 로드
-        if (statsData.error) {
-          console.error('[Dashboard] Stats error:', statsData.error)
-          setError(statsData.error)
-        } else {
-          setError('Failed to fetch dashboard stats')
-        }
-        // 기본값 설정
-        setStats(defaultStats)
+  const statsQuery = useQuery({
+    queryKey: ['dashboard-stats', selectedDate, startDate, endDate, scope?.center, scope?.service],
+    queryFn: async () => {
+      const url = `${API_BASE}?type=dashboard${selectedDate ? `&date=${selectedDate}` : ""}${startDate ? `&startDate=${startDate}` : ""}${endDate ? `&endDate=${endDate}` : ""}${scopeParams}`
+      const res = await fetch(url)
+      const data = await res.json()
+      if (!data.success || !data.data) {
+        throw new Error(data.error || 'Failed to fetch dashboard stats')
       }
-
-      if (centersData.success && centersData.data) {
-        console.log('[Dashboard] Centers data:', centersData.data)
-        setCenterStats(centersData.data)
-      } else {
-        console.warn('[Dashboard] Centers fetch failed:', centersData)
+      const stats = data.data as DashboardStats
+      // 필수 필드 검증
+      const hasRequiredFields =
+        typeof stats.totalAgentsYongsan === 'number' &&
+        typeof stats.totalAgentsGwangju === 'number' &&
+        typeof stats.totalEvaluations === 'number'
+      if (!hasRequiredFields) {
+        console.warn('[Dashboard] Stats data missing required fields:', stats)
+        throw new Error('Stats data is missing required fields')
       }
+      console.log('[Dashboard] Stats data:', stats)
+      return stats
+    },
+  })
 
-      if (trendDataRes.success && trendDataRes.data) {
-        console.log('[Dashboard] Trend data:', trendDataRes.data)
-        setTrendData(trendDataRes.data)
-      } else {
-        console.warn('[Dashboard] Trend fetch failed:', trendDataRes)
-      }
+  const centersQuery = useQuery({
+    queryKey: ['dashboard-centers', centersStartDate, centersEndDate, scope?.center, scope?.service],
+    queryFn: () => fetchJson<CenterStats[]>(
+      `${API_BASE}?type=centers&startDate=${centersStartDate}&endDate=${centersEndDate}${scopeParams}`,
+      'Centers'
+    ),
+  })
 
-      if (weeklyTrendDataRes.success && weeklyTrendDataRes.data) {
-        console.log('[Dashboard] Weekly trend data:', weeklyTrendDataRes.data)
-        setWeeklyTrendData(weeklyTrendDataRes.data)
-      } else {
-        console.warn('[Dashboard] Weekly trend fetch failed:', weeklyTrendDataRes)
-      }
-    } catch (err) {
-      console.error("Dashboard data fetch error:", err)
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [selectedDate, startDate, endDate])
+  const trendQuery = useQuery({
+    queryKey: ['dashboard-trend', scope?.center, scope?.service],
+    queryFn: () => fetchJson<TrendData[]>(
+      `${API_BASE}?type=trend&days=14${scopeParams}`,
+      'Trend'
+    ),
+  })
 
-  // Hydration이 완료된 후에만 데이터 fetch
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && !hasFetched.current) {
-      hasFetched.current = true
-      fetchData()
-    }
-  }, [mounted, fetchData])
-
-  // selectedDate 또는 날짜 범위가 변경되면 다시 fetch
-  useEffect(() => {
-    if (mounted && hasFetched.current) {
-      fetchData()
-    }
-  }, [selectedDate, startDate, endDate, mounted, fetchData])
+  const weeklyTrendQuery = useQuery({
+    queryKey: ['dashboard-weekly-trend', scope?.center, scope?.service],
+    queryFn: () => fetchJson<TrendData[]>(
+      `${API_BASE}?type=weekly-trend&weeks=7${scopeParams}`,
+      'Weekly trend'
+    ),
+  })
 
   return {
-    stats,
-    centerStats,
-    trendData,
-    weeklyTrendData,
-    loading: !mounted || loading, // mount 전에는 loading 상태로 표시
-    error,
-    refresh: fetchData,
+    stats: statsQuery.data ?? null,
+    centerStats: centersQuery.data ?? [],
+    trendData: trendQuery.data ?? [],
+    weeklyTrendData: weeklyTrendQuery.data ?? [],
+    loading: statsQuery.isLoading || centersQuery.isLoading || trendQuery.isLoading || weeklyTrendQuery.isLoading,
+    error: statsQuery.error?.message || centersQuery.error?.message || trendQuery.error?.message || weeklyTrendQuery.error?.message || null,
+    refresh: () => {
+      statsQuery.refetch()
+      centersQuery.refetch()
+      trendQuery.refetch()
+      weeklyTrendQuery.refetch()
+    },
   }
 }
 

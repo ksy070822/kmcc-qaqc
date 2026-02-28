@@ -7,6 +7,9 @@ import type {
   CSATTagRow,
   CSATWeeklyRow,
   CSATLowScoreWeekly,
+  CSATHourlyBreakdown,
+  CSATTenureBreakdown,
+  CSATReviewRow,
 } from "@/lib/types"
 
 // ── Cross-project 테이블 참조 (dataanalytics-25f2) ──
@@ -70,9 +73,9 @@ const BASE_JOIN = `
 // 필터 WHERE 추가절 빌더
 function buildCSATFilters(
   filters: { center?: string; service?: string; startDate?: string; endDate?: string },
-): { where: string; params: Record<string, string> } {
+): { where: string; params: Record<string, string | number> } {
   let where = ""
-  const params: Record<string, string> = {}
+  const params: Record<string, string | number> = {}
   if (filters.startDate) {
     where += ` AND r.created_at >= @startDate`
     params.startDate = filters.startDate
@@ -82,7 +85,7 @@ function buildCSATFilters(
     params.endDate = filters.endDate
   }
   if (filters.center) {
-    const teamId = filters.center === "광주" ? "14" : "15"
+    const teamId = filters.center === "광주" ? 14 : 15
     where += ` AND u.team_id1 = @teamId`
     params.teamId = teamId
   }
@@ -110,37 +113,66 @@ function buildCSATFilters(
   return { where, params }
 }
 
+// scope 필터 빌더 (관리자 대시보드용: center → team_id1, service → incoming_path)
+function buildCSATScopeFilter(center?: string, service?: string): string {
+  let filter = ""
+  if (center) {
+    const teamId = center === "광주" ? "14" : "15"
+    filter += ` AND u.team_id1 = ${teamId}`
+  }
+  if (service) {
+    const servicePathsMap: Record<string, string[]> = {
+      "택시": ["c2_kakaot", "c2_kakaot_taxidriver"],
+      "대리": ["c2_kakaot_wheeldriver", "c2_kakaot_wheelc"],
+      "배송": ["c2_kakaot_picker", "c2_kakaot_picker_walk", "c2_kakaot_picker_onecar", "c2_kakaot_trucker"],
+      "퀵": ["c2_kakaot_quick", "c2_kakaot_quick_delivery"],
+      "내비": ["c2_kakaot_navi"],
+      "비즈": ["c2_kakaot_biz_join"],
+      "주차": ["c2_kakaot_parking"],
+      "바이크": ["c2_kakaot_bike"],
+    }
+    const paths = servicePathsMap[service]
+    if (paths) {
+      filter += ` AND c.incoming_path IN (${paths.map(p => `'${p}'`).join(", ")})`
+    }
+  }
+  return filter
+}
+
 /**
- * CSAT 대시보드 KPI (평균평점, 리뷰수, 점수분포, 센터별)
+ * 상담평점 대시보드 KPI (평균평점, 리뷰수, 점수분포, 센터별)
  */
 export async function getCSATDashboardStats(
   startDate?: string | null,
-  endDate?: string | null
+  endDate?: string | null,
+  scopeCenter?: string,
+  scopeService?: string
 ): Promise<{ success: boolean; data?: CSATDashboardStats; error?: string }> {
   try {
     const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(scopeCenter, scopeService)
 
     // 기본 기간: 최근 30일 (r.created_at 기준 — 리뷰 작성일)
-    const dateFilter = startDate && endDate
+    const dateFilter = (startDate && endDate
       ? `AND r.created_at >= @startDate AND r.created_at < DATETIME_ADD(CAST(@endDate AS DATETIME), INTERVAL 1 DAY)`
-      : `AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`
+      : `AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
 
     // ci.created_at 기준 (상담건수/요청수 산출용)
-    const ciDateFilter = startDate && endDate
+    const ciDateFilter = (startDate && endDate
       ? `AND ci.created_at >= @startDate AND ci.created_at < DATETIME_ADD(CAST(@endDate AS DATETIME), INTERVAL 1 DAY)`
-      : `AND ci.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`
-    const ciPrevFilter = startDate && endDate
+      : `AND ci.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
+    const ciPrevFilter = (startDate && endDate
       ? `AND ci.created_at >= DATETIME_SUB(CAST(@startDate AS DATETIME), INTERVAL DATE_DIFF(CAST(@endDate AS DATE), CAST(@startDate AS DATE), DAY) + 1 DAY)
          AND ci.created_at < CAST(@startDate AS DATETIME)`
       : `AND ci.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 60 DAY)
-         AND ci.created_at < DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`
+         AND ci.created_at < DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
 
     // 전기간 계산 (동일 기간 길이)
-    const prevFilter = startDate && endDate
+    const prevFilter = (startDate && endDate
       ? `AND r.created_at >= DATETIME_SUB(CAST(@startDate AS DATETIME), INTERVAL DATE_DIFF(CAST(@endDate AS DATE), CAST(@startDate AS DATE), DAY) + 1 DAY)
          AND r.created_at < CAST(@startDate AS DATETIME)`
       : `AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 60 DAY)
-         AND r.created_at < DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`
+         AND r.created_at < DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
 
     const query = `
       WITH current_period AS (
@@ -164,7 +196,9 @@ export async function getCSATDashboardStats(
         SELECT
           AVG(r.score) AS avg_score,
           COUNT(*) AS total_reviews,
-          COUNTIF(r.score <= 2) AS low_score_count
+          COUNTIF(r.score <= 2) AS low_score_count,
+          SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate,
+          SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate
         ${BASE_JOIN}
           ${prevFilter}
       ),
@@ -211,6 +245,8 @@ export async function getCSATDashboardStats(
         pp.avg_score AS prev_avg_score,
         pp.total_reviews AS prev_total_reviews,
         pp.low_score_count AS prev_low_score_count,
+        pp.score5_rate AS prev_score5_rate,
+        pp.low_score_rate AS prev_low_score_rate,
         acp.cnt AS prev_total_consults,
         arp.cnt AS prev_total_requests
       FROM current_period cp, prev_period pp,
@@ -246,11 +282,15 @@ export async function getCSATDashboardStats(
     const prevLowScoreCount = Number(row.prev_low_score_count) || 0
     const prevTotalConsults = Number(row.prev_total_consults) || 0
     const prevTotalRequests = Number(row.prev_total_requests) || 0
+    const prevScore5Rate = row.prev_score5_rate != null ? Math.round(Number(row.prev_score5_rate) * 10) / 10 : undefined
+    const prevLowScoreRate = row.prev_low_score_rate != null ? Math.round(Number(row.prev_low_score_rate) * 10) / 10 : undefined
+    const score5Rate = Math.round((Number(row.score5_rate) || 0) * 10) / 10
+    const lowScoreRate = totalReviews > 0 ? Math.round((lowScoreCount / totalReviews) * 1000) / 10 : 0
 
     const data: CSATDashboardStats = {
       avgScore: Math.round(avgScore * 100) / 100,
       totalReviews,
-      score5Rate: Math.round((Number(row.score5_rate) || 0) * 10) / 10,
+      score5Rate,
       score4Rate: Math.round((Number(row.score4_rate) || 0) * 10) / 10,
       score3Rate: Math.round((Number(row.score3_rate) || 0) * 10) / 10,
       score2Rate: Math.round((Number(row.score2_rate) || 0) * 10) / 10,
@@ -266,7 +306,7 @@ export async function getCSATDashboardStats(
       lowScoreCount,
       score1Count: Number(row.score1_count) || 0,
       score2Count: Number(row.score2_count) || 0,
-      lowScoreRate: totalReviews > 0 ? Math.round((lowScoreCount / totalReviews) * 1000) / 10 : 0,
+      lowScoreRate,
       // 전주대비
       prevTotalReviews: prevTotalReviews || undefined,
       prevLowScoreCount: prevLowScoreCount || undefined,
@@ -283,6 +323,14 @@ export async function getCSATDashboardStats(
       consultsTrend: prevTotalConsults > 0
         ? Math.round(((totalConsults - prevTotalConsults) / prevTotalConsults) * 1000) / 10
         : undefined,
+      prevScore5Rate,
+      prevLowScoreRate,
+      score5Trend: prevScore5Rate !== undefined
+        ? Math.round((score5Rate - prevScore5Rate) * 100) / 100
+        : undefined,
+      lowScoreRateTrend: prevLowScoreRate !== undefined
+        ? Math.round((lowScoreRate - prevLowScoreRate) * 100) / 100
+        : undefined,
     }
 
     return { success: true, data }
@@ -293,13 +341,16 @@ export async function getCSATDashboardStats(
 }
 
 /**
- * CSAT 저점비율 일별 추이 (센터별) — 1~2점 비율(%)
+ * 상담평점 저점비율 일별 추이 (센터별) — 1~2점 비율(%)
  */
 export async function getCSATLowScoreTrend(
-  days = 30
+  days = 30,
+  scopeCenter?: string,
+  scopeService?: string
 ): Promise<{ success: boolean; data?: CSATTrendData[]; error?: string }> {
   try {
     const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(scopeCenter, scopeService)
 
     const query = `
       SELECT
@@ -321,6 +372,7 @@ export async function getCSATLowScoreTrend(
         COUNTIF(u.team_id1 = 14 AND r.score <= 2) AS gwangju_low
       ${BASE_JOIN}
         AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL @days DAY)
+        ${csatScope}
       GROUP BY review_date
       ORDER BY review_date
     `
@@ -348,7 +400,7 @@ export async function getCSATLowScoreTrend(
 }
 
 /**
- * 서비스별 CSAT 평점
+ * 서비스별 상담평점
  */
 export async function getCSATServiceStats(
   filters: {
@@ -398,7 +450,7 @@ export async function getCSATServiceStats(
 }
 
 /**
- * CSAT 일자별 테이블
+ * 상담평점 일자별 테이블
  */
 export async function getCSATDailyTable(
   filters: {
@@ -413,7 +465,7 @@ export async function getCSATDailyTable(
     const { where, params } = buildCSATFilters(filters)
 
     const defaultDate = !filters.startDate
-      ? ` AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`
+      ? ` AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 180 DAY)`
       : ""
 
     const query = `
@@ -457,7 +509,7 @@ export async function getCSATDailyTable(
 }
 
 /**
- * CSAT 태그 통계 (긍정/부정 태그 비율)
+ * 상담평점 태그 통계 (긍정/부정 태그 비율)
  */
 export async function getCSATTagStats(
   filters: {
@@ -523,15 +575,19 @@ export async function getCSATTagStats(
 }
 
 /**
- * CSAT 주간 비교 테이블 (최근 5주, 목~수 기준)
+ * 상담평점 주간 비교 테이블 (최근 5주, 목~수 기준)
  */
-export async function getCSATWeeklyTable(): Promise<{
+export async function getCSATWeeklyTable(
+  scopeCenter?: string,
+  scopeService?: string
+): Promise<{
   success: boolean
   data?: CSATWeeklyRow[]
   error?: string
 }> {
   try {
     const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(scopeCenter, scopeService)
 
     // 리뷰 기반 주간 집계
     const reviewQuery = `
@@ -541,6 +597,7 @@ export async function getCSATWeeklyTable(): Promise<{
           r.score
         ${BASE_JOIN}
           AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 5 WEEK)
+          ${csatScope}
       )
       SELECT
         FORMAT_DATE('%m/%d', week_start) || '-' || FORMAT_DATE('%m/%d', DATE_ADD(week_start, INTERVAL 6 DAY)) AS period,
@@ -569,6 +626,7 @@ export async function getCSATWeeklyTable(): Promise<{
         AND c.incoming_path NOT LIKE 'c2_voice_%'
         AND c.incoming_path != 'c2_cti_center_code_error'
         AND ci.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 5 WEEK)
+        ${csatScope}
       GROUP BY week_start
     `
 
@@ -611,15 +669,19 @@ export async function getCSATWeeklyTable(): Promise<{
 }
 
 /**
- * CSAT 저점 현황 (최근 3주, 1점/2점 서비스별 breakdown)
+ * 상담평점 저점 현황 (최근 3주, 1점/2점 개별 리뷰 상세)
  */
-export async function getCSATLowScoreDetail(): Promise<{
+export async function getCSATLowScoreDetail(
+  scopeCenter?: string,
+  scopeService?: string
+): Promise<{
   success: boolean
   data?: CSATLowScoreWeekly[]
   error?: string
 }> {
   try {
     const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(scopeCenter, scopeService)
 
     // 1) 주간별 저점 요약
     const summaryQuery = `
@@ -633,63 +695,119 @@ export async function getCSATLowScoreDetail(): Promise<{
         COUNTIF(r.score = 2) AS score2_count
       ${BASE_JOIN}
         AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 4 WEEK)
+        ${csatScope}
       GROUP BY week_start, period
       ORDER BY week_start DESC
       LIMIT 3
     `
 
-    // 2) 1점 서비스별 breakdown
+    // 2) 1점 개별 리뷰 상세
     const score1Query = `
       SELECT
         DATE_TRUNC(DATE(r.created_at), WEEK(THURSDAY)) AS week_start,
-        ${SERVICE_DETAIL_SQL} AS service,
-        COUNT(*) AS cnt
+        FORMAT_DATE('%Y-%m-%d', DATE(r.created_at)) AS review_date,
+        COALESCE(u.name, u.username) AS agent_name,
+        u.username AS agent_id,
+        CAST(c.id AS STRING) AS consult_id,
+        ${SERVICE_PATH_SQL} AS service,
+        r.score,
+        r.additional_answer,
+        r.content AS comment
       ${BASE_JOIN}
         AND r.score = 1
         AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 4 WEEK)
-      GROUP BY week_start, service
-      ORDER BY week_start DESC, cnt DESC
+        ${csatScope}
+      ORDER BY r.created_at DESC
     `
 
-    // 3) 2점 서비스별 breakdown
+    // 3) 2점 개별 리뷰 상세
     const score2Query = `
       SELECT
         DATE_TRUNC(DATE(r.created_at), WEEK(THURSDAY)) AS week_start,
-        ${SERVICE_DETAIL_SQL} AS service,
-        COUNT(*) AS cnt
+        FORMAT_DATE('%Y-%m-%d', DATE(r.created_at)) AS review_date,
+        COALESCE(u.name, u.username) AS agent_name,
+        u.username AS agent_id,
+        CAST(c.id AS STRING) AS consult_id,
+        ${SERVICE_PATH_SQL} AS service,
+        r.score,
+        r.additional_answer,
+        r.content AS comment
       ${BASE_JOIN}
         AND r.score = 2
         AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 4 WEEK)
-      GROUP BY week_start, service
+        ${csatScope}
+      ORDER BY r.created_at DESC
+    `
+
+    // 4) 주간별 부정태그 집계
+    const negTagQuery = `
+      WITH tagged AS (
+        SELECT
+          DATE_TRUNC(DATE(r.created_at), WEEK(THURSDAY)) AS week_start,
+          JSON_QUERY_ARRAY(r.additional_answer, '$.selected_options') AS options
+        ${BASE_JOIN}
+          AND r.score <= 2
+          AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 4 WEEK)
+          AND r.additional_answer IS NOT NULL
+          AND JSON_VALUE(r.additional_answer, '$.selected_option_type') = 'NEGATIVE'
+          ${csatScope}
+      )
+      SELECT
+        week_start,
+        REPLACE(opt, '"', '') AS tag_key,
+        COUNT(*) AS cnt
+      FROM tagged, UNNEST(options) AS opt
+      GROUP BY week_start, tag_key
       ORDER BY week_start DESC, cnt DESC
     `
 
-    const [summaryRows, score1Rows, score2Rows] = await Promise.all([
+    const [summaryRows, score1Rows, score2Rows, negTagRows] = await Promise.all([
       bq.query({ query: summaryQuery }).then(([r]) => r as Record<string, unknown>[]),
       bq.query({ query: score1Query }).then(([r]) => r as Record<string, unknown>[]),
       bq.query({ query: score2Query }).then(([r]) => r as Record<string, unknown>[]),
+      bq.query({ query: negTagQuery }).then(([r]) => r as Record<string, unknown>[]),
     ])
 
-    // week_start → service breakdown 맵 구축
-    const buildServiceMap = (rows: Record<string, unknown>[]) => {
-      const map = new Map<string, Array<{ service: string; count: number; rate: number }>>()
+    // week_start → review rows 맵 구축
+    const buildReviewMap = (rows: Record<string, unknown>[]) => {
+      const map = new Map<string, CSATReviewRow[]>()
       for (const row of rows) {
         const ws = row.week_start ? String((row.week_start as { value?: string }).value || row.week_start) : ""
         if (!map.has(ws)) map.set(ws, [])
-        map.get(ws)!.push({ service: String(row.service), count: Number(row.cnt) || 0, rate: 0 })
-      }
-      // 비중 계산
-      for (const [, services] of map) {
-        const total = services.reduce((s, v) => s + v.count, 0)
-        for (const svc of services) {
-          svc.rate = total > 0 ? Math.round((svc.count / total) * 10000) / 100 : 0
-        }
+        const { tags, sentiment } = parseTagsFromJson(row.additional_answer as string | null)
+        map.get(ws)!.push({
+          date: String(row.review_date),
+          agentName: String(row.agent_name || ""),
+          agentId: String(row.agent_id || ""),
+          consultId: String(row.consult_id || ""),
+          service: String(row.service || ""),
+          score: Number(row.score) || 0,
+          tags,
+          sentiment,
+          comment: String(row.comment ?? ""),
+        })
       }
       return map
     }
 
-    const s1Map = buildServiceMap(score1Rows)
-    const s2Map = buildServiceMap(score2Rows)
+    const s1Map = buildReviewMap(score1Rows)
+    const s2Map = buildReviewMap(score2Rows)
+
+    // week_start → { tag_kr: count } 맵
+    const negTagMap = new Map<string, Record<string, number>>()
+    for (const row of negTagRows) {
+      const ws = row.week_start ? String((row.week_start as { value?: string }).value || row.week_start) : ""
+      const tagKey = String(row.tag_key || "")
+      const tagKr = CSAT_TAG_KR[tagKey] || tagKey
+      const cnt = Number(row.cnt) || 0
+      if (!negTagMap.has(ws)) negTagMap.set(ws, {})
+      negTagMap.get(ws)![tagKr] = cnt
+    }
+
+    // week_start 목록 (시간순 내림차순, summaryRows와 동일 순서)
+    const weekStarts = summaryRows.map(row =>
+      row.week_start ? String((row.week_start as { value?: string }).value || row.week_start) : ""
+    )
 
     const data: CSATLowScoreWeekly[] = summaryRows.map((row, idx) => {
       const ws = row.week_start ? String((row.week_start as { value?: string }).value || row.week_start) : ""
@@ -713,14 +831,254 @@ export async function getCSATLowScoreDetail(): Promise<{
         prevLowRate,
         score1Count: Number(row.score1_count) || 0,
         score2Count: Number(row.score2_count) || 0,
-        score1Services: s1Map.get(ws) || [],
-        score2Services: s2Map.get(ws) || [],
+        score1Reviews: s1Map.get(ws) || [],
+        score2Reviews: s2Map.get(ws) || [],
+        negativeTagCounts: negTagMap.get(ws) || {},
+        prevNegativeTagCounts: idx + 1 < weekStarts.length
+          ? negTagMap.get(weekStarts[idx + 1]) || {}
+          : undefined,
       }
     })
 
     return { success: true, data }
   } catch (error) {
     console.error("[bigquery-csat] getCSATLowScoreDetail error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+// ── 태그 한글 매핑 (bigquery-mypage.ts와 동일) ──
+const CSAT_TAG_KR: Record<string, string> = {
+  FAST: "빠른 상담 연결", EASY: "알기쉬운 설명", EXACT: "정확한 문의파악",
+  KIND: "친절한 상담", ACTIVE: "적극적인 상담", ETC: "기타",
+  WAIT: "상담 연결 지연", DIFFICULT: "어려운 설명", INEXACT: "문의내용 이해못함",
+  UNKIND: "불친절한 상담", PASSIVE: "형식적인 상담",
+}
+
+/** JSON 태그 배열 파싱 + 한글 매핑 */
+function parseTagsFromJson(additionalAnswer: string | null): { tags: string[]; sentiment: "POSITIVE" | "NEGATIVE" | null } {
+  if (!additionalAnswer) return { tags: [], sentiment: null }
+  try {
+    const parsed = JSON.parse(additionalAnswer)
+    const sentiment = (parsed.selected_option_type === "POSITIVE" || parsed.selected_option_type === "NEGATIVE")
+      ? parsed.selected_option_type as "POSITIVE" | "NEGATIVE"
+      : null
+    const rawTags: string[] = Array.isArray(parsed.selected_options) ? parsed.selected_options : []
+    const tags = rawTags.map(t => CSAT_TAG_KR[t.replace(/"/g, "")] || t.replace(/"/g, ""))
+    return { tags, sentiment }
+  } catch {
+    return { tags: [], sentiment: null }
+  }
+}
+
+/**
+ * 상세 구분: 근무시간대별 + 근속기간별 breakdown
+ */
+export async function getCSATBreakdownStats(
+  scopeCenter?: string,
+  scopeService?: string,
+  startDate?: string,
+  endDate?: string,
+): Promise<{
+  success: boolean
+  data?: { hourly: CSATHourlyBreakdown[]; tenure: CSATTenureBreakdown[] }
+  error?: string
+}> {
+  try {
+    const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(scopeCenter, scopeService)
+    const dateFilter = (startDate && endDate
+      ? `AND r.created_at >= @startDate AND r.created_at < DATETIME_ADD(CAST(@endDate AS DATETIME), INTERVAL 1 DAY)`
+      : `AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
+
+    const params: Record<string, string> = {}
+    if (startDate) params.startDate = startDate
+    if (endDate) params.endDate = endDate
+
+    // 근무시간대별
+    const hourlyQuery = `
+      SELECT
+        CASE
+          WHEN EXTRACT(HOUR FROM r.created_at) >= 6 AND EXTRACT(HOUR FROM r.created_at) < 9 THEN '06-09시'
+          WHEN EXTRACT(HOUR FROM r.created_at) >= 9 AND EXTRACT(HOUR FROM r.created_at) < 12 THEN '09-12시'
+          WHEN EXTRACT(HOUR FROM r.created_at) >= 12 AND EXTRACT(HOUR FROM r.created_at) < 15 THEN '12-15시'
+          WHEN EXTRACT(HOUR FROM r.created_at) >= 15 AND EXTRACT(HOUR FROM r.created_at) < 18 THEN '15-18시'
+          WHEN EXTRACT(HOUR FROM r.created_at) >= 18 AND EXTRACT(HOUR FROM r.created_at) < 21 THEN '18-21시'
+          ELSE '기타'
+        END AS hour_bucket,
+        COUNT(*) AS review_count,
+        AVG(r.score) AS avg_score,
+        SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate,
+        SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate
+      ${BASE_JOIN}
+        ${dateFilter}
+      GROUP BY hour_bucket
+      ORDER BY MIN(EXTRACT(HOUR FROM r.created_at))
+    `
+
+    // 근속기간별 (agents 테이블 JOIN — BASE_JOIN에 WHERE가 포함되어 있으므로 직접 전개)
+    const tenureQuery = `
+      WITH agent_reviews AS (
+        SELECT
+          u.username AS agent_id,
+          r.score,
+          a.hire_date
+        FROM ${CHAT_INQUIRE} ci
+        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+        JOIN ${REVIEW} r ON r.review_request_id = rr.id
+        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+        LEFT JOIN \`csopp-25f2.KMCC_QC.agents\` a ON u.username = a.agent_id
+        WHERE u.team_id1 IN (14, 15)
+          AND c.incoming_path NOT LIKE 'c2_voice_%'
+          AND c.incoming_path != 'c2_cti_center_code_error'
+          ${dateFilter}
+      )
+      SELECT
+        CASE
+          WHEN DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 3 THEN '3개월 미만'
+          WHEN DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 6 THEN '3~6개월'
+          WHEN DATE_DIFF(CURRENT_DATE(), hire_date, MONTH) < 12 THEN '6~12개월'
+          WHEN hire_date IS NOT NULL THEN '12개월 이상'
+          ELSE '미확인'
+        END AS tenure_group,
+        COUNT(DISTINCT agent_id) AS agent_count,
+        COUNT(*) AS review_count,
+        AVG(score) AS avg_score,
+        SAFE_DIVIDE(COUNTIF(score <= 2), COUNT(*)) * 100 AS low_score_rate,
+        SAFE_DIVIDE(COUNTIF(score = 5), COUNT(*)) * 100 AS score5_rate
+      FROM agent_reviews
+      GROUP BY tenure_group
+      ORDER BY MIN(COALESCE(DATE_DIFF(CURRENT_DATE(), hire_date, MONTH), 999))
+    `
+
+    const [hourlyRows, tenureRows] = await Promise.all([
+      bq.query({ query: hourlyQuery, params }).then(([r]) => r as Record<string, unknown>[]),
+      bq.query({ query: tenureQuery, params }).then(([r]) => r as Record<string, unknown>[]),
+    ])
+
+    const hourly: CSATHourlyBreakdown[] = hourlyRows.map(row => ({
+      hourBucket: String(row.hour_bucket),
+      reviewCount: Number(row.review_count) || 0,
+      avgScore: Math.round((Number(row.avg_score) || 0) * 100) / 100,
+      lowScoreRate: Math.round((Number(row.low_score_rate) || 0) * 10) / 10,
+      score5Rate: Math.round((Number(row.score5_rate) || 0) * 10) / 10,
+    }))
+
+    const tenure: CSATTenureBreakdown[] = tenureRows.map(row => ({
+      tenureGroup: String(row.tenure_group),
+      agentCount: Number(row.agent_count) || 0,
+      reviewCount: Number(row.review_count) || 0,
+      avgScore: Math.round((Number(row.avg_score) || 0) * 100) / 100,
+      lowScoreRate: Math.round((Number(row.low_score_rate) || 0) * 10) / 10,
+      score5Rate: Math.round((Number(row.score5_rate) || 0) * 10) / 10,
+    }))
+
+    return { success: true, data: { hourly, tenure } }
+  } catch (error) {
+    console.error("[bigquery-csat] getCSATBreakdownStats error:", error)
+    return { success: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+/**
+ * 리뷰 상세: 긍정/부정 전체 리뷰 목록 (태그 있는 건)
+ */
+export async function getCSATReviewList(
+  filters: {
+    center?: string
+    service?: string
+    startDate?: string
+    endDate?: string
+    sentiment?: "POSITIVE" | "NEGATIVE"
+  }
+): Promise<{
+  success: boolean
+  data?: {
+    summary: { positive: number; negative: number; total: number }
+    reviews: CSATReviewRow[]
+  }
+  error?: string
+}> {
+  try {
+    const bq = getBigQueryClient()
+    const csatScope = buildCSATScopeFilter(filters.center, filters.service)
+    const dateFilter = (filters.startDate && filters.endDate
+      ? `AND r.created_at >= @startDate AND r.created_at < DATETIME_ADD(CAST(@endDate AS DATETIME), INTERVAL 1 DAY)`
+      : `AND r.created_at >= DATETIME_SUB(CURRENT_DATETIME('Asia/Seoul'), INTERVAL 30 DAY)`) + csatScope
+
+    const params: Record<string, string> = {}
+    if (filters.startDate) params.startDate = filters.startDate
+    if (filters.endDate) params.endDate = filters.endDate
+
+    let sentimentFilter = ""
+    if (filters.sentiment) {
+      sentimentFilter = ` AND JSON_VALUE(r.additional_answer, '$.selected_option_type') = @sentiment`
+      params.sentiment = filters.sentiment
+    }
+
+    // 요약 집계
+    const summaryQuery = `
+      SELECT
+        COUNTIF(JSON_VALUE(r.additional_answer, '$.selected_option_type') = 'POSITIVE') AS positive_cnt,
+        COUNTIF(JSON_VALUE(r.additional_answer, '$.selected_option_type') = 'NEGATIVE') AS negative_cnt,
+        COUNT(*) AS total_cnt
+      ${BASE_JOIN}
+        ${dateFilter}
+        AND r.additional_answer IS NOT NULL
+        AND JSON_VALUE(r.additional_answer, '$.selected_option_type') IS NOT NULL
+    `
+
+    // 개별 리뷰
+    const reviewQuery = `
+      SELECT
+        FORMAT_DATE('%Y-%m-%d', DATE(r.created_at)) AS review_date,
+        COALESCE(u.name, u.username) AS agent_name,
+        u.username AS agent_id,
+        CAST(c.id AS STRING) AS consult_id,
+        ${SERVICE_PATH_SQL} AS service,
+        r.score,
+        r.additional_answer,
+        r.content AS comment
+      ${BASE_JOIN}
+        ${dateFilter}
+        AND r.additional_answer IS NOT NULL
+        AND JSON_VALUE(r.additional_answer, '$.selected_option_type') IS NOT NULL
+        ${sentimentFilter}
+      ORDER BY r.created_at DESC
+      LIMIT 100
+    `
+
+    const [summaryRows, reviewRows] = await Promise.all([
+      bq.query({ query: summaryQuery, params }).then(([r]) => r as Record<string, unknown>[]),
+      bq.query({ query: reviewQuery, params }).then(([r]) => r as Record<string, unknown>[]),
+    ])
+
+    const sRow = summaryRows[0] || {}
+    const summary = {
+      positive: Number(sRow.positive_cnt) || 0,
+      negative: Number(sRow.negative_cnt) || 0,
+      total: Number(sRow.total_cnt) || 0,
+    }
+
+    const reviews: CSATReviewRow[] = reviewRows.map(row => {
+      const { tags, sentiment } = parseTagsFromJson(row.additional_answer as string | null)
+      return {
+        date: String(row.review_date),
+        agentName: String(row.agent_name || ""),
+        agentId: String(row.agent_id || ""),
+        consultId: String(row.consult_id || ""),
+        service: String(row.service || ""),
+        score: Number(row.score) || 0,
+        tags,
+        sentiment,
+        comment: String(row.comment ?? ""),
+      }
+    })
+
+    return { success: true, data: { summary, reviews } }
+  } catch (error) {
+    console.error("[bigquery-csat] getCSATReviewList error:", error)
     return { success: false, error: error instanceof Error ? error.message : String(error) }
   }
 }

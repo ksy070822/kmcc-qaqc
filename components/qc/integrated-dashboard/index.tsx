@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { format, subMonths } from "date-fns"
 import { IntegratedOverview } from "./integrated-overview"
 import { RiskHeatmapTable } from "./risk-heatmap-table"
@@ -31,6 +31,39 @@ export function IntegratedDashboard({ externalMonth, onNavigateToCoaching }: Int
   useEffect(() => {
     fetchData()
   }, [fetchData])
+
+  // 서비스/채널별 유의상담사 그룹핑 (매 렌더링 재계산 방지)
+  const riskGroupData = useMemo(() => {
+    if (summaries.length === 0) return null
+    const groupMap = new Map<string, { total: number; medium: number; high: number; critical: number }>()
+    for (const s of summaries) {
+      const ctr = s.center || "기타"
+      const svc = s.service || "기타"
+      const ch = s.channel || "-"
+      const key = `${ctr}__${svc}__${ch}`
+      const entry = groupMap.get(key) || { total: 0, medium: 0, high: 0, critical: 0 }
+      entry.total++
+      if (s.riskLevel === "medium") entry.medium++
+      else if (s.riskLevel === "high") entry.high++
+      else if (s.riskLevel === "critical") entry.critical++
+      groupMap.set(key, entry)
+    }
+    const rows = Array.from(groupMap.entries())
+      .map(([key, v]) => {
+        const [ctr, svc, ch] = key.split("__")
+        const risk = v.medium + v.high + v.critical
+        return { center: ctr, service: svc, channel: ch, ...v, risk, rate: v.total > 0 ? Math.round((risk / v.total) * 1000) / 10 : 0 }
+      })
+      .filter(r => r.risk > 0)
+      .sort((a, b) => (b.critical * 100 + b.high * 10 + b.medium) - (a.critical * 100 + a.high * 10 + a.medium))
+    const totalAll = summaries.length
+    const medAll = summaries.filter(s => s.riskLevel === "medium").length
+    const highAll = summaries.filter(s => s.riskLevel === "high").length
+    const critAll = summaries.filter(s => s.riskLevel === "critical").length
+    const riskAll = medAll + highAll + critAll
+    const rateAll = totalAll > 0 ? Math.round((riskAll / totalAll) * 1000) / 10 : 0
+    return { rows, totalAll, medAll, highAll, critAll, riskAll, rateAll }
+  }, [summaries])
 
   // 상담사 클릭 → 프로파일 모달
   const handleAgentClick = (agentId: string) => {
@@ -138,45 +171,14 @@ export function IntegratedDashboard({ externalMonth, onNavigateToCoaching }: Int
           {/* Overview KPI */}
           <IntegratedOverview stats={stats} />
 
-          {/* 서비스/채널별 유의상담사 현황 */}
-          {summaries.length > 0 && (() => {
-            const groupMap = new Map<string, { total: number; medium: number; high: number; critical: number }>()
-            for (const s of summaries) {
-              const ctr = s.center || "기타"
-              const svc = s.service || "기타"
-              const ch = s.channel || "-"
-              const key = `${ctr}__${svc}__${ch}`
-              const entry = groupMap.get(key) || { total: 0, medium: 0, high: 0, critical: 0 }
-              entry.total++
-              if (s.riskLevel === "medium") entry.medium++
-              else if (s.riskLevel === "high") entry.high++
-              else if (s.riskLevel === "critical") entry.critical++
-              groupMap.set(key, entry)
-            }
-            const rows = Array.from(groupMap.entries())
-              .map(([key, v]) => {
-                const [ctr, svc, ch] = key.split("__")
-                const risk = v.medium + v.high + v.critical
-                return { center: ctr, service: svc, channel: ch, ...v, risk, rate: v.total > 0 ? Math.round((risk / v.total) * 1000) / 10 : 0 }
-              })
-              .filter(r => r.risk > 0)
-              .sort((a, b) => (b.critical * 100 + b.high * 10 + b.medium) - (a.critical * 100 + a.high * 10 + a.medium))
-            const totalAll = summaries.length
-            const medAll = summaries.filter(s => s.riskLevel === "medium").length
-            const highAll = summaries.filter(s => s.riskLevel === "high").length
-            const critAll = summaries.filter(s => s.riskLevel === "critical").length
-            const riskAll = medAll + highAll + critAll
-            const rateAll = totalAll > 0 ? Math.round((riskAll / totalAll) * 1000) / 10 : 0
-
-            if (rows.length === 0) return null
-
-            return (
+          {/* 서비스/채널별 유의상담사 현황 (useMemo로 그룹핑 캐싱) */}
+          {riskGroupData && riskGroupData.rows.length > 0 && (
               <div className="border border-gray-200 rounded-xl overflow-hidden">
                 <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
                   <h3 className="text-sm font-semibold text-gray-700">
                     센터/서비스/채널별 유의상담사 현황
                     <span className="ml-2 text-xs font-normal text-muted-foreground">
-                      전체 {totalAll}명 중 {riskAll}명 ({rateAll}%) — 주의 {medAll} / 위험 {highAll} / 심각 {critAll}
+                      전체 {riskGroupData.totalAll}명 중 {riskGroupData.riskAll}명 ({riskGroupData.rateAll}%) — 주의 {riskGroupData.medAll} / 위험 {riskGroupData.highAll} / 심각 {riskGroupData.critAll}
                     </span>
                   </h3>
                 </div>
@@ -196,7 +198,7 @@ export function IntegratedDashboard({ externalMonth, onNavigateToCoaching }: Int
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
-                      {rows.map((r, i) => (
+                      {riskGroupData.rows.map((r, i) => (
                         <tr key={i} className={r.critical > 0 ? "bg-red-50/50" : r.high > 0 ? "bg-orange-50/50" : ""}>
                           <td className="px-3 py-1.5 text-xs font-medium">{r.center}</td>
                           <td className="px-3 py-1.5 text-xs">{r.service}</td>
@@ -232,8 +234,7 @@ export function IntegratedDashboard({ externalMonth, onNavigateToCoaching }: Int
                   </table>
                 </div>
               </div>
-            )
-          })()}
+          )}
 
           {/* 리스크 테이블 */}
           <RiskHeatmapTable

@@ -6,14 +6,15 @@ import { CSATScoreTrendChart } from "./csat-score-trend-chart"
 import { CSATWeeklyTable } from "./csat-weekly-table"
 import { CSATLowScoreDetail } from "./csat-low-score-detail"
 import { CSATDailyTable } from "./csat-daily-table"
-import { CSATServiceTable } from "./csat-service-table"
-import { CSATTagAnalysis } from "./csat-tag-analysis"
+import { CSATBreakdownTable } from "./csat-breakdown-table"
+import { CSATReviewList } from "./csat-review-list"
 import { DashboardFilters } from "@/components/qc/dashboard/dashboard-filters"
 import { useCSATDashboardData } from "@/lib/use-csat-dashboard-data"
 import { Loader2 } from "lucide-react"
 import { cn, getPrevBusinessDay, formatDate } from "@/lib/utils"
 
-// 실제 KMCC(용산/광주) CSAT 데이터가 존재하는 서비스만
+// 실제 KMCC(용산/광주) 상담평점 데이터가 존재하는 서비스만
+// TODO: 서비스 추가 시 여기도 수정 필요 — 장기적으로 API에서 동적 조회 전환 권장
 const CSAT_SERVICES = ["택시", "대리", "배송", "내비"] as const
 
 interface CSATDashboardProps {
@@ -50,8 +51,14 @@ export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSA
     return filterEndDate >= today ? prevBiz : filterEndDate
   }, [filterEndDate])
 
-  const { stats, trendData, dailyData, weeklyData, lowScoreData, tagData, loading, error, refresh } = useCSATDashboardData(
-    filterStartDate, effectiveEndDate
+  // 날짜가 캡핑되었는지 여부 (UI 피드백용)
+  const isDateCapped = useMemo(() => {
+    if (!filterEndDate) return false
+    return filterEndDate >= formatDate(new Date())
+  }, [filterEndDate])
+
+  const { stats, trendData, dailyData, trendDailyData, weeklyData, lowScoreData, breakdownData, reviewListData, loading, error, refresh } = useCSATDashboardData(
+    filterStartDate, effectiveEndDate, scope
   )
 
   const showLoading = isMounted && loading
@@ -60,8 +67,8 @@ export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSA
     { value: "weekly", label: "주간 현황" },
     { value: "lowscore", label: "저점 분석" },
     { value: "daily", label: "일자별 현황" },
-    { value: "service", label: "서비스별 평점" },
-    { value: "tags", label: "부정태그" },
+    { value: "breakdown", label: "상세 구분" },
+    { value: "reviews", label: "리뷰 상세" },
   ]
 
   return (
@@ -69,7 +76,7 @@ export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSA
       {showLoading && (
         <div className="flex items-center justify-center py-4 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin mr-2" />
-          <span>CSAT 데이터 로딩 중...</span>
+          <span>상담평점 데이터 로딩 중...</span>
         </div>
       )}
       {isMounted && error && (
@@ -79,8 +86,14 @@ export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSA
         </div>
       )}
 
+      {isMounted && isDateCapped && effectiveEndDate && (
+        <div className="bg-amber-50 text-amber-700 px-3 py-1.5 rounded-md text-xs">
+          종료일이 오늘 이후여서 전영업일({effectiveEndDate})까지의 데이터를 표시합니다.
+        </div>
+      )}
+
       <CSATOverviewSection stats={stats} scopeCenter={scope?.center} />
-      <CSATScoreTrendChart dailyData={dailyData} scopeCenter={scope?.center} />
+      <CSATScoreTrendChart dailyData={trendDailyData} scopeCenter={scope?.center} scopeService={scope?.service} />
 
       <DashboardFilters
         selectedCenter={selectedCenter}
@@ -124,8 +137,8 @@ export function CSATDashboard({ externalStartDate, externalEndDate, scope }: CSA
         {activeTab === "weekly" && <CSATWeeklyTable data={weeklyData} />}
         {activeTab === "lowscore" && <CSATLowScoreDetail data={lowScoreData} />}
         {activeTab === "daily" && <CSATDailyTable center={selectedCenter} startDate={filterStartDate} endDate={effectiveEndDate} />}
-        {activeTab === "service" && <CSATServiceTable center={selectedCenter} service={selectedService} startDate={filterStartDate} endDate={effectiveEndDate} />}
-        {activeTab === "tags" && <CSATTagAnalysis data={tagData} />}
+        {activeTab === "breakdown" && <CSATBreakdownTable data={breakdownData} />}
+        {activeTab === "reviews" && <CSATReviewList data={reviewListData} />}
       </div>
     </div>
   )

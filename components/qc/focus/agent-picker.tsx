@@ -124,7 +124,7 @@ export function AgentPicker({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-slate-900">
             <UserPlus className="h-5 w-5 text-[#1e3a5f]" />
-            부진상담사 선택
+            집중관리상담사 선택
           </DialogTitle>
         </DialogHeader>
 
@@ -142,7 +142,7 @@ export function AgentPicker({
         {/* AI 추천 안내 */}
         <div className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700">
           <Sparkles className="h-4 w-4 shrink-0" />
-          <span>유의상담사 목록에서 AI가 추천한 부진 후보입니다. 직접 입력도 가능합니다.</span>
+          <span>유의상담사 목록에서 AI가 추천한 집중관리 후보입니다. 직접 입력도 가능합니다.</span>
         </div>
 
         {/* 상담사 목록 */}

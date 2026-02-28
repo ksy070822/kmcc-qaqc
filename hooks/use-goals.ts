@@ -12,6 +12,8 @@ export interface Goal {
   periodStart: string
   periodEnd: string
   isActive: boolean
+  service?: string | null
+  channel?: string | null
 }
 
 interface UseGoalsOptions {

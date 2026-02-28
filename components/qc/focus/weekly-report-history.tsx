@@ -293,10 +293,10 @@ export function WeeklyReportHistory({ center, service }: WeeklyReportHistoryProp
                 </div>
               )}
 
-              {/* 부진상담사 등록 수 */}
+              {/* 집중관리상담사 등록 수 */}
               {detailReport.registeredAgentCount > 0 && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-                  이번 주 부진상담사 <span className="font-bold">{detailReport.registeredAgentCount}명</span> 등록
+                  이번 주 집중관리상담사 <span className="font-bold">{detailReport.registeredAgentCount}명</span> 등록
                 </div>
               )}
             </div>

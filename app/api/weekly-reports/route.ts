@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BigQuery } from '@google-cloud/bigquery'
 import { getCorsHeaders } from '@/lib/cors'
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT } from '@/lib/constants'
 
 const bq = new BigQuery({
   projectId: 'csopp-25f2',
@@ -79,8 +80,8 @@ export async function GET(request: NextRequest) {
         weekEnd: weDate.toISOString().split('T')[0],
         evaluations: evalCount,
         agentCount: Number(row.agent_count) || 0,
-        attitudeRate: evalCount > 0 ? (Number(row.att_errors) / (evalCount * 5)) * 100 : 0,
-        opsRate: evalCount > 0 ? (Number(row.ops_errors) / (evalCount * 11)) * 100 : 0,
+        attitudeRate: evalCount > 0 ? (Number(row.att_errors) / (evalCount * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0,
+        opsRate: evalCount > 0 ? (Number(row.ops_errors) / (evalCount * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0,
       }
     })
 

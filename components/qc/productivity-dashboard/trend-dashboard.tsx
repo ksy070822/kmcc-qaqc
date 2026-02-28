@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import {
@@ -39,7 +39,7 @@ const tooltipStyle = {
   fontSize: 12,
 }
 
-export function TrendDashboard({ voiceTrend, chatTrend, boardData, month }: Props) {
+export const TrendDashboard = memo(function TrendDashboard({ voiceTrend, chatTrend, boardData, month }: Props) {
   const [channel, setChannel] = useState<"voice" | "chat">("voice")
 
   const targetRate = channel === "voice"
@@ -235,4 +235,4 @@ export function TrendDashboard({ voiceTrend, chatTrend, boardData, month }: Prop
       </div>
     </div>
   )
-}
+})

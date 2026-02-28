@@ -9,6 +9,7 @@ import { useAuth } from "@/hooks/use-auth"
 import Image from "next/image"
 import { NoticeBell } from "@/components/mypage/notice-bell"
 import { useUnreadNoticeCount } from "@/hooks/use-notices"
+import { MypageProvider } from "@/contexts/mypage-context"
 import {
   ChevronLeft,
   LayoutDashboard,
@@ -242,7 +243,9 @@ export default function MypageLayout({ children }: { children: React.ReactNode }
           </div>
         </header>
 
-        <main className="p-6">{children}</main>
+        <main className="p-6">
+          <MypageProvider>{children}</MypageProvider>
+        </main>
       </div>
     </div>
   )

@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Line,
@@ -30,7 +30,7 @@ const GRADE_LINES = [
   { score: 90, label: "B", color: "#16a34a" },
 ]
 
-export function SLATrend({ data }: Props) {
+export const SLATrend = memo(function SLATrend({ data }: Props) {
   const chartData = useMemo(() => {
     const monthMap = new Map<string, { month: string; 용산: number; 광주: number; 용산등급: string; 광주등급: string }>()
     for (const r of data) {
@@ -165,4 +165,4 @@ export function SLATrend({ data }: Props) {
       </Card>
     </div>
   )
-}
+})

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useAuth } from "@/hooks/use-auth"
+import { useMypageContext } from "@/contexts/mypage-context"
 import { MypageMainView } from "@/components/mypage/mypage-main-view"
 import { MypageQcDetail } from "@/components/mypage/mypage-qc-detail"
 import { MypageCsatDetail } from "@/components/mypage/mypage-csat-detail"
@@ -12,12 +12,10 @@ import { MypageProductivityDetail } from "@/components/mypage/mypage-productivit
 type ViewType = "main" | "qc" | "csat" | "qa" | "quiz" | "productivity"
 
 export default function MypagePage() {
-  const { user } = useAuth()
+  const { user, agentId } = useMypageContext()
   const [activeView, setActiveView] = useState<ViewType>("main")
 
   const goBack = () => setActiveView("main")
-
-  const agentId = user?.userId ?? null
 
   switch (activeView) {
     case "qc":

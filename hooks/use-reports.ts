@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 
-interface ReportConfig {
+export interface ReportConfig {
   type: "weekly" | "monthly" | "quarterly" | "halfYear" | "yearly" | "custom"
   period: string
   center?: string
@@ -12,10 +12,11 @@ interface ReportConfig {
   endDate?: string
 }
 
-interface ReportData {
+export interface ReportData {
   type: string
   period: string
   center: string
+  title?: string
   summary: {
     totalEvaluations: number
     totalAgents: number
@@ -45,6 +46,8 @@ interface ReportData {
     errorRate: number
     trend: number
   }>
+  /** Generic data array for CSV export */
+  data?: Array<Record<string, unknown>>
 }
 
 export function useReports() {

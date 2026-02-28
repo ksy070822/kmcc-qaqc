@@ -22,12 +22,14 @@ import {
   ArrowDownRight,
 } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
+import { useLatestDate } from "@/hooks/use-latest-date"
 import type { MultiDomainMetrics } from "@/lib/bigquery-role-metrics"
 
 export default function WeeklyReportPage() {
   const { user } = useAuth()
   const center = user?.center || undefined
   const service = user?.service || undefined
+  const { latestDate } = useLatestDate()
 
   const [metrics, setMetrics] = useState<MultiDomainMetrics | null>(null)
   const [metricsLoading, setMetricsLoading] = useState(true)
@@ -35,19 +37,18 @@ export default function WeeklyReportPage() {
 
   useEffect(() => {
     async function fetchMetrics() {
-      if (!user?.center) return
+      if (!user?.center || !latestDate) return
       try {
         setMetricsLoading(true)
 
-        const ldRes = await fetch("/api/data?type=latest-date")
-        const ldData = await ldRes.json()
-        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
-
         const params = new URLSearchParams({
           type: "multi-domain-metrics",
-          refDate,
+          refDate: latestDate,
           center: user.center,
         })
+        if (user.service) {
+          params.set('service', user.service)
+        }
 
         const res = await fetch(`/api/role-metrics?${params}`)
         const data = await res.json()
@@ -64,7 +65,7 @@ export default function WeeklyReportPage() {
     }
 
     fetchMetrics()
-  }, [user?.center])
+  }, [user?.center, user?.service, latestDate])
 
   return (
     <div className="space-y-6">
@@ -178,12 +179,12 @@ function KpiSummarySection({
             diff={qaDiff}
             higherIsBetter={true}
           />
-          {/* CSAT */}
+          {/* 상담평점 */}
           <MiniKpi
             icon={Star}
             iconColor="text-amber-600"
             iconBg="bg-amber-50"
-            label="CSAT"
+            label="상담평점"
             value={`${metrics.csatAvgScore.toFixed(2)}점`}
             diff={csatDiff}
             higherIsBetter={true}

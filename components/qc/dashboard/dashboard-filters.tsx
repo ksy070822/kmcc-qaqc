@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
@@ -24,7 +24,7 @@ interface DashboardFiltersProps {
   endDate?: string
   onDateChange?: (startDate: string, endDate: string) => void
   onSearch?: () => void
-  /** 커스텀 서비스 목록 (CSAT 등 QC와 다른 서비스 체계일 때) */
+  /** 커스텀 서비스 목록 (상담평점 등 QC와 다른 서비스 체계일 때) */
   customServices?: readonly string[]
   /** 센터 드롭다운 비활성화 (관리자 스코핑) */
   disableCenter?: boolean
@@ -74,17 +74,30 @@ export function DashboardFilters({
   const [startDateOpen, setStartDateOpen] = useState(false)
   const [endDateOpen, setEndDateOpen] = useState(false)
 
+  // 외부(props) 변경인지 추적하는 ref
+  const isExternalUpdate = useRef(false)
+  // onDateChange 디바운스 타이머
+  const dateChangeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
   // QualityDashboard 주차 선택 시 props 변경 → 필터 캘린더 state 동기화
   useEffect(() => {
     if (propStartDate && propEndDate) {
       const newStart = new Date(propStartDate)
       const newEnd = new Date(propEndDate)
       if (!isNaN(newStart.getTime()) && !isNaN(newEnd.getTime())) {
+        isExternalUpdate.current = true
         setStartDate(newStart)
         setEndDate(newEnd)
+        // Reset after microtask to allow state to settle
+        queueMicrotask(() => { isExternalUpdate.current = false })
       }
     }
   }, [propStartDate, propEndDate])
+
+  // 디바운스 타이머 클린업
+  useEffect(() => {
+    return () => clearTimeout(dateChangeTimerRef.current)
+  }, [])
 
   // 센터에 따른 서비스 목록
   const getServices = () => {
@@ -96,86 +109,97 @@ export function DashboardFilters({
   }
 
   // 센터 변경 시 서비스 초기화
-  const handleCenterChange = (value: string) => {
+  const handleCenterChange = useCallback((value: string) => {
     setSelectedCenter(value)
     setSelectedService("all")
-  }
+  }, [setSelectedCenter, setSelectedService])
 
-  // 날짜 변경 핸들러
-  const handleStartDateSelect = (date: Date | undefined) => {
+  // 날짜 변경 핸들러 (디바운스 적용으로 빠른 연속 변경 시 마지막 값만 전파)
+  const handleStartDateSelect = useCallback((date: Date | undefined) => {
     setStartDate(date)
     setStartDateOpen(false)
-    if (date && onDateChange) {
+    if (date && onDateChange && !isExternalUpdate.current) {
       const startStr = date.toISOString().split('T')[0]
       const endStr = endDate ? endDate.toISOString().split('T')[0] : startStr
-      onDateChange(startStr, endStr)
+      clearTimeout(dateChangeTimerRef.current)
+      dateChangeTimerRef.current = setTimeout(() => {
+        onDateChange(startStr, endStr)
+      }, 150)
     }
-  }
+  }, [endDate, onDateChange])
 
-  const handleEndDateSelect = (date: Date | undefined) => {
+  const handleEndDateSelect = useCallback((date: Date | undefined) => {
     setEndDate(date)
     setEndDateOpen(false)
-    if (date && onDateChange) {
+    if (date && onDateChange && !isExternalUpdate.current) {
       const startStr = startDate ? startDate.toISOString().split('T')[0] : defaultDate
       const endStr = date.toISOString().split('T')[0]
-      onDateChange(startStr, endStr)
+      clearTimeout(dateChangeTimerRef.current)
+      dateChangeTimerRef.current = setTimeout(() => {
+        onDateChange(startStr, endStr)
+      }, 150)
     }
-  }
+  }, [startDate, defaultDate, onDateChange])
 
   // 월 단위 날짜 설정 (1일~말일)
-  const setMonthRange = (year: number, month: number) => {
+  const setMonthRange = useCallback((year: number, month: number) => {
     const monthStart = new Date(year, month, 1)
     const monthEnd = new Date(year, month + 1, 0)
     setStartDate(monthStart)
     setEndDate(monthEnd)
     if (onDateChange) {
-      onDateChange(
-        monthStart.toISOString().split('T')[0],
-        monthEnd.toISOString().split('T')[0]
-      )
+      clearTimeout(dateChangeTimerRef.current)
+      dateChangeTimerRef.current = setTimeout(() => {
+        onDateChange(
+          monthStart.toISOString().split('T')[0],
+          monthEnd.toISOString().split('T')[0]
+        )
+      }, 150)
     }
-  }
+  }, [onDateChange])
 
   // 전월 버튼
-  const handlePrevMonth = () => {
+  const handlePrevMonth = useCallback(() => {
     const base = startDate || new Date()
     setMonthRange(base.getFullYear(), base.getMonth() - 1)
-  }
+  }, [startDate, setMonthRange])
 
   // 다음월 버튼
-  const handleNextMonth = () => {
+  const handleNextMonth = useCallback(() => {
     const base = startDate || new Date()
     setMonthRange(base.getFullYear(), base.getMonth() + 1)
-  }
+  }, [startDate, setMonthRange])
 
   // 당월 버튼
-  const handleCurrentMonth = () => {
+  const handleCurrentMonth = useCallback(() => {
     const now = new Date()
     setMonthRange(now.getFullYear(), now.getMonth())
-  }
+  }, [setMonthRange])
 
   // 전월 버튼 (직전 월 전체)
-  const handleLastMonth = () => {
+  const handleLastMonth = useCallback(() => {
     const now = new Date()
     setMonthRange(now.getFullYear(), now.getMonth() - 1)
-  }
+  }, [setMonthRange])
 
   // 조회 버튼 클릭 - 날짜 범위 업데이트 후 데이터 갱신
-  const handleSearch = () => {
+  const handleSearch = useCallback(() => {
     const startStr = startDate ? startDate.toISOString().split('T')[0] : defaultDate
     const endStr = endDate ? endDate.toISOString().split('T')[0] : defaultDate
 
-    // 날짜 범위를 상위로 전달 → useEffect가 fetchData를 자동 트리거
+    // 진행 중인 디바운스 취소 후 즉시 실행 (사용자가 명시적으로 조회 클릭)
+    clearTimeout(dateChangeTimerRef.current)
+
+    // 날짜 범위를 상위로 전달
     if (onDateChange) {
       onDateChange(startStr, endStr)
     }
 
-    // 날짜가 이미 같은 경우(변경 없으면 useEffect 미트리거)에 대비해 명시적 refetch
-    // setTimeout으로 state 반영 후 호출
+    // 명시적 refetch (날짜가 이미 같아 useEffect 미트리거 시에도 동작)
     if (onSearch) {
-      setTimeout(() => onSearch(), 0)
+      onSearch()
     }
-  }
+  }, [startDate, endDate, defaultDate, onDateChange, onSearch])
 
   return (
     <div className="flex flex-wrap items-center gap-3 p-4 bg-gray-50 rounded-lg border">
@@ -270,33 +294,45 @@ export function DashboardFilters({
 
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">센터</span>
-        <Select value={selectedCenter} onValueChange={handleCenterChange} disabled={disableCenter}>
-          <SelectTrigger className="w-[100px] bg-white">
-            <SelectValue placeholder="전체" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체</SelectItem>
-            <SelectItem value="용산">용산</SelectItem>
-            <SelectItem value="광주">광주</SelectItem>
-          </SelectContent>
-        </Select>
+        {disableCenter ? (
+          <span className="inline-flex items-center h-9 px-3 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">
+            {selectedCenter === "all" ? "전체" : selectedCenter}
+          </span>
+        ) : (
+          <Select value={selectedCenter} onValueChange={handleCenterChange}>
+            <SelectTrigger className="w-[100px] bg-white">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              <SelectItem value="용산">용산</SelectItem>
+              <SelectItem value="광주">광주</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-600">서비스</span>
-        <Select value={selectedService} onValueChange={setSelectedService} disabled={disableService}>
-          <SelectTrigger className="w-[130px] bg-white">
-            <SelectValue placeholder="전체" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">전체</SelectItem>
-            {getServices().map((service) => (
-              <SelectItem key={service} value={service}>
-                {service}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {disableService ? (
+          <span className="inline-flex items-center h-9 px-3 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">
+            {selectedService === "all" ? "전체" : selectedService}
+          </span>
+        ) : (
+          <Select value={selectedService} onValueChange={setSelectedService}>
+            <SelectTrigger className="w-[130px] bg-white">
+              <SelectValue placeholder="전체" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">전체</SelectItem>
+              {getServices().map((service) => (
+                <SelectItem key={service} value={service}>
+                  {service}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
       </div>
 
       <div className="flex items-center gap-2">

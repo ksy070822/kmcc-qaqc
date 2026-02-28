@@ -56,7 +56,7 @@ export function SLASimulator({ initialData }: Props) {
     if (unit === "%") return { min: 60, max: 100, step: 0.5 }
     if (unit === "초") return { min: 100, max: 800, step: 10 }
     if (unit === "점" && direction === "higher_better") {
-      // CSAT은 1-5, 나머지는 0-100
+      // 상담평점은 1-5, 나머지는 0-100
       if (id === "csat_score") return { min: 3.0, max: 5.0, step: 0.05 }
       return { min: 50, max: 100, step: 1 }
     }

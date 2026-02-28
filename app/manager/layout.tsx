@@ -22,7 +22,7 @@ import {
 const managerNavItems = [
   { id: "/manager", label: "품질 대시보드", icon: LayoutDashboard, exact: true },
   { id: "/manager/weekly-report", label: "주간보고 작성", icon: ClipboardList },
-  { id: "/manager/underperforming", label: "부진상담사 관리", icon: UserX },
+  { id: "/manager/underperforming", label: "집중관리상담사 관리", icon: UserX },
   { id: "/manager/agents", label: "상담사 목록", icon: Users },
   { id: "/manager/notices", label: "공지/교육 관리", icon: Megaphone },
 ]

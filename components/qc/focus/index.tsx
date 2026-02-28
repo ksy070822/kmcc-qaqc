@@ -6,8 +6,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { WatchlistTable, type WatchlistAgent } from "./watchlist-table"
-import { ActionPlanModal, type ActionPlanData } from "./action-plan-modal"
-import { ActionPlanHistory } from "./action-plan-history"
+import { ActionPlanModal, type ActionPlanData as ModalActionPlanData } from "./action-plan-modal"
+import { ActionPlanHistory, type ActionPlanHistoryItem } from "./action-plan-history"
+import type { ActionPlanData } from "@/lib/types"
 import { ImprovementStats } from "./improvement-stats"
 import { AlertTriangle, FileText, Download, Loader2 } from "lucide-react"
 import { groups, tenures } from "@/lib/constants"
@@ -36,7 +37,7 @@ export function FocusManagement() {
     tenure: selectedTenure,
   })
 
-  const [actionPlanHistory, setActionPlanHistory] = useState<any[]>([])
+  const [actionPlanHistory, setActionPlanHistory] = useState<ActionPlanData[]>([])
   const [actionPlansLoading, setActionPlansLoading] = useState(false)
 
   // WatchlistAgent 형식으로 변환
@@ -62,9 +63,9 @@ export function FocusManagement() {
       // Derive action plan status from actionPlans data
       let actionPlanStatus: "none" | "pending" | "in-progress" | "completed" | "delayed" = "none"
       if (actionPlanHistory.length > 0) {
-        const agentPlan = actionPlanHistory.find((p: any) => p.agentId === agent.agentId)
+        const agentPlan = actionPlanHistory.find((p) => p.agentId === agent.agentId)
         if (agentPlan) {
-          actionPlanStatus = agentPlan.status || "none"
+          actionPlanStatus = (agentPlan.status as typeof actionPlanStatus) || "none"
         }
       }
 
@@ -104,19 +105,19 @@ export function FocusManagement() {
         const response = await fetch('/api/action-plans')
         const result = await response.json()
         if (result.success && result.data) {
-          const plans = result.data
+          const plans: ActionPlanData[] = result.data
           setActionPlanHistory(plans)
 
           // Calculate statistics from action plans
           const totalPlans = plans.length
-          const completedPlans = plans.filter((p: any) => p.status === 'completed').length
-          const inProgressPlans = plans.filter((p: any) => p.status === 'in-progress').length
-          const delayedPlans = plans.filter((p: any) => p.status === 'delayed').length
+          const completedPlans = plans.filter((p: ActionPlanData) => p.status === 'completed').length
+          const inProgressPlans = plans.filter((p: ActionPlanData) => p.status === 'in-progress').length
+          const delayedPlans = plans.filter((p: ActionPlanData) => p.status === 'delayed').length
 
           // Calculate average improvement from completed plans
           const improvementValues = plans
-            .filter((p: any) => p.improvement !== undefined && p.improvement !== null)
-            .map((p: any) => p.improvement)
+            .filter((p: ActionPlanData) => p.improvement !== undefined && p.improvement !== null)
+            .map((p: ActionPlanData) => p.improvement!)
           const avgImprovement = improvementValues.length > 0
             ? Number((improvementValues.reduce((a: number, b: number) => a + b, 0) / improvementValues.length).toFixed(2))
             : 0
@@ -161,7 +162,7 @@ export function FocusManagement() {
     setPlanModalOpen(true)
   }
 
-  const handleSavePlan = async (plan: ActionPlanData) => {
+  const handleSavePlan = async (plan: ModalActionPlanData) => {
     try {
       const agentInfo = selectedAgent
       const payload = {
@@ -189,15 +190,15 @@ export function FocusManagement() {
         const refreshRes = await fetch('/api/action-plans')
         const refreshResult = await refreshRes.json()
         if (refreshResult.success && refreshResult.data) {
-          const plans = refreshResult.data
+          const plans: ActionPlanData[] = refreshResult.data
           setActionPlanHistory(plans)
           const totalPlans = plans.length
-          const completedPlans = plans.filter((p: any) => p.status === 'completed').length
-          const inProgressPlans = plans.filter((p: any) => p.status === 'in-progress').length
-          const delayedPlans = plans.filter((p: any) => p.status === 'delayed').length
+          const completedPlans = plans.filter((p: ActionPlanData) => p.status === 'completed').length
+          const inProgressPlans = plans.filter((p: ActionPlanData) => p.status === 'in-progress').length
+          const delayedPlans = plans.filter((p: ActionPlanData) => p.status === 'delayed').length
           const improvementValues = plans
-            .filter((p: any) => p.improvement !== undefined && p.improvement !== null)
-            .map((p: any) => p.improvement)
+            .filter((p: ActionPlanData) => p.improvement !== undefined && p.improvement !== null)
+            .map((p: ActionPlanData) => p.improvement!)
           const avgImprovement = improvementValues.length > 0
             ? Number((improvementValues.reduce((a: number, b: number) => a + b, 0) / improvementValues.length).toFixed(2))
             : 0

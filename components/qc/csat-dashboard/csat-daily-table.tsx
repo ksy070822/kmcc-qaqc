@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2 } from "lucide-react"
 import { isWeekend, getDayLabel } from "@/lib/utils"
+import type { CSATDailyTableRow } from "@/lib/types"
 
 interface Props {
   center: string
@@ -12,7 +13,7 @@ interface Props {
 }
 
 export function CSATDailyTable({ center, startDate, endDate }: Props) {
-  const [data, setData] = useState<any[]>([])
+  const [data, setData] = useState<CSATDailyTableRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -58,7 +59,7 @@ export function CSATDailyTable({ center, startDate, endDate }: Props) {
       <TableBody>
         {data.length === 0 ? (
           <TableRow><TableCell colSpan={10} className="text-center text-muted-foreground text-xs py-8">데이터가 없습니다</TableCell></TableRow>
-        ) : data.map((row: any, i: number) => {
+        ) : data.map((row, i) => {
           const lowCount = (Number(row.score1Count) || 0) + (Number(row.score2Count) || 0)
           const total = Number(row.reviewCount) || 0
           const lowRate = total > 0 ? (lowCount / total) * 100 : 0

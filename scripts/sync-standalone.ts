@@ -78,7 +78,7 @@ async function runSync() {
     const CHUNK_SIZE = 2000;
     for (let i = 0; i < evaluationIds.length; i += CHUNK_SIZE) {
       const chunk = evaluationIds.slice(i, i + CHUNK_SIZE);
-      const idsList = chunk.map(id => `'${id.replace(/'/g, "''")}'`).join(',');
+      const idsList = chunk.map(id => `'${String(id).replace(/'/g, "''")}'`).join(',');
 
       if (!idsList) continue;
 
@@ -104,7 +104,7 @@ async function runSync() {
 
   // 중복 제거 (새로운 데이터만 필터링)
   const newEvaluations = allEvaluations.filter(
-    (e) => !existingIds.has(e.evaluationId)
+    (e) => !existingIds.has(String(e.evaluationId))
   );
 
   console.log('[Sync Standalone] 새 데이터: ' + newEvaluations.length + '건 (전체: ' + allEvaluations.length + '건)');
@@ -120,12 +120,13 @@ async function runSync() {
     let consultDate: string | null = null;
     if (evalData.rawRow) {
       // 상담일시 컬럼 찾기
-      const consultDateIdx = evalData.rawRow.findIndex((cell: any) => {
-        const str = cell?.toString().toLowerCase() || '';
+      const rawRow = evalData.rawRow as unknown[];
+      const consultDateIdx = rawRow.findIndex((cell) => {
+        const str = cell != null ? String(cell).toLowerCase() : '';
         return str.includes('상담일시') || str.includes('consult_date');
       });
-      if (consultDateIdx >= 0 && evalData.rawRow[consultDateIdx + 1]) {
-        consultDate = evalData.rawRow[consultDateIdx + 1]?.toString().trim() || null;
+      if (consultDateIdx >= 0 && rawRow[consultDateIdx + 1]) {
+        consultDate = String(rawRow[consultDateIdx + 1]).trim() || null;
       }
     }
 

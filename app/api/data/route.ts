@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server"
+import { NextRequest, NextResponse } from "next/server"
 import { BigQuery } from "@google-cloud/bigquery"
 import {
   getDashboardStats,
@@ -15,13 +15,16 @@ import {
   warmupHrCache,
 } from "@/lib/bigquery"
 import { getQADashboardStats, getQACenterStats, getQAScoreTrend, getQAItemStats, getQAMonthlyTable, getQAConsultTypeStats, getQAAgentPerformance, getQAUnderperformerCount, getQARoundStats } from "@/lib/bigquery-qa"
-import { getCSATDashboardStats, getCSATLowScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats, getCSATWeeklyTable, getCSATLowScoreDetail } from "@/lib/bigquery-csat"
+import { getCSATDashboardStats, getCSATLowScoreTrend, getCSATServiceStats, getCSATDailyTable, getCSATTagStats, getCSATWeeklyTable, getCSATLowScoreDetail, getCSATBreakdownStats, getCSATReviewList } from "@/lib/bigquery-csat"
+import { classifyComplaintCauses } from "@/lib/ai-classify-complaint"
 import { getQuizDashboardStats, getQuizScoreTrend, getQuizAgentStats, getQuizServiceTrend } from "@/lib/bigquery-quiz"
 import { getAgentMonthlySummaries, getAgentIntegratedProfile, getCrossAnalysis } from "@/lib/bigquery-integrated"
 import { getVoiceProductivity, getVoiceHandlingTime, getVoiceDailyTrend, getChatProductivity, getChatDailyTrend, getBoardProductivity, getWeeklySummary, getForeignLanguageProductivity } from "@/lib/bigquery-productivity"
 import { getSLAScorecard, getSLAMonthlyTrend, getSLADailyTracking } from "@/lib/bigquery-sla"
 import { getAttendanceOverview, getAttendanceDetail, getAttendanceDailyTrend, getAgentAbsenceList } from "@/lib/bigquery-attendance"
 import { getCorsHeaders } from "@/lib/cors"
+import { requireAuth, AuthError } from "@/lib/auth-server"
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT, CENTER_TARGET_RATES } from "@/lib/constants"
 
 const bq = new BigQuery({
   projectId: "csopp-25f2",
@@ -31,12 +34,65 @@ const bq = new BigQuery({
 // CORS 헤더
 const corsHeaders = getCorsHeaders()
 
+// ── 생산성 스코프 필터 (관리자 뷰: center/service → 해당 데이터만) ──
+const SERVICE_TO_VERTICAL: Record<string, string> = {
+  "택시": "택시", "대리": "대리", "배송": "퀵/배송", "퀵": "퀵/배송",
+  "바이크": "바이크", "주차": "주차", "내비": "내비",
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function applyProductivityScope(result: any, params: URLSearchParams) {
+  const center = params.get("center") || undefined
+  const service = params.get("service") || undefined
+  if (!center && !service) return
+  if (!result?.success || !result?.data) return
+
+  const vertical = service ? SERVICE_TO_VERTICAL[service] || service : undefined
+  const d = result.data
+
+  // 배열 직접 필터 (overview, verticalStats, processingTime, dailyTrend 등)
+  const filterArr = <T extends Record<string, unknown>>(arr: T[] | undefined): T[] | undefined => {
+    if (!Array.isArray(arr)) return arr
+    return arr.filter(item => {
+      if (center && item.center && item.center !== center) return false
+      if (vertical && item.vertical && item.vertical !== vertical) return false
+      return true
+    })
+  }
+
+  // 중첩 구조 (voice/chat: { overview, verticalStats, processingTime })
+  if (d.overview) d.overview = filterArr(d.overview)
+  if (d.verticalStats) d.verticalStats = filterArr(d.verticalStats)
+  if (d.processingTime) d.processingTime = filterArr(d.processingTime)
+
+  // 배열 자체가 data인 경우 (voice-time, board, foreign, weekly-summary, trends)
+  if (Array.isArray(d)) {
+    result.data = d.filter((item: Record<string, unknown>) => {
+      if (center && item.center && item.center !== center) return false
+      if (vertical && item.vertical && item.vertical !== vertical) return false
+      return true
+    })
+  }
+}
+
 export async function OPTIONS() {
   return NextResponse.json({}, { headers: corsHeaders })
 }
 
 // GET /api/data?type=dashboard&date=2025-12-17
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
+  try {
+    requireAuth(request)
+  } catch (err) {
+    if (err instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: err.message },
+        { status: err.statusCode, headers: corsHeaders },
+      )
+    }
+    throw err
+  }
+
   const { searchParams } = new URL(request.url)
   const type = searchParams.get("type") || "dashboard"
   const date = searchParams.get("date") || undefined
@@ -64,12 +120,14 @@ export async function GET(request: Request) {
         }, { headers: corsHeaders })
       }
 
-      case "dashboard":
-        console.log(`[API] Fetching dashboard stats for date: ${date || 'yesterday'}`)
+      case "dashboard": {
+        const dCenter = searchParams.get("center") || undefined
+        const dService = searchParams.get("service") || undefined
+        console.log(`[API] Fetching dashboard stats for date: ${date || 'yesterday'}, center: ${dCenter}, service: ${dService}`)
         // HR 캐시 사전 빌드 (근속기간별 탭 속도 개선)
         warmupHrCache()
         try {
-          result = await getDashboardStats(date, startDate, endDate)
+          result = await getDashboardStats(date, startDate, endDate, dCenter, dService)
           console.log(`[API] Dashboard stats result:`, result)
         } catch (dashboardError) {
           console.error("[API] Dashboard stats error:", dashboardError)
@@ -83,19 +141,29 @@ export async function GET(request: Request) {
           )
         }
         break
+      }
 
-      case "centers":
-        result = await getCenterStats(startDate, endDate)
+      case "centers": {
+        const cCenter = searchParams.get("center") || undefined
+        const cService = searchParams.get("service") || undefined
+        result = await getCenterStats(startDate, endDate, cCenter, cService)
         break
+      }
 
-      case "trend":
-        result = await getDailyTrend(days, startDate, endDate)
+      case "trend": {
+        const tCenter = searchParams.get("center") || undefined
+        const tService = searchParams.get("service") || undefined
+        result = await getDailyTrend(days, startDate, endDate, tCenter, tService)
         break
+      }
 
-      case "weekly-trend":
+      case "weekly-trend": {
         const weeks = parseInt(searchParams.get("weeks") || "6")
-        result = await getWeeklyTrend(weeks)
+        const wtCenter = searchParams.get("center") || undefined
+        const wtService = searchParams.get("service") || undefined
+        result = await getWeeklyTrend(weeks, wtCenter, wtService)
         break
+      }
 
       case "agents":
         result = await getAgents({
@@ -237,14 +305,14 @@ export async function GET(request: Request) {
             SELECT COUNT(DISTINCT agent_id) AS cnt
             FROM (
               SELECT agent_id,
-                SUM(CASE WHEN greeting_error THEN 1 ELSE 0 END + CASE WHEN empathy_error THEN 1 ELSE 0 END + CASE WHEN apology_error THEN 1 ELSE 0 END + CASE WHEN additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN unkind_error THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*) * 5, 0) AS att_rate,
-                SUM(CASE WHEN consult_type_error THEN 1 ELSE 0 END + CASE WHEN guide_error THEN 1 ELSE 0 END + CASE WHEN identity_check_error THEN 1 ELSE 0 END + CASE WHEN required_search_error THEN 1 ELSE 0 END + CASE WHEN wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN process_missing_error THEN 1 ELSE 0 END + CASE WHEN process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN system_error THEN 1 ELSE 0 END + CASE WHEN id_mapping_error THEN 1 ELSE 0 END + CASE WHEN flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN history_error THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*) * 11, 0) AS ops_rate
+                SUM(CASE WHEN greeting_error THEN 1 ELSE 0 END + CASE WHEN empathy_error THEN 1 ELSE 0 END + CASE WHEN apology_error THEN 1 ELSE 0 END + CASE WHEN additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN unkind_error THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}, 0) AS att_rate,
+                SUM(CASE WHEN consult_type_error THEN 1 ELSE 0 END + CASE WHEN guide_error THEN 1 ELSE 0 END + CASE WHEN identity_check_error THEN 1 ELSE 0 END + CASE WHEN required_search_error THEN 1 ELSE 0 END + CASE WHEN wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN process_missing_error THEN 1 ELSE 0 END + CASE WHEN process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN system_error THEN 1 ELSE 0 END + CASE WHEN id_mapping_error THEN 1 ELSE 0 END + CASE WHEN flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN history_error THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}, 0) AS ops_rate
               FROM \`csopp-25f2.KMCC_QC.evaluations\` e
               WHERE e.evaluation_date >= @thisWeekStart AND e.evaluation_date <= @endDate
                 AND e.center = @center ${serviceFilter}
               GROUP BY agent_id
             ) sub
-            WHERE att_rate > 3.3 OR ops_rate > 3.9
+            WHERE att_rate > ${CENTER_TARGET_RATES.용산.attitude} OR ops_rate > ${CENTER_TARGET_RATES.용산.ops}
           )
           SELECT
             (SELECT evals FROM this_week) AS tw_evals,
@@ -256,16 +324,6 @@ export async function GET(request: Request) {
             (SELECT ops_error_items FROM prev_week) AS pw_ops_errors,
             (SELECT cnt FROM underperforming) AS underperforming_cnt
         `
-
-        const [summaryRows] = await bq.query({ query: wgQuery, params: wgParams })
-        const s = (summaryRows as Record<string, unknown>[])[0] || {}
-        const twEvals = Number(s.tw_evals) || 0
-        const pwEvals = Number(s.pw_evals) || 0
-
-        const attRate = twEvals > 0 ? (Number(s.tw_att_errors) / (twEvals * 5)) * 100 : 0
-        const opsRate = twEvals > 0 ? (Number(s.tw_ops_errors) / (twEvals * 11)) * 100 : 0
-        const prevAttRate = pwEvals > 0 ? (Number(s.pw_att_errors) / (pwEvals * 5)) * 100 : 0
-        const prevOpsRate = pwEvals > 0 ? (Number(s.pw_ops_errors) / (pwEvals * 11)) * 100 : 0
 
         const itemQuery = `
           SELECT item_name, COUNT(*) AS cnt
@@ -296,7 +354,20 @@ export async function GET(request: Request) {
           ORDER BY cnt DESC
           LIMIT 5
         `
-        const [itemRows] = await bq.query({ query: itemQuery, params: wgParams })
+
+        // summary + items 병렬 실행
+        const [[summaryRows], [itemRows]] = await Promise.all([
+          bq.query({ query: wgQuery, params: wgParams }),
+          bq.query({ query: itemQuery, params: wgParams }),
+        ])
+        const s = (summaryRows as Record<string, unknown>[])[0] || {}
+        const twEvals = Number(s.tw_evals) || 0
+        const pwEvals = Number(s.pw_evals) || 0
+
+        const attRate = twEvals > 0 ? (Number(s.tw_att_errors) / (twEvals * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+        const opsRate = twEvals > 0 ? (Number(s.tw_ops_errors) / (twEvals * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
+        const prevAttRate = pwEvals > 0 ? (Number(s.pw_att_errors) / (pwEvals * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+        const prevOpsRate = pwEvals > 0 ? (Number(s.pw_ops_errors) / (pwEvals * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
         const topIssueItems = (itemRows as Record<string, unknown>[]).map(r => ({
           item: String(r.item_name),
           count: Number(r.cnt),
@@ -414,10 +485,10 @@ export async function GET(request: Request) {
         const twEvals2 = Number(summaryRow?.val1) || 0
         const pwEvals2 = Number(prevRow?.val1) || 0
 
-        const attRate2 = twEvals2 > 0 ? (Number(summaryRow?.val4) / (twEvals2 * 5)) * 100 : 0
-        const opsRate2 = twEvals2 > 0 ? (Number(summaryRow?.val5) / (twEvals2 * 11)) * 100 : 0
-        const prevAttRate2 = pwEvals2 > 0 ? (Number(prevRow?.val2) / (pwEvals2 * 5)) * 100 : 0
-        const prevOpsRate2 = pwEvals2 > 0 ? (Number(prevRow?.val3) / (pwEvals2 * 11)) * 100 : 0
+        const attRate2 = twEvals2 > 0 ? (Number(summaryRow?.val4) / (twEvals2 * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+        const opsRate2 = twEvals2 > 0 ? (Number(summaryRow?.val5) / (twEvals2 * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
+        const prevAttRate2 = pwEvals2 > 0 ? (Number(prevRow?.val2) / (pwEvals2 * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+        const prevOpsRate2 = pwEvals2 > 0 ? (Number(prevRow?.val3) / (pwEvals2 * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
 
         const groupSummary = groupRows.map(r => {
           const gEvals = Number(r.val3) || 0
@@ -425,8 +496,8 @@ export async function GET(request: Request) {
             service: String(r.val1),
             channel: String(r.val2),
             evaluations: gEvals,
-            attitudeRate: gEvals > 0 ? (Number(r.val4) / (gEvals * 5)) * 100 : 0,
-            opsRate: gEvals > 0 ? (Number(r.val5) / (gEvals * 11)) * 100 : 0,
+            attitudeRate: gEvals > 0 ? (Number(r.val4) / (gEvals * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0,
+            opsRate: gEvals > 0 ? (Number(r.val5) / (gEvals * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0,
           }
         })
 
@@ -547,17 +618,24 @@ export async function GET(request: Request) {
         })
         break
 
-      // ── CSAT(상담평점) ──
-      case "csat-dashboard":
+      // ── 상담평점 ──
+      case "csat-dashboard": {
+        const cdCenter = searchParams.get("center") || undefined
+        const cdService = searchParams.get("service") || undefined
         result = await getCSATDashboardStats(
           searchParams.get("startDate"),
-          searchParams.get("endDate")
+          searchParams.get("endDate"),
+          cdCenter,
+          cdService
         )
         break
+      }
 
       case "csat-trend": {
         const csatDays = parseInt(searchParams.get("days") || "30")
-        result = await getCSATLowScoreTrend(csatDays)
+        const ctCenter = searchParams.get("center") || undefined
+        const ctService = searchParams.get("service") || undefined
+        result = await getCSATLowScoreTrend(csatDays, ctCenter, ctService)
         break
       }
 
@@ -569,6 +647,13 @@ export async function GET(request: Request) {
           endDate: searchParams.get("endDate") || undefined,
         })
         break
+
+      case "csat-breakdown": {
+        const cbCenter = searchParams.get("center") || undefined
+        const cbService = searchParams.get("service") || undefined
+        result = await getCSATBreakdownStats(cbCenter, cbService, searchParams.get("startDate") || undefined, searchParams.get("endDate") || undefined)
+        break
+      }
 
       case "csat-daily":
         result = await getCSATDailyTable({
@@ -587,31 +672,102 @@ export async function GET(request: Request) {
         })
         break
 
-      case "csat-weekly":
-        result = await getCSATWeeklyTable()
+      case "csat-review-list": {
+        const rlCenter = searchParams.get("center") || undefined
+        const rlService = searchParams.get("service") || undefined
+        const rlSentiment = searchParams.get("sentiment") as "POSITIVE" | "NEGATIVE" | undefined
+        result = await getCSATReviewList({
+          center: rlCenter,
+          service: rlService,
+          startDate: searchParams.get("startDate") || undefined,
+          endDate: searchParams.get("endDate") || undefined,
+          sentiment: rlSentiment || undefined,
+        })
+        // AI 불만원인 분류 (1~2점 부정 리뷰만)
+        if (result?.success && result.data?.reviews) {
+          try {
+            const lowReviews = result.data.reviews
+              .map((r, i) => ({ index: i, comment: r.comment, tags: r.tags, score: r.score }))
+              .filter(r => r.score <= 2)
+            if (lowReviews.length > 0) {
+              const causes = await classifyComplaintCauses(lowReviews)
+              for (const [idx, cause] of causes) {
+                result.data.reviews[idx].complaintCause = cause
+              }
+            }
+          } catch (e) {
+            console.error("[API] csat-review-list AI classify error (non-fatal):", e)
+          }
+        }
         break
+      }
 
-      case "csat-low-score":
-        result = await getCSATLowScoreDetail()
+      case "csat-weekly": {
+        const cwCenter = searchParams.get("center") || undefined
+        const cwService = searchParams.get("service") || undefined
+        result = await getCSATWeeklyTable(cwCenter, cwService)
         break
+      }
+
+      case "csat-low-score": {
+        const clCenter = searchParams.get("center") || undefined
+        const clService = searchParams.get("service") || undefined
+        result = await getCSATLowScoreDetail(clCenter, clService)
+        // AI 불만원인 분류 (1~2점 리뷰만)
+        if (result?.success && result.data) {
+          try {
+            const allReviews: { index: number; comment: string; tags: string[] }[] = []
+            const reviewMap: { weekIdx: number; scoreKey: "score1Reviews" | "score2Reviews"; reviewIdx: number }[] = []
+            for (let wi = 0; wi < result.data.length; wi++) {
+              const week = result.data[wi]
+              for (const scoreKey of ["score1Reviews", "score2Reviews"] as const) {
+                for (let ri = 0; ri < week[scoreKey].length; ri++) {
+                  const r = week[scoreKey][ri]
+                  const globalIdx = allReviews.length
+                  allReviews.push({ index: globalIdx, comment: r.comment, tags: r.tags })
+                  reviewMap.push({ weekIdx: wi, scoreKey, reviewIdx: ri })
+                }
+              }
+            }
+            if (allReviews.length > 0) {
+              const causes = await classifyComplaintCauses(allReviews)
+              for (const [globalIdx, cause] of causes) {
+                const m = reviewMap[globalIdx]
+                result.data[m.weekIdx][m.scoreKey][m.reviewIdx].complaintCause = cause
+              }
+            }
+          } catch (e) {
+            console.error("[API] csat-low-score AI classify error (non-fatal):", e)
+          }
+        }
+        break
+      }
 
       // ── 직무테스트(Quiz) ──
-      case "quiz-dashboard":
+      case "quiz-dashboard": {
+        const qdCenter = searchParams.get("center") || undefined
+        const qdService = searchParams.get("service") || undefined
         result = await getQuizDashboardStats(
           searchParams.get("startMonth"),
-          searchParams.get("endMonth")
+          searchParams.get("endMonth"),
+          qdCenter,
+          qdService
         )
         break
+      }
 
       case "quiz-trend": {
         const quizMonths = parseInt(searchParams.get("months") || "6")
-        result = await getQuizScoreTrend(quizMonths)
+        const qtCenter = searchParams.get("center") || undefined
+        const qtService = searchParams.get("service") || undefined
+        result = await getQuizScoreTrend(quizMonths, qtCenter, qtService)
         break
       }
 
       case "quiz-agents":
         result = await getQuizAgentStats({
           center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
           month: searchParams.get("month") || undefined,
           startMonth: searchParams.get("startMonth") || undefined,
           endMonth: searchParams.get("endMonth") || undefined,
@@ -621,6 +777,7 @@ export async function GET(request: Request) {
       case "quiz-service-trend":
         result = await getQuizServiceTrend({
           center: searchParams.get("center") || undefined,
+          service: searchParams.get("service") || undefined,
           months: parseInt(searchParams.get("months") || "6"),
         })
         break
@@ -655,38 +812,54 @@ export async function GET(request: Request) {
         break
 
       // ── 생산성 (Productivity) ──
-      case "productivity-voice":
+      // 관리자 스코프: center/service → 해당 센터·버티컬만 필터
+      case "productivity-voice": {
         result = await getVoiceProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-voice-time":
+      case "productivity-voice-time": {
         result = await getVoiceHandlingTime(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-voice-trend":
+      case "productivity-voice-trend": {
         result = await getVoiceDailyTrend(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-chat":
+      case "productivity-chat": {
         result = await getChatProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-chat-trend":
+      case "productivity-chat-trend": {
         result = await getChatDailyTrend(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-board":
+      case "productivity-board": {
         result = await getBoardProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
-      case "productivity-foreign":
+      case "productivity-foreign": {
         result = await getForeignLanguageProductivity(searchParams.get("month"), searchParams.get("startDate"), searchParams.get("endDate"))
+        applyProductivityScope(result, searchParams)
         break
+      }
 
       case "productivity-weekly-summary": {
         const wsCh = (searchParams.get("channel") || "voice") as "voice" | "chat"
         const wsWeeks = parseInt(searchParams.get("weeks") || "3")
         result = await getWeeklySummary(wsCh, wsWeeks)
+        applyProductivityScope(result, searchParams)
         break
       }
 

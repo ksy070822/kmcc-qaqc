@@ -56,7 +56,7 @@ export function useActionPlans(options: UseActionPlansOptions = {}) {
         fetchPlans()
     }, [fetchPlans])
 
-    const savePlan = async (plan: any) => {
+    const savePlan = async (plan: Record<string, unknown>) => {
         const response = await fetch("/api/action-plans", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -70,7 +70,7 @@ export function useActionPlans(options: UseActionPlansOptions = {}) {
         }
     }
 
-    const updatePlan = async (id: string, updates: any) => {
+    const updatePlan = async (id: string, updates: Record<string, unknown>) => {
         const response = await fetch("/api/action-plans", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MypageBackButton } from "@/components/mypage/mypage-back-button"
 import { useMypageCSATDetail } from "@/hooks/use-mypage-csat-detail"
+import type { CSATComparison } from "@/lib/types"
 import {
   LineChart,
   Line,
@@ -22,6 +23,7 @@ import {
   PolarAngleAxis,
   PolarRadiusAxis,
   Radar,
+  ReferenceLine,
   Cell,
 } from "recharts"
 import {
@@ -35,6 +37,8 @@ import {
   CalendarDays,
   CalendarRange,
   MessageSquareText,
+  Users,
+  BarChart3,
 } from "lucide-react"
 
 interface MypageCsatDetailProps {
@@ -60,13 +64,51 @@ function DeltaBadge({ value, suffix = "", invert = false }: { value: number; suf
   const isGood = invert ? value < 0 : value > 0
   return (
     <span className={cn("text-[10px] font-bold", isGood ? "text-emerald-500" : "text-rose-500")}>
-      {value > 0 ? "▲" : "▼"} {Math.abs(value).toFixed(1)}{suffix}
+      {value > 0 ? "+" : ""}{value.toFixed(1)}{suffix}
     </span>
   )
 }
 
+/** 비교 바 (본인 vs 센터 vs 서비스그룹) */
+function CompareBar({ compare, unit = "", invert = false }: { compare: CSATComparison; unit?: string; invert?: boolean }) {
+  const items = [
+    { label: "본인", value: compare.agent, color: "bg-blue-500" },
+    { label: "센터", value: compare.center, color: "bg-slate-400" },
+    { label: "서비스", value: compare.serviceGroup, color: "bg-slate-300" },
+  ]
+  const max = Math.max(...items.map(i => i.value), 0.1)
+  return (
+    <div className="space-y-1.5 mt-2">
+      {items.map(item => {
+        const isAgent = item.label === "본인"
+        const diff = isAgent ? 0 : compare.agent - item.value
+        const diffGood = invert ? diff < 0 : diff > 0
+        return (
+          <div key={item.label} className="flex items-center gap-2 text-[10px]">
+            <span className={cn("w-8 text-right font-medium", isAgent ? "text-blue-600" : "text-slate-500")}>{item.label}</span>
+            <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className={cn("h-full rounded-full transition-all", item.color)}
+                style={{ width: `${(item.value / max) * 100}%` }}
+              />
+            </div>
+            <span className={cn("w-14 tabular-nums", isAgent ? "font-bold text-blue-700" : "text-slate-500")}>
+              {item.value.toFixed(unit === "%" ? 1 : 2)}{unit}
+            </span>
+            {!isAgent && diff !== 0 && (
+              <span className={cn("text-[9px] font-bold w-10 text-right", diffGood ? "text-emerald-500" : "text-rose-500")}>
+                {diff > 0 ? "+" : ""}{diff.toFixed(1)}
+              </span>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
-  const [period, setPeriod] = useState<"weekly" | "monthly">("monthly")
+  const [period, setPeriod] = useState<"weekly" | "monthly">("weekly")
   const [month, setMonth] = useState(() => {
     const d = new Date()
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
@@ -79,7 +121,7 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
-        <span className="ml-2 text-sm text-slate-500">CSAT 데이터를 불러오는 중...</span>
+        <span className="ml-2 text-sm text-slate-500">상담평점 데이터를 불러오는 중...</span>
       </div>
     )
   }
@@ -88,11 +130,13 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
   const sentimentTags = data?.sentimentTags ?? []
   const maxTagCount = sentimentTags.length > 0 ? Math.max(...sentimentTags.map(t => t.count)) : 1
 
-  // KPI 증감 계산
+  // KPI 증감
+  const avgDiff = Math.round(((data?.avgScore ?? 0) - (data?.prevMonthAvg ?? 0)) * 100) / 100
   const score5Diff = Math.round(((data?.score5Rate ?? 0) - (data?.prevScore5Rate ?? 0)) * 10) / 10
   const lowScoreDiff = Math.round(((data?.lowScoreRate ?? 0) - (data?.prevLowScoreRate ?? 0)) * 10) / 10
-  const avgDiff = Math.round(((data?.avgScore ?? 0) - (data?.prevMonthAvg ?? 0)) * 100) / 100
   const percentile = data?.percentile ?? 0
+
+  const periodText = period === "weekly" ? "전주대비" : "전월대비"
 
   return (
     <div className="space-y-6">
@@ -100,7 +144,6 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <MypageBackButton onClick={onBack} />
         <div className="flex items-center gap-2">
-          {/* Period toggle */}
           <div className="flex bg-slate-100 rounded-lg p-0.5">
             <button
               onClick={() => { setPeriod("weekly"); setWeekOffset(0) }}
@@ -122,7 +165,6 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
             </button>
           </div>
 
-          {/* Period navigation */}
           {period === "weekly" ? (
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setWeekOffset(w => w - 1)}>
@@ -146,18 +188,18 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
         </div>
       </div>
 
-      <h2 className="text-lg font-bold text-slate-900">상담 평점 (CSAT) 상세</h2>
+      <h2 className="text-lg font-bold text-slate-900">상담평점 상세</h2>
 
       {!hasData ? (
         <div className="flex flex-col items-center justify-center py-16 text-slate-400">
           <Star className="h-10 w-10 mb-3 text-slate-300" />
-          <p className="text-sm">해당 기간 CSAT 데이터가 없습니다</p>
+          <p className="text-sm">해당 기간 상담평점 데이터가 없습니다</p>
           <p className="text-xs mt-1">데이터 연동 준비 중이거나 리뷰가 없는 기간입니다</p>
         </div>
       ) : (
         <>
-          {/* KPI Cards 4개 */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* KPI Cards — 5개 (누적리뷰, 리뷰비중, 5점비중, 1·2점비중, 통합평점) */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             {/* 1) 누적 리뷰수 */}
             <div className="rounded-xl p-4 border border-slate-200 bg-emerald-50">
               <p className="text-xs text-slate-500 mb-2">누적 리뷰수</p>
@@ -165,35 +207,58 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
                 {data?.totalReviews ?? 0}
                 <span className="text-sm font-normal ml-0.5 text-emerald-400">건</span>
               </p>
+              <p className="text-[10px] text-slate-400 mt-1">
+                상담 {(data?.totalConsults ?? 0).toLocaleString("ko-KR")}건
+              </p>
+              {data?.compare && <CompareBar compare={data.compare.reviewRate} unit="%" />}
             </div>
 
-            {/* 2) 5점 만점 비율 */}
+            {/* 2) 리뷰 비중 */}
+            <div className="rounded-xl p-4 border border-slate-200 bg-sky-50">
+              <p className="text-xs text-slate-500 mb-2">상담대비 리뷰비중</p>
+              <p className="text-2xl font-bold text-sky-900 tabular-nums">
+                {(data?.reviewRate ?? 0).toFixed(1)}
+                <span className="text-sm font-normal ml-0.5 text-sky-400">%</span>
+              </p>
+            </div>
+
+            {/* 3) 5점 만점 비율 */}
             <div className="rounded-xl p-4 border border-slate-200 bg-teal-50">
               <p className="text-xs text-slate-500 mb-2">5점 만점 비율</p>
               <p className="text-2xl font-bold text-teal-900 tabular-nums">
                 {(data?.score5Rate ?? 0).toFixed(1)}
                 <span className="text-sm font-normal ml-0.5 text-teal-400">%</span>
               </p>
-              <div className="mt-1">
+              <div className="flex items-center gap-2 mt-1">
                 <DeltaBadge value={score5Diff} suffix="%p" />
-                <span className="text-[10px] text-slate-400 ml-1">{period === "weekly" ? "전주대비" : "전월대비"}</span>
+                <span className="text-[10px] text-slate-400">{periodText}</span>
               </div>
+              {data?.compare && <CompareBar compare={data.compare.score5Rate} unit="%" />}
             </div>
 
-            {/* 3) 불만(1~2점) 비율 */}
+            {/* 4) 1·2점 비율 (한 카드에 분리 뱃지) */}
             <div className="rounded-xl p-4 border border-slate-200 bg-red-50">
-              <p className="text-xs text-slate-500 mb-2">불만(1~2점) 비율</p>
+              <p className="text-xs text-slate-500 mb-2">1·2점 비율</p>
               <p className="text-2xl font-bold text-red-900 tabular-nums">
                 {(data?.lowScoreRate ?? 0).toFixed(1)}
                 <span className="text-sm font-normal ml-0.5 text-red-400">%</span>
               </p>
-              <div className="mt-1">
-                <DeltaBadge value={lowScoreDiff} suffix="%p" invert />
-                <span className="text-[10px] text-slate-400 ml-1">{period === "weekly" ? "전주대비" : "전월대비"}</span>
+              <div className="flex gap-2 mt-1.5">
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700">
+                  1점 {data?.score1Count ?? 0}건 ({(data?.score1Rate ?? 0).toFixed(1)}%)
+                </span>
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-orange-100 text-orange-700">
+                  2점 {data?.score2Count ?? 0}건 ({(data?.score2Rate ?? 0).toFixed(1)}%)
+                </span>
               </div>
+              <div className="flex items-center gap-2 mt-1.5">
+                <DeltaBadge value={lowScoreDiff} suffix="%p" invert />
+                <span className="text-[10px] text-slate-400">{periodText}</span>
+              </div>
+              {data?.compare && <CompareBar compare={data.compare.lowScoreRate} unit="%" invert />}
             </div>
 
-            {/* 4) 통합 평균 평점 */}
+            {/* 5) 통합 평균 평점 */}
             <div className="rounded-xl p-4 border border-slate-200 bg-slate-800">
               <p className="text-xs text-white/60 mb-2">통합 평균 평점</p>
               <div className="flex items-center gap-2 mb-1">
@@ -210,25 +275,75 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
               </div>
               <div className="mt-2 pt-2 border-t border-white/20 space-y-1">
                 <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">{period === "weekly" ? "전주대비" : "전월대비"}</span>
+                  <span className="text-white/50">{periodText}</span>
                   <span className={cn("font-bold", avgDiff >= 0 ? "text-emerald-400" : "text-rose-400")}>
-                    {avgDiff > 0 ? "▲" : avgDiff < 0 ? "▼" : ""} {avgDiff !== 0 ? `${Math.abs(avgDiff)}점` : "-"}
+                    {avgDiff > 0 ? "+" : ""}{avgDiff !== 0 ? `${avgDiff}점` : "-"}
                   </span>
                 </div>
                 <div className="flex justify-between items-center text-[10px]">
-                  <span className="text-white/50">센터평균대비</span>
-                  {(() => {
-                    const cDiff = Math.round(((data?.avgScore ?? 0) - (data?.centerAvg ?? 0)) * 100) / 100
-                    return (
-                      <span className={cn("font-bold", cDiff >= 0 ? "text-emerald-400" : "text-rose-400")}>
-                        {cDiff > 0 ? "▲" : cDiff < 0 ? "▼" : ""} {cDiff !== 0 ? `${Math.abs(cDiff)}점` : "-"}
-                      </span>
-                    )
-                  })()}
+                  <span className="text-white/50">센터평균</span>
+                  <span className="text-white/70">{(data?.compare?.avgScore.center ?? 0).toFixed(2)}점</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px]">
+                  <span className="text-white/50">서비스그룹</span>
+                  <span className="text-white/70">{(data?.compare?.avgScore.serviceGroup ?? 0).toFixed(2)}점</span>
                 </div>
               </div>
             </div>
           </div>
+
+          {/* 비교 차트: 본인 vs 센터 vs 서비스그룹 */}
+          {data?.compare && (
+            <div className="bg-white border border-slate-200 rounded-xl p-5">
+              <p className="text-sm font-medium text-slate-700 mb-4 flex items-center gap-2">
+                <BarChart3 className="h-4 w-4 text-blue-500" />
+                그룹 비교 (본인 vs 센터 vs 서비스그룹)
+              </p>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart
+                  data={[
+                    {
+                      metric: "평균 평점",
+                      본인: data.compare.avgScore.agent,
+                      센터: data.compare.avgScore.center,
+                      서비스그룹: data.compare.avgScore.serviceGroup,
+                    },
+                    {
+                      metric: "5점 비율(%)",
+                      본인: data.compare.score5Rate.agent,
+                      센터: data.compare.score5Rate.center,
+                      서비스그룹: data.compare.score5Rate.serviceGroup,
+                    },
+                    {
+                      metric: "저점 비율(%)",
+                      본인: data.compare.lowScoreRate.agent,
+                      센터: data.compare.lowScoreRate.center,
+                      서비스그룹: data.compare.lowScoreRate.serviceGroup,
+                    },
+                    {
+                      metric: "리뷰 비중(%)",
+                      본인: data.compare.reviewRate.agent,
+                      센터: data.compare.reviewRate.center,
+                      서비스그룹: data.compare.reviewRate.serviceGroup,
+                    },
+                  ]}
+                  margin={{ top: 5, right: 10, left: -10, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#D9D9D9" />
+                  <XAxis dataKey="metric" tick={{ fontSize: 11, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
+                  <YAxis tick={{ fontSize: 10, fill: "#666666" }} axisLine={{ stroke: "#D9D9D9" }} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #D9D9D9" }}
+                    formatter={(v: number) => v.toFixed(1)}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
+                  <Bar dataKey="본인" fill="#3b82f6" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="센터" fill="#9ca3af" radius={[4, 4, 0, 0]} barSize={20} />
+                  <Bar dataKey="서비스그룹" fill="#d1d5db" radius={[4, 4, 0, 0]} barSize={20} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
 
           {/* Trend + Tags + Radar */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -259,8 +374,8 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
                         formatter={(v: number, name: string) => [v.toFixed(2), name]}
                       />
                       <Legend wrapperStyle={{ fontSize: 11, paddingTop: "10px" }} iconSize={8} />
-                      <Line type="monotone" dataKey="agentAvg" name="본인 평점" stroke="#10b981" strokeWidth={2.5} dot={{ r: 3, fill: "#10b981" }} activeDot={{ r: 5 }} />
-                      <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9E9E9E" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
+                      <Line type="monotone" dataKey="agentAvg" name="본인 평점" stroke="#3b82f6" strokeWidth={2.5} dot={{ r: 3, fill: "#3b82f6" }} activeDot={{ r: 5 }} />
+                      <Line type="monotone" dataKey="centerAvg" name="센터 평균" stroke="#9ca3af" strokeWidth={1.5} strokeDasharray="5 5" dot={{ r: 2 }} />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -301,7 +416,7 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
 
             {/* Right Column: Tags + Coaching */}
             <div className="space-y-4">
-              {/* Sentiment Tags with percentage bars */}
+              {/* Sentiment Tags */}
               <div className="bg-white border border-slate-200 rounded-xl p-5">
                 <p className="text-sm font-medium text-slate-700 mb-4">전체 태그 현황</p>
                 {sentimentTags.length > 0 ? (
@@ -354,7 +469,9 @@ export function MypageCsatDetail({ agentId, onBack }: MypageCsatDetailProps) {
                         <TrendingDown className="h-3 w-3" /> Improvement
                       </div>
                       <div className="text-xs font-bold text-slate-800 mb-1">불만 리뷰 비율 관리</div>
-                      <p className="text-[10px] text-slate-500 leading-relaxed">불만(1~2점) 비율이 {(data?.lowScoreRate ?? 0).toFixed(1)}%입니다. 불만 사유를 확인하고 개선해 주세요.</p>
+                      <p className="text-[10px] text-slate-500 leading-relaxed">
+                        1점 {data?.score1Count ?? 0}건 / 2점 {data?.score2Count ?? 0}건 — 총 {(data?.lowScoreRate ?? 0).toFixed(1)}% 불만 비율. 부정 태그를 확인하고 개선해 주세요.
+                      </p>
                     </div>
                   )}
                   {(data?.avgScore ?? 0) < 4.5 && (data?.lowScoreRate ?? 0) === 0 && (

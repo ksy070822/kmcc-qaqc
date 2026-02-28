@@ -99,7 +99,7 @@ export default function InstructorMainPage() {
         </div>
       </div>
 
-      {/* ═══ 품질 지표 (월간) — QA + CSAT + Quiz ═══ */}
+      {/* ═══ 품질 지표 (월간) — QA + 상담평점 + Quiz ═══ */}
       <div>
         <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-1.5">
           <ClipboardCheck className="h-4 w-4" />
@@ -114,7 +114,7 @@ export default function InstructorMainPage() {
           />
           <DomainCard
             icon={Star} iconBg="bg-amber-50" iconColor="text-amber-600"
-            title="CSAT 평균 (5점)" value={`${metrics?.csatAvgScore?.toFixed(2) ?? "0.00"}점`}
+            title="상담평점 평균 (5점)" value={`${metrics?.csatAvgScore?.toFixed(2) ?? "0.00"}점`}
             badge={`${metrics?.csatReviewCount ?? 0}건`}
             diff={csatDiff} higherIsBetter={true} suffix="점"
           />

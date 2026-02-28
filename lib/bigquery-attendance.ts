@@ -88,10 +88,10 @@ export async function getAttendanceDetail(
           AND (resign_date IS NULL OR resign_date > @date)
       ),
       filtered AS (
-        SELECT center, position AS channel, vertical, shift_type, attendance
+        SELECT center, position AS channel, IFNULL(vertical, '기타') AS vertical, shift_type, attendance
         FROM hr_union
         WHERE attendance IS NOT NULL AND attendance NOT IN ${NON_WORKING_VALUES}
-          AND vertical IS NOT NULL AND position IN ('유선', '채팅')
+          AND position IN ('유선', '채팅')
       )
       SELECT
         center,

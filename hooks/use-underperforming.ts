@@ -35,10 +35,10 @@ export function useUnderperforming(options: UseUnderperformingOptions = {}) {
       if (result.success && result.data) {
         setData(result.data.agents || [])
       } else {
-        setError(result.error || "부진상담사 데이터를 불러올 수 없습니다.")
+        setError(result.error || "집중관리상담사 데이터를 불러올 수 없습니다.")
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "부진상담사 로딩 실패")
+      setError(err instanceof Error ? err.message : "집중관리상담사 로딩 실패")
     } finally {
       setLoading(false)
     }

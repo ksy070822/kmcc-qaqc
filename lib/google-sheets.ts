@@ -43,7 +43,7 @@ function getSheetsClient() {
 export async function readSheetData(
   spreadsheetId: string,
   range: string
-): Promise<{ success: boolean; data?: any[][]; error?: string }> {
+): Promise<{ success: boolean; data?: string[][]; error?: string }> {
   try {
     const sheets = getSheetsClient();
     const response = await sheets.spreadsheets.values.get({
@@ -74,8 +74,8 @@ export async function readYonsanGwangjuSheets(
   spreadsheetId: string
 ): Promise<{
   success: boolean;
-  yonsan?: any[][];
-  gwangju?: any[][];
+  yonsan?: string[][];
+  gwangju?: string[][];
   error?: string;
 }> {
   try {
@@ -113,10 +113,10 @@ export async function readYonsanGwangjuSheets(
  */
 export function parseSheetRowsToEvaluations(
   headers: string[],
-  rows: any[][],
+  rows: string[][],
   center: string
-): any[] {
-  const evaluations: any[] = [];
+): Record<string, unknown>[] {
+  const evaluations: Record<string, unknown>[] = [];
 
   // 헤더 인덱스 매핑 (줄바꿈·공백 정규화)
   const headerMap: Record<string, number> = {};
@@ -334,7 +334,7 @@ function normalizeDate(dateStr: string): string | null {
 /**
  * 개별 오류 항목 추출
  */
-function extractIndividualErrors(row: any[], headerMap: Record<string, number>): Record<string, boolean> {
+function extractIndividualErrors(row: string[], headerMap: Record<string, number>): Record<string, boolean> {
   const checkError = (possibleNames: string[]): boolean => {
     for (const name of possibleNames) {
       const normalized = name.toLowerCase().trim();
@@ -385,7 +385,7 @@ function extractIndividualErrors(row: any[], headerMap: Record<string, number>):
 /**
  * 상담태도 오류 건수 계산
  */
-function calculateAttitudeErrors(row: any[], headerMap: Record<string, number>): number {
+function calculateAttitudeErrors(row: string[], headerMap: Record<string, number>): number {
   const attitudeColumns = [
     '첫인사/끝인사 누락',
     '공감표현 누락',
@@ -411,7 +411,7 @@ function calculateAttitudeErrors(row: any[], headerMap: Record<string, number>):
 /**
  * 오상담/오처리 오류 건수 계산
  */
-function calculateBusinessErrors(row: any[], headerMap: Record<string, number>): number {
+function calculateBusinessErrors(row: string[], headerMap: Record<string, number>): number {
   const businessColumns = [
     '상담유형 오설정',
     '가이드 미준수',
@@ -460,8 +460,8 @@ export async function readYonsan2025Gwangju2025Sheets(
   spreadsheetId: string
 ): Promise<{
   success: boolean;
-  yonsan?: any[][];
-  gwangju?: any[][];
+  yonsan?: string[][];
+  gwangju?: string[][];
   error?: string;
 }> {
   try {
@@ -494,11 +494,11 @@ export async function readYonsan2025Gwangju2025Sheets(
  */
 export function parseSheetRowsToEvaluations2025(
   headers: string[],
-  rows: any[][],
+  rows: string[][],
   center: string,
   hasChannel: boolean
-): any[] {
-  const evaluations: any[] = [];
+): Record<string, unknown>[] {
+  const evaluations: Record<string, unknown>[] = [];
   const headerMap: Record<string, number> = {};
   headers.forEach((h, i) => {
     const normalized = String(h || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -595,7 +595,7 @@ export function parseSheetRowsToEvaluations2025(
   return evaluations;
 }
 
-function calculateAttitudeErrors2025(row: any[], headerMap: Record<string, number>): number {
+function calculateAttitudeErrors2025(row: string[], headerMap: Record<string, number>): number {
   const cols = [
     '첫인사/끝인사 누락',
     '공감표현 누락',

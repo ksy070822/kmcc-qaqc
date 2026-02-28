@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { format, subMonths } from "date-fns"
 import { MonthlyPlanView } from "./monthly-plan-view"
 import { NewHireDashboard } from "./new-hire-dashboard"
@@ -15,6 +15,7 @@ import type {
   AgentMonthlySummary,
   NewHireProfile,
   CoachingAlert,
+  HeatmapDataRow,
 } from "@/lib/types"
 
 const TABS = [
@@ -38,12 +39,18 @@ export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHa
   const [activeTab, setActiveTab] = useState<TabId>("plan")
   const [month, setMonth] = useState(() => externalMonth || format(new Date(), "yyyy-MM"))
   const [center, setCenter] = useState<string>(scope?.center || "")
+  const crossNavHandledRef = useRef(false)
+
+  // scope 변경 시 center 동기화
+  useEffect(() => {
+    if (scope?.center) setCenter(scope.center)
+  }, [scope?.center])
 
   // 코칭 플랜 데이터
   const [plans, setPlans] = useState<AgentCoachingPlan[]>([])
   const [newHires, setNewHires] = useState<NewHireProfile[]>([])
   const [alerts, setAlerts] = useState<CoachingAlert[]>([])
-  const [heatmapData, setHeatmapData] = useState<any[]>([])
+  const [heatmapData, setHeatmapData] = useState<HeatmapDataRow[]>([])
   const [integratedSummaries, setIntegratedSummaries] = useState<AgentMonthlySummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -55,16 +62,18 @@ export function CoachingDashboard({ externalMonth, crossNavAgentId, onCrossNavHa
     if (externalMonth) setMonth(externalMonth)
   }, [externalMonth])
 
-  // 크로스 네비게이션: 통합분석에서 에이전트 클릭으로 코칭 탭 진입
+  // 크로스 네비게이션: 통합분석에서 에이전트 클릭으로 코칭 탭 진입 (ref로 중복 실행 방지)
   useEffect(() => {
-    if (crossNavAgentId && plans.length > 0) {
+    if (crossNavAgentId && plans.length > 0 && !crossNavHandledRef.current) {
       const match = plans.find(p => p.agentId === crossNavAgentId)
       if (match) {
         setSelectedPlan(match)
         setActiveTab("plan")
       }
+      crossNavHandledRef.current = true
       onCrossNavHandled?.()
     }
+    if (!crossNavAgentId) crossNavHandledRef.current = false
   }, [crossNavAgentId, plans, onCrossNavHandled])
 
   const fetchData = useCallback(async (tab: TabId) => {

@@ -1,6 +1,6 @@
 /**
  * SLA 평가 데이터 모듈
- * 생산성(IPCC/CEMS) + 품질(QA/CSAT/Quiz) 데이터를 수집하여 SLA 점수를 산정
+ * 생산성(IPCC/CEMS) + 품질(QA/상담평점/Quiz) 데이터를 수집하여 SLA 점수를 산정
  */
 
 import { getSLAConfig, calculateSLA, getGrade } from "./sla-config"
@@ -10,6 +10,21 @@ import { getQADashboardStats } from "./bigquery-qa"
 import { getCSATDashboardStats } from "./bigquery-csat"
 import { getQuizDashboardStats } from "./bigquery-quiz"
 import type { SLAResult, SLADailyPoint, SLADailyTrackingData, SLAGrade, CenterName } from "./types"
+
+// ── SLA 스코어카드 캐시 (과거 월 데이터는 불변) ──
+const slaCache = new Map<string, { data: SLAResult[]; ts: number }>()
+const SLA_CACHE_TTL_PAST = 30 * 60 * 1000   // 과거 월: 30분
+const SLA_CACHE_TTL_CURRENT = 5 * 60 * 1000  // 당월: 5분
+
+function getSLACacheKey(month: string, rangeStart?: string | null, rangeEnd?: string | null): string {
+  return rangeStart && rangeEnd ? `${month}|${rangeStart}|${rangeEnd}` : month
+}
+
+function isCurrentMonth(month: string): boolean {
+  const now = new Date()
+  const current = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
+  return month === current
+}
 
 // ── 월 → 날짜 범위 변환 ──
 function monthToDateRange(month: string): { startDate: string; endDate: string } {
@@ -35,6 +50,15 @@ export async function getSLAScorecard(
 ): Promise<{ success: boolean; data?: SLAResult[]; error?: string }> {
   try {
     const targetMonth = month || new Date().toISOString().slice(0, 7)
+
+    // ── 캐시 확인 ──
+    const cacheKey = getSLACacheKey(targetMonth, rangeStart, rangeEnd)
+    const cached = slaCache.get(cacheKey)
+    const ttl = isCurrentMonth(targetMonth) ? SLA_CACHE_TTL_CURRENT : SLA_CACHE_TTL_PAST
+    if (cached && Date.now() - cached.ts < ttl) {
+      return { success: true, data: cached.data }
+    }
+
     // 명시적 날짜 범위가 있으면 사용, 없으면 월 기준
     const { startDate, endDate } = rangeStart && rangeEnd
       ? { startDate: rangeStart, endDate: rangeEnd }
@@ -46,18 +70,28 @@ export async function getSLAScorecard(
     const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`
     const { startDate: prevStart, endDate: prevEnd } = monthToDateRange(prevMonth)
 
-    // 모든 데이터 병렬 수집 (생산성은 날짜범위, 품질은 월 기준 유지)
-    const [voiceRes, voiceTimeRes, chatRes, qaRes, csatRes, quizRes, prevQaRes, prevCsatRes, prevQuizRes] = await Promise.all([
+    // 생산성 + 당월 품질 먼저 병렬 수집
+    const [voiceRes, voiceTimeRes, chatRes, qaRes, csatRes, quizRes] = await Promise.all([
       getVoiceProductivity(null, startDate, endDate),
       getVoiceHandlingTime(null, startDate, endDate),
       getChatProductivity(null, startDate, endDate),
       getQADashboardStats(targetMonth, targetMonth, { minTenureMonths: 1 }),
       getCSATDashboardStats(startDate, endDate),
       getQuizDashboardStats(targetMonth, targetMonth),
-      // 전월 품질 (fallback용)
-      getQADashboardStats(prevMonth, prevMonth, { minTenureMonths: 1 }),
-      getCSATDashboardStats(prevStart, prevEnd),
-      getQuizDashboardStats(prevMonth, prevMonth),
+    ])
+
+    // 전월 품질은 당월 데이터가 없을 때만 조회 (조건부 fallback)
+    const needQaFallback = !qaRes.success || !qaRes.data ||
+      (qaRes.data.yongsanAvgScore === 0 && qaRes.data.gwangjuAvgScore === 0)
+    const needCsatFallback = !csatRes.success || !csatRes.data ||
+      (csatRes.data.avgScore === 0)
+    const needQuizFallback = !quizRes.success || !quizRes.data ||
+      (quizRes.data.yongsanAvgScore === 0 && quizRes.data.gwangjuAvgScore === 0)
+
+    const [prevQaRes, prevCsatRes, prevQuizRes] = await Promise.all([
+      needQaFallback ? getQADashboardStats(prevMonth, prevMonth, { minTenureMonths: 1 }) : Promise.resolve({ success: false } as const),
+      needCsatFallback ? getCSATDashboardStats(prevStart, prevEnd) : Promise.resolve({ success: false } as const),
+      needQuizFallback ? getQuizDashboardStats(prevMonth, prevMonth) : Promise.resolve({ success: false } as const),
     ])
 
     const centers: CenterName[] = ["용산", "광주"]
@@ -108,7 +142,7 @@ export async function getSLAScorecard(
         }
       }
 
-      // ── 품질: CSAT 평균 평점 (미확정 시 전월 fallback) ──
+      // ── 품질: 상담평점 평균 평점 (미확정 시 전월 fallback) ──
       if (csatRes.success && csatRes.data) {
         const csatVal = center === "용산"
           ? (csatRes.data.yongsanAvgScore ?? csatRes.data.avgScore)
@@ -139,6 +173,9 @@ export async function getSLAScorecard(
       results.push(result)
     }
 
+    // ── 캐시 저장 ──
+    slaCache.set(cacheKey, { data: results, ts: Date.now() })
+
     return { success: true, data: results }
   } catch (error) {
     console.error("[SLA] Scorecard error:", error)
@@ -155,13 +192,21 @@ export async function getSLAMonthlyTrend(
 ): Promise<{ success: boolean; data?: SLAResult[]; error?: string }> {
   try {
     const now = new Date()
-    const allResults: SLAResult[] = []
 
-    // 최근 N개월 순차 산정 (병렬은 BQ 부하 고려해 제한)
+    // 최근 N개월 월 키 생성
+    const monthKeys: string[] = []
     for (let i = months; i >= 1; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
-      const m = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-      const res = await getSLAScorecard(m)
+      monthKeys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`)
+    }
+
+    // 병렬 실행 (캐시 히트 시 BQ 쿼리 0건, 미스 시에도 월별 독립 병렬)
+    const results = await Promise.all(
+      monthKeys.map((m) => getSLAScorecard(m))
+    )
+
+    const allResults: SLAResult[] = []
+    for (const res of results) {
       if (res.success && res.data) {
         allResults.push(...res.data)
       }
@@ -193,7 +238,7 @@ const CEMS_CONSULT_STATUS = "`dataanalytics-25f2.dw_cems.consult_status`"
 
 /**
  * 일별 SLA 누적 추이 + 월말 예측 + 위험 지표
- * 응대율만 일별 변동, 나머지(처리시간/QA/CSAT/Quiz)는 월 고정값 사용
+ * 응대율만 일별 변동, 나머지(처리시간/QA/상담평점/Quiz)는 월 고정값 사용
  */
 export async function getSLADailyTracking(
   month?: string | null,

@@ -1,6 +1,12 @@
 "use client"
 
 import { useState, useCallback } from "react"
+import type { PredictionApiData } from "@/lib/types"
+
+interface CenterSummaryEntry {
+  attitude: { current: number; predicted: number; target: number; prob: number }
+  process: { current: number; predicted: number; target: number; prob: number }
+}
 
 interface UsePredictionAIReturn {
   analysis: string | null
@@ -8,8 +14,8 @@ interface UsePredictionAIReturn {
   error: string | null
   generateAnalysis: (
     center: string | undefined,
-    predictions: any[],
-    centerSummary: Record<string, any>
+    predictions: PredictionApiData[],
+    centerSummary: Record<string, CenterSummaryEntry>
   ) => Promise<void>
 }
 
@@ -20,8 +26,8 @@ export function usePredictionAI(): UsePredictionAIReturn {
 
   const generateAnalysis = useCallback(async (
     center: string | undefined,
-    predictions: any[],
-    centerSummary: Record<string, any>
+    predictions: PredictionApiData[],
+    centerSummary: Record<string, CenterSummaryEntry>
   ) => {
     try {
       setLoading(true)

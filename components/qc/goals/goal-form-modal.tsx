@@ -35,7 +35,7 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
       setTitle(goal.title)
       setCenter(goal.center)
       setTargetErrorRate(goal.targetErrorRate.toString())
-      setPeriod(goal.period as any) // Type casting needed as we expanded period type
+      setPeriod((goal.period || "monthly") as "monthly" | "quarterly" | "yearly")
       setStartDate(goal.startDate)
       setEndDate(goal.endDate)
 
@@ -75,7 +75,7 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
       service: service === "all" ? undefined : service,
       // @ts-ignore
       channel: channel === "all" ? undefined : channel,
-    } as any)
+    } as Partial<GoalData>)
     onOpenChange(false)
   }
 
@@ -109,7 +109,7 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>목표 유형 *</Label>
-              <Select value={type} onValueChange={(v: any) => setType(v)}>
+              <Select value={type} onValueChange={(v) => setType(v as "attitude" | "ops" | "total")}>
                 <SelectTrigger className="bg-secondary">
                   <SelectValue placeholder="유형 선택" />
                 </SelectTrigger>
@@ -137,7 +137,7 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <Label>센터</Label>
-              <Select value={center} onValueChange={(v: any) => setCenter(v)}>
+              <Select value={center} onValueChange={(v) => setCenter(v as "전체" | "용산" | "광주")}>
                 <SelectTrigger className="bg-secondary">
                   <SelectValue />
                 </SelectTrigger>
@@ -151,7 +151,7 @@ export function GoalFormModal({ open, onOpenChange, goal, onSave }: GoalFormModa
 
             <div className="space-y-2">
               <Label>기간 유형</Label>
-              <Select value={period} onValueChange={(v: any) => setPeriod(v)}>
+              <Select value={period} onValueChange={(v) => setPeriod(v as "monthly" | "quarterly" | "yearly")}>
                 <SelectTrigger className="bg-secondary">
                   <SelectValue />
                 </SelectTrigger>

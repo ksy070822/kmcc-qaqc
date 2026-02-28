@@ -29,7 +29,11 @@ const PERIODS: { value: PeriodType; label: string }[] = [
   { value: "monthly", label: "월간" },
 ]
 
-export function ProductivityDashboard() {
+interface ProductivityDashboardProps {
+  scope?: { center?: string; service?: string }
+}
+
+export function ProductivityDashboard({ scope }: ProductivityDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabValue>("call")
   // visitedTabs 제거 — display:none keep-alive 패턴이 Recharts removeChild 에러 유발
   const { periodType, setPeriodType, month, startDate, endDate, label, goBack, goForward } =
@@ -41,7 +45,7 @@ export function ProductivityDashboard() {
     voiceWeeklySummary, chatWeeklySummary,
     prevVoiceData, prevVoiceTime, prevChatData,
     loading, error,
-  } = useProductivityData(month, startDate, endDate)
+  } = useProductivityData(month, startDate, endDate, scope)
 
   const handleTabChange = (tab: TabValue) => {
     setActiveTab(tab)

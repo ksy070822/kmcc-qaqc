@@ -4,7 +4,8 @@ import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/hooks/use-auth"
+import { useMypageContext } from "@/contexts/mypage-context"
+import { useLatestDate } from "@/hooks/use-latest-date"
 import {
   ChevronLeft,
   ChevronRight,
@@ -45,29 +46,29 @@ interface MonthlyDetail {
 }
 
 export default function MonthlyReportPage() {
-  const { user } = useAuth()
+  const { user, productivity } = useMypageContext()
+  const { latestDate } = useLatestDate()
   const [monthOffset, setMonthOffset] = useState(0)
   const [detail, setDetail] = useState<MonthlyDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [qualityScores, setQualityScores] = useState<{
     qa: number; qaPrev: number; csat: number; csatPrev: number; quiz: number; quizPrev: number
   } | null>(null)
-  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
 
   const baseDate = monthOffset === 0 ? new Date() : addMonths(new Date(), monthOffset)
   const monthStart = startOfMonth(baseDate)
   const monthEnd = endOfMonth(baseDate)
 
-  // 품질 점수 (QA/CSAT/Quiz) + 생산성 (센터) 조회
+  // 품질 점수 (QA/상담평점/Quiz) 조회
   useEffect(() => {
     async function fetchExtras() {
       if (!user?.agentId && !user?.userId) return
       const agentId = user.agentId || user.userId
+
       try {
-        // Agent profile (6개월 트렌드 포함)
         const profileRes = await fetch(`/api/mypage/profile?agentId=${encodeURIComponent(agentId)}`)
         const profileData = await profileRes.json()
-        if (profileData.success && profileData.data) {
+        if (profileData?.success && profileData.data) {
           const selectedMonth = format(monthStart, "yyyy-MM")
           const trend = profileData.data.trendData as Array<{
             month: string; qaScore: number | null; csatScore: number | null; quizScore: number | null
@@ -85,31 +86,9 @@ export default function MonthlyReportPage() {
           })
         }
       } catch { /* silent */ }
-
-      // 생산성 (센터 레벨)
-      if (user?.center) {
-        try {
-          const ldRes = await fetch("/api/data?type=latest-date")
-          const ldData = await ldRes.json()
-          const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
-          const params = new URLSearchParams({
-            type: "multi-domain-metrics",
-            refDate,
-            center: user.center,
-          })
-          const res = await fetch(`/api/role-metrics?${params}`)
-          const d = await res.json()
-          if (d.success) {
-            setProductivity({
-              voice: d.metrics.voiceResponseRate ?? 0,
-              chat: d.metrics.chatResponseRate ?? 0,
-            })
-          }
-        } catch { /* silent */ }
-      }
     }
     fetchExtras()
-  }, [user?.agentId, user?.userId, user?.center, monthOffset, monthStart])
+  }, [user?.agentId, user?.userId, monthOffset, monthStart])
 
   useEffect(() => {
     async function fetchMonthly() {
@@ -211,7 +190,7 @@ export default function MonthlyReportPage() {
                   <span className="text-xs text-slate-500">목표 {detail?.attitudeTarget ?? 3.0}%</span>
                 </div>
                 <div className={`text-2xl font-bold ${attAchieved ? "text-green-700" : "text-red-700"}`}>
-                  {detail?.attitudeErrorRate.toFixed(1) ?? "0.0"}%
+                  {(detail?.attitudeErrorRate ?? 0).toFixed(1)}%
                 </div>
                 <p className="text-xs text-slate-500 mt-1">태도 오류율</p>
                 <Badge
@@ -229,7 +208,7 @@ export default function MonthlyReportPage() {
                   <span className="text-xs text-slate-500">목표 {detail?.opsTarget ?? 3.0}%</span>
                 </div>
                 <div className={`text-2xl font-bold ${opsAchieved ? "text-green-700" : "text-red-700"}`}>
-                  {detail?.opsErrorRate.toFixed(1) ?? "0.0"}%
+                  {(detail?.opsErrorRate ?? 0).toFixed(1)}%
                 </div>
                 <p className="text-xs text-slate-500 mt-1">오상담 오류율</p>
                 <Badge
@@ -242,7 +221,7 @@ export default function MonthlyReportPage() {
             </Card>
           </div>
 
-          {/* 품질 지표 (QA / CSAT / 직무테스트) */}
+          {/* 품질 지표 (QA / 상담평점 / 직무테스트) */}
           {qualityScores && (
             <div>
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
@@ -274,7 +253,7 @@ export default function MonthlyReportPage() {
                       <div className="flex h-7 w-7 items-center justify-center rounded-md bg-amber-50">
                         <Star className="h-3.5 w-3.5 text-amber-600" />
                       </div>
-                      <span className="text-xs text-slate-500">CSAT</span>
+                      <span className="text-xs text-slate-500">상담평점</span>
                     </div>
                     <div className="flex items-baseline gap-1.5">
                       <span className="text-xl font-bold text-slate-900">
@@ -323,7 +302,7 @@ export default function MonthlyReportPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">유선 응대율</p>
-                      <p className="text-lg font-bold text-slate-900">{productivity.voice.toFixed(1)}%</p>
+                      <p className="text-lg font-bold text-slate-900">{(productivity.voice ?? 0).toFixed(1)}%</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -332,7 +311,7 @@ export default function MonthlyReportPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">채팅 응대율</p>
-                      <p className="text-lg font-bold text-slate-900">{productivity.chat.toFixed(1)}%</p>
+                      <p className="text-lg font-bold text-slate-900">{(productivity.chat ?? 0).toFixed(1)}%</p>
                     </div>
                   </div>
                 </div>
@@ -366,13 +345,13 @@ export default function MonthlyReportPage() {
                           <td className="py-2 px-3 text-slate-700">{week.week}</td>
                           <td className="py-2 px-3 text-right text-slate-700">{week.evaluations}건</td>
                           <td className="py-2 px-3 text-right">
-                            <span className={week.attitudeRate > (detail.attitudeTarget ?? 3.0) ? "text-red-600 font-medium" : "text-slate-700"}>
-                              {week.attitudeRate.toFixed(1)}%
+                            <span className={(week.attitudeRate ?? 0) > (detail.attitudeTarget ?? 3.0) ? "text-red-600 font-medium" : "text-slate-700"}>
+                              {(week.attitudeRate ?? 0).toFixed(1)}%
                             </span>
                           </td>
                           <td className="py-2 px-3 text-right">
-                            <span className={week.opsRate > (detail.opsTarget ?? 3.0) ? "text-red-600 font-medium" : "text-slate-700"}>
-                              {week.opsRate.toFixed(1)}%
+                            <span className={(week.opsRate ?? 0) > (detail.opsTarget ?? 3.0) ? "text-red-600 font-medium" : "text-slate-700"}>
+                              {(week.opsRate ?? 0).toFixed(1)}%
                             </span>
                           </td>
                         </tr>
@@ -397,14 +376,14 @@ export default function MonthlyReportPage() {
               {detail?.itemSummary && detail.itemSummary.length > 0 ? (
                 <div className="space-y-2">
                   {detail.itemSummary.map((item, idx) => {
-                    const diff = item.rate - item.prevRate
+                    const diff = (item.rate ?? 0) - (item.prevRate ?? 0)
                     return (
                       <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-50">
                         <span className="text-sm text-slate-700">{item.item}</span>
                         <div className="flex items-center gap-3">
                           <span className="text-sm font-medium text-slate-900">{item.count}건</span>
-                          <span className="text-xs text-slate-500">({item.rate.toFixed(1)}%)</span>
-                          {diff !== 0 && (
+                          <span className="text-xs text-slate-500">({(item.rate ?? 0).toFixed(1)}%)</span>
+                          {diff !== 0 && !isNaN(diff) && (
                             <span className={`flex items-center text-xs ${diff < 0 ? "text-green-600" : "text-red-600"}`}>
                               {diff < 0 ? <TrendingDown className="h-3 w-3 mr-0.5" /> : <TrendingUp className="h-3 w-3 mr-0.5" />}
                               {Math.abs(diff).toFixed(1)}%p

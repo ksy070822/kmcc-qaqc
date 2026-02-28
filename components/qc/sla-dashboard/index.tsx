@@ -35,7 +35,7 @@ export function SLADashboard() {
   const { periodType, setPeriodType, month, startDate, endDate, label, goBack, goForward } =
     usePeriodNavigation("monthly")
 
-  const { scorecard, trend, loading, error } = useSLAData(month, startDate, endDate)
+  const { scorecard, trend, loading, trendLoading, error } = useSLAData(month, startDate, endDate, activeTab)
 
   const handleTabChange = (tab: TabValue) => {
     setActiveTab(tab)
@@ -131,8 +131,14 @@ export function SLADashboard() {
           {activeTab === "simulator" && scorecard && (
             <SLASimulator initialData={scorecard} />
           )}
-          {activeTab === "trend" && trend && (
-            <SLATrend data={trend} />
+          {activeTab === "trend" && (
+            trendLoading ? (
+              <div className="flex justify-center py-12">
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            ) : trend ? (
+              <SLATrend data={trend} />
+            ) : null
           )}
           {activeTab === "progress" && (
             <SLAProgress />

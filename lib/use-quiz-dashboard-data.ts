@@ -1,98 +1,72 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useQuery } from "@tanstack/react-query"
 import type { QuizDashboardStats, QuizTrendData, QuizAgentRow, QuizServiceTrendRow } from "@/lib/types"
 
 const API_BASE = "/api/data"
 
-export function useQuizDashboardData(startMonth?: string, endMonth?: string, center?: string) {
-  const [stats, setStats] = useState<QuizDashboardStats | null>(null)
-  const [trendData, setTrendData] = useState<QuizTrendData[]>([])
-  const [agentData, setAgentData] = useState<QuizAgentRow[]>([])
-  const [serviceTrendData, setServiceTrendData] = useState<QuizServiceTrendRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
-  const hasFetched = useRef(false)
+// JSON fetch 헬퍼: 응답을 파싱하고 success 검증
+async function fetchJson<T>(url: string, label: string): Promise<T | null> {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (json.success && json.data) {
+    return json.data as T
+  }
+  console.warn(`[Quiz Dashboard] ${label} fetch failed:`, json)
+  if (json.error) throw new Error(json.error)
+  return null
+}
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+export function useQuizDashboardData(startMonth?: string, endMonth?: string, center?: string, scope?: { center?: string; service?: string }) {
+  const effectiveCenter = scope?.center || center
+  const centerParam = effectiveCenter && effectiveCenter !== "all" ? `&center=${encodeURIComponent(effectiveCenter)}` : ""
+  const serviceParam = scope?.service ? `&service=${encodeURIComponent(scope.service)}` : ""
+  const monthParams = `${startMonth ? `&startMonth=${startMonth}` : ""}${endMonth ? `&endMonth=${endMonth}` : ""}`
 
-    try {
-      const monthParams = `${startMonth ? `&startMonth=${startMonth}` : ""}${endMonth ? `&endMonth=${endMonth}` : ""}`
-      const centerParam = center && center !== "all" ? `&center=${center}` : ""
+  const statsQuery = useQuery({
+    queryKey: ['quiz-stats', startMonth, endMonth, effectiveCenter, scope?.service],
+    queryFn: () => fetchJson<QuizDashboardStats>(
+      `${API_BASE}?type=quiz-dashboard${monthParams}${centerParam}${serviceParam}`,
+      'Stats'
+    ),
+  })
 
-      const [statsRes, trendRes, agentRes, svcTrendRes] = await Promise.all([
-        fetch(`${API_BASE}?type=quiz-dashboard${monthParams}`),
-        fetch(`${API_BASE}?type=quiz-trend&months=6`),
-        fetch(`${API_BASE}?type=quiz-agents${monthParams}${centerParam}`),
-        fetch(`${API_BASE}?type=quiz-service-trend${centerParam}&months=6`),
-      ])
+  const trendQuery = useQuery({
+    queryKey: ['quiz-trend', effectiveCenter, scope?.service],
+    queryFn: () => fetchJson<QuizTrendData[]>(
+      `${API_BASE}?type=quiz-trend&months=6${centerParam}${serviceParam}`,
+      'Trend'
+    ),
+  })
 
-      const [statsData, trendDataRes, agentDataRes, svcTrendDataRes] = await Promise.all([
-        statsRes.json(),
-        trendRes.json(),
-        agentRes.json(),
-        svcTrendRes.json(),
-      ])
+  const agentQuery = useQuery({
+    queryKey: ['quiz-agents', startMonth, endMonth, effectiveCenter, scope?.service],
+    queryFn: () => fetchJson<QuizAgentRow[]>(
+      `${API_BASE}?type=quiz-agents${monthParams}${centerParam}${serviceParam}`,
+      'Agents'
+    ),
+  })
 
-      if (statsData.success && statsData.data) {
-        setStats(statsData.data)
-      } else {
-        console.warn("[Quiz Dashboard] Stats fetch failed:", statsData)
-        if (statsData.error) setError(statsData.error)
-      }
-
-      if (trendDataRes.success && trendDataRes.data) {
-        setTrendData(trendDataRes.data)
-      } else {
-        console.warn("[Quiz Dashboard] Trend fetch failed:", trendDataRes)
-      }
-
-      if (agentDataRes.success && agentDataRes.data) {
-        setAgentData(agentDataRes.data)
-      } else {
-        console.warn("[Quiz Dashboard] Agent fetch failed:", agentDataRes)
-      }
-
-      if (svcTrendDataRes.success && svcTrendDataRes.data) {
-        setServiceTrendData(svcTrendDataRes.data)
-      } else {
-        console.warn("[Quiz Dashboard] Service trend fetch failed:", svcTrendDataRes)
-      }
-    } catch (err) {
-      console.error("[Quiz Dashboard] Data fetch error:", err)
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [startMonth, endMonth, center])
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && !hasFetched.current) {
-      hasFetched.current = true
-      fetchData()
-    }
-  }, [mounted, fetchData])
-
-  useEffect(() => {
-    if (mounted && hasFetched.current) {
-      fetchData()
-    }
-  }, [startMonth, endMonth, center, mounted, fetchData])
+  const serviceTrendQuery = useQuery({
+    queryKey: ['quiz-service-trend', effectiveCenter, scope?.service],
+    queryFn: () => fetchJson<QuizServiceTrendRow[]>(
+      `${API_BASE}?type=quiz-service-trend${centerParam}${serviceParam}&months=6`,
+      'Service trend'
+    ),
+  })
 
   return {
-    stats,
-    trendData,
-    agentData,
-    serviceTrendData,
-    loading: !mounted || loading,
-    error,
-    refresh: fetchData,
+    stats: statsQuery.data ?? null,
+    trendData: trendQuery.data ?? [],
+    agentData: agentQuery.data ?? [],
+    serviceTrendData: serviceTrendQuery.data ?? [],
+    loading: statsQuery.isLoading || trendQuery.isLoading || agentQuery.isLoading || serviceTrendQuery.isLoading,
+    error: statsQuery.error?.message || trendQuery.error?.message || agentQuery.error?.message || serviceTrendQuery.error?.message || null,
+    refresh: () => {
+      statsQuery.refetch()
+      trendQuery.refetch()
+      agentQuery.refetch()
+      serviceTrendQuery.refetch()
+    },
   }
 }

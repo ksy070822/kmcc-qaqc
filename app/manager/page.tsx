@@ -28,7 +28,7 @@ export default function ManagerMainPage() {
       {/* 탭 기반 품질 대시보드 (관리자 센터/서비스로 스코핑) */}
       <ManagerQualityDashboard
         center={user.center}
-        service={user.service}
+        service={user.service || undefined}
       />
     </div>
   )

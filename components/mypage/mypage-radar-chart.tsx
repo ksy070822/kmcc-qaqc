@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import {
   RadarChart,
   PolarGrid,
@@ -26,7 +27,7 @@ interface MypageRadarChartProps {
   groupLabel?: string
 }
 
-export function MypageRadarChart({
+export const MypageRadarChart = memo(function MypageRadarChart({
   data,
   title,
   height = 280,
@@ -84,4 +85,4 @@ export function MypageRadarChart({
       </ResponsiveContainer>
     </div>
   )
-}
+})

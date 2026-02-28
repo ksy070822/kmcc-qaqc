@@ -26,7 +26,7 @@ export function AgentCoachingCard({ plan, month, onClose, onNavigateToIntegrated
     errors: ConsultTypeErrorAnalysis[]
     corrections: ConsultTypeCorrectionAnalysis
   } | null>(null)
-  const [trend, setTrend] = useState<{ trend: any[]; analysis: TrendAnalysis | null } | null>(null)
+  const [trend, setTrend] = useState<{ trend: Array<{ month: string; attitudeRate: number; opsRate: number; totalRate: number }>; analysis: TrendAnalysis | null } | null>(null)
   const [loading, setLoading] = useState(false)
 
   // ESC 키로 닫기

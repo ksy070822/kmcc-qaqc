@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     if (evaluationIds.length > 0) {
       try {
         const idsList = evaluationIds
-          .map((id) => `'${id.replace(/'/g, "''")}'`)
+          .map((id) => `'${String(id).replace(/'/g, "''")}'`)
           .join(",");
         const [rows] = await bigquery.query({
           query: `
@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     }
 
     const newEvaluations = allEvaluations.filter(
-      (e) => !existingIds.has(e.evaluationId)
+      (e) => !existingIds.has(String(e.evaluationId))
     );
 
     if (newEvaluations.length === 0) {

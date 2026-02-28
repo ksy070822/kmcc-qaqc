@@ -12,11 +12,12 @@ const KAKAO = "#9E9E9E"
 
 interface DailyErrorTableProps {
   selectedCenter?: string
+  selectedService?: string
   startDate?: string
   endDate?: string
 }
 
-export function DailyErrorTable({ selectedCenter, startDate: propStartDate, endDate: propEndDate }: DailyErrorTableProps) {
+export function DailyErrorTable({ selectedCenter, selectedService, startDate: propStartDate, endDate: propEndDate }: DailyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
 
   // 필터 날짜 우선, 없으면 최근 14일
@@ -33,6 +34,7 @@ export function DailyErrorTable({ selectedCenter, startDate: propStartDate, endD
     startDate: startDateStr,
     endDate,
     center: selectedCenter && selectedCenter !== "all" ? selectedCenter : undefined,
+    service: selectedService && selectedService !== "all" ? selectedService : undefined,
   })
 
   // 데이터 변환: API 데이터를 테이블 형식으로 변환

@@ -182,9 +182,9 @@ const YONGSAN_CONFIG: SLAConfig = {
       direction: "higher_better",
     },
     {
-      // 상담리뷰(CSAT) — 목표 4.8점, 0.1점 간격 8단계
+      // 상담평점 — 목표 4.8점, 0.1점 간격 8단계
       id: "csat_score",
-      name: "상담리뷰(CSAT)",
+      name: "상담평점",
       category: "품질",
       maxScore: 15,
       tiers: [
@@ -253,7 +253,7 @@ const YONGSAN_CONFIG: SLAConfig = {
 // 주의: 기준서(26년 SLA_광주.xlsx)와 실제 적용 기준이 다름!
 //   - 기준서: 퀵 있음(9점), 응대율유선 10점/5-tier, 처리시간 9점/6-tier
 //   - 실제:   퀵 없음,      응대율유선 15점/8-tier, 처리시간 10점/8-tier (용산과 동일)
-//   - QA 목표: 기준서 89점 → 실제 87점 / CSAT 목표: 기준서 4.85 → 실제 4.8
+//   - QA 목표: 기준서 89점 → 실제 87점 / 상담평점 목표: 기준서 4.85 → 실제 4.8
 //
 // 생산성 60점 = 응대율(유선)15 + 응대율(채팅)5 + 처리시간 4개×10
 // 품질 40점 = QA 15 + 상담리뷰 15 + 직무테스트 10
@@ -397,9 +397,9 @@ const GWANGJU_CONFIG: SLAConfig = {
       direction: "higher_better",
     },
     {
-      // 상담리뷰(CSAT) — 목표 4.8점, 0.1점 간격 8단계 (실제: 기준서 4.85→4.8)
+      // 상담평점 — 목표 4.8점, 0.1점 간격 8단계 (실제: 기준서 4.85→4.8)
       id: "csat_score",
-      name: "상담리뷰(CSAT)",
+      name: "상담평점",
       category: "품질",
       maxScore: 15,
       tiers: [

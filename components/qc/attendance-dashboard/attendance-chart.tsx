@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ResponsiveContainer,
@@ -22,7 +23,7 @@ interface AttendanceChartProps {
   trend: AttendanceDailyTrend[] | null
 }
 
-export function AttendanceChart({ trend }: AttendanceChartProps) {
+export const AttendanceChart = memo(function AttendanceChart({ trend }: AttendanceChartProps) {
   if (!trend || trend.length === 0) {
     return (
       <Card className="bg-white border border-slate-200 rounded-xl">
@@ -137,4 +138,4 @@ export function AttendanceChart({ trend }: AttendanceChartProps) {
       </CardContent>
     </Card>
   )
-}
+})

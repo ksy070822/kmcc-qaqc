@@ -39,6 +39,12 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
   const [filterStartDate, setFilterStartDate] = useState<string | undefined>(externalStartDate)
   const [filterEndDate, setFilterEndDate] = useState<string | undefined>(externalEndDate)
 
+  // scope 변경 시 필터 동기화
+  useEffect(() => {
+    if (scope?.center) setSelectedCenter(scope.center)
+    if (scope?.service) setSelectedService(scope.service)
+  }, [scope?.center, scope?.service])
+
   // 클라이언트 마운트 확인 (hydration 안전)
   useEffect(() => {
     setIsMounted(true)
@@ -52,9 +58,9 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
     }
   }, [externalStartDate, externalEndDate])
 
-  // BigQuery에서 실제 데이터 가져오기 (selectedDate + 필터 날짜 범위 전달)
+  // BigQuery에서 실제 데이터 가져오기 (selectedDate + 필터 날짜 범위 + scope 전달)
   const { stats, centerStats, trendData, weeklyTrendData, loading, error, refresh } = useDashboardData(
-    selectedDate, filterStartDate, filterEndDate
+    selectedDate, filterStartDate, filterEndDate, scope
   )
 
   // 로딩 중이거나 데이터가 없으면 기본값 사용
@@ -89,9 +95,11 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
   // 트렌드 차트 데이터 (실제 BigQuery 데이터만 사용)
   const chartTrendData = trendData
 
-  // 센터별 전주 대비 트렌드
-  const yongsanTrend = dashboardStats.yongsanOverallTrend ?? 0
-  const gwangjuTrend = dashboardStats.gwangjuOverallTrend ?? 0
+  // 센터별 전주 대비 트렌드 (undefined = 데이터 없음, 0 = 변동 없음 — 구분 필요)
+  const yongsanTrendRaw = dashboardStats.yongsanOverallTrend
+  const gwangjuTrendRaw = dashboardStats.gwangjuOverallTrend
+  const yongsanTrend = yongsanTrendRaw ?? 0
+  const gwangjuTrend = gwangjuTrendRaw ?? 0
 
   // 센터별 목표율
   const centerTargetRates: Record<string, number> = { "용산": 4.7, "광주": 2.0 }
@@ -129,10 +137,11 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
 
   // 용산 → 광주 순서 고정
   const CENTER_ORDER = ["용산", "광주"]
-  const centerData = [...centerDataUnsorted].sort(
-    (a, b) => (CENTER_ORDER.indexOf(a.name) === -1 ? 99 : CENTER_ORDER.indexOf(a.name))
-            - (CENTER_ORDER.indexOf(b.name) === -1 ? 99 : CENTER_ORDER.indexOf(b.name))
-  )
+  const centerData = [...centerDataUnsorted].sort((a, b) => {
+    const aIdx = CENTER_ORDER.indexOf(a.name)
+    const bIdx = CENTER_ORDER.indexOf(b.name)
+    return (aIdx === -1 ? 99 : aIdx) - (bIdx === -1 ? 99 : bIdx)
+  })
 
   const filteredCenters = selectedCenter === "all"
     ? centerData
@@ -258,6 +267,7 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
         {activeTab === "daily" && (
           <DailyErrorTable
             selectedCenter={selectedCenter}
+            selectedService={selectedService}
             startDate={filterStartDate}
             endDate={filterEndDate}
           />
@@ -266,12 +276,13 @@ export function Dashboard({ onNavigateToFocus, selectedDate, externalStartDate, 
         {activeTab === "weekly" && (
           <WeeklyErrorTable
             selectedCenter={selectedCenter}
+            selectedService={selectedService}
             startDate={filterStartDate}
             endDate={filterEndDate}
           />
         )}
 
-        {activeTab === "tenure" && <TenureErrorTable />}
+        {activeTab === "tenure" && <TenureErrorTable scopeCenter={scope?.center} scopeService={scope?.service} />}
 
         {activeTab === "service" && (
           <ServiceWeeklyTable

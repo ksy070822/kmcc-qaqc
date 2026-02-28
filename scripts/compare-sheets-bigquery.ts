@@ -130,8 +130,9 @@ async function compareData() {
     // Sheets 날짜별 집계
     const sheetsByDate = new Map<string, number>()
     allSheetEvaluations.forEach(e => {
-      const count = sheetsByDate.get(e.date) || 0
-      sheetsByDate.set(e.date, count + 1)
+      const dateStr = String(e.date)
+      const count = sheetsByDate.get(dateStr) || 0
+      sheetsByDate.set(dateStr, count + 1)
     })
 
     // BigQuery 날짜별 집계

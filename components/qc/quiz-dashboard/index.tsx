@@ -7,6 +7,7 @@ import { QuizAgentTable } from "./quiz-agent-table"
 import { useQuizDashboardData } from "@/lib/use-quiz-dashboard-data"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { serviceGroups } from "@/lib/constants"
 
 interface QuizDashboardProps {
   externalMonth?: string
@@ -15,6 +16,7 @@ interface QuizDashboardProps {
 
 export function QuizDashboard({ externalMonth, scope }: QuizDashboardProps) {
   const [selectedCenter, setSelectedCenter] = useState(scope?.center || "all")
+  const [selectedService, setSelectedService] = useState(scope?.service || "all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("service-trend")
   const [filterStartMonth, setFilterStartMonth] = useState<string | undefined>(externalMonth)
@@ -30,8 +32,14 @@ export function QuizDashboard({ externalMonth, scope }: QuizDashboardProps) {
     }
   }, [externalMonth])
 
+  // scope에 서비스 필터 반영 (scope.service가 있으면 우선, 아니면 selectedService 사용)
+  const effectiveScope = {
+    center: scope?.center,
+    service: scope?.service || (selectedService !== "all" ? selectedService : undefined),
+  }
+
   const { stats, agentData, serviceTrendData, loading, error, refresh } = useQuizDashboardData(
-    filterStartMonth, filterEndMonth, selectedCenter
+    filterStartMonth, filterEndMonth, selectedCenter, effectiveScope
   )
 
   const showLoading = isMounted && loading
@@ -60,7 +68,7 @@ export function QuizDashboard({ externalMonth, scope }: QuizDashboardProps) {
           <label className="text-xs text-gray-500 block mb-1">센터</label>
           <select
             value={selectedCenter}
-            onChange={(e) => setSelectedCenter(e.target.value)}
+            onChange={(e) => { setSelectedCenter(e.target.value); setSelectedService("all") }}
             className="border border-slate-200 rounded-md px-3 py-1.5 text-sm"
             disabled={!!scope?.center}
           >
@@ -68,6 +76,28 @@ export function QuizDashboard({ externalMonth, scope }: QuizDashboardProps) {
             <option value="용산">용산</option>
             <option value="광주">광주</option>
           </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">서비스</label>
+          {scope?.service ? (
+            <span className="inline-flex items-center h-[34px] px-3 rounded-md border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">
+              {scope.service}
+            </span>
+          ) : (
+            <select
+              value={selectedService}
+              onChange={(e) => setSelectedService(e.target.value)}
+              className="border border-slate-200 rounded-md px-3 py-1.5 text-sm"
+            >
+              <option value="all">전체</option>
+              {(selectedCenter === "all"
+                ? [...new Set([...serviceGroups["용산"], ...serviceGroups["광주"]])]
+                : serviceGroups[selectedCenter as "용산" | "광주"] || []
+              ).map((svc) => (
+                <option key={svc} value={svc}>{svc}</option>
+              ))}
+            </select>
+          )}
         </div>
         <div>
           <label className="text-xs text-gray-500 block mb-1">시작월</label>

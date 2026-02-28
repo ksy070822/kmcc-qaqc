@@ -1,4 +1,4 @@
-import { AgentAnalysisContext, GroupAnalysisContext } from './types';
+import { AgentAnalysisContext, GroupAnalysisContext, type PredictionApiData } from './types';
 
 /**
  * 시스템 프롬프트 - AI의 역할과 컨텍스트 정의
@@ -328,7 +328,7 @@ ${topErrors
  */
 export interface PredictionAnalysisInput {
   center?: string;
-  predictions: any[];
+  predictions: PredictionApiData[];
   centerSummary: Record<string, {
     attitude: { current: number; predicted: number; target: number; prob: number };
     process: { current: number; predicted: number; target: number; prob: number };
@@ -348,9 +348,9 @@ export function createPredictionAnalysisPrompt(data: PredictionAnalysisInput): s
   }
 
   // 그룹별 상세 현황
-  const groupLines = predictions.map((p: any) => {
-    const service = p.serviceChannel?.split('_')[0] || p.service || '';
-    const channel = p.serviceChannel?.split('_')[1] || p.channel || '';
+  const groupLines = predictions.map((p) => {
+    const service = p.serviceChannel?.split('_')[0] || '';
+    const channel = p.serviceChannel?.split('_')[1] || '';
     const trend = p.attitudeTrend === 'worsening' || p.opsTrend === 'worsening' ? '악화' :
                   p.attitudeTrend === 'improving' || p.opsTrend === 'improving' ? '개선' : '안정';
     return `- ${p.center} ${service}/${channel}: 태도 ${p.currentAttitudeRate}%→${p.predictedAttitudeRate}%, 오상담 ${p.currentOpsRate}%→${p.predictedOpsRate}%, 위험도 ${p.overallRiskLevel}, 추세 ${trend}`;
@@ -379,8 +379,8 @@ export function createPredictionAnalysisPrompt(data: PredictionAnalysisInput): s
 
   // 위험 그룹
   const riskGroups = predictions
-    .filter((p: any) => p.overallRiskLevel === 'critical' || p.overallRiskLevel === 'high')
-    .map((p: any) => {
+    .filter((p) => p.overallRiskLevel === 'critical' || p.overallRiskLevel === 'high')
+    .map((p) => {
       const service = p.serviceChannel?.split('_')[0] || '';
       const channel = p.serviceChannel?.split('_')[1] || '';
       return `- [${p.overallRiskLevel.toUpperCase()}] ${p.center} ${service}/${channel}: 태도 ${p.predictedAttitudeRate}%, 오상담 ${p.predictedOpsRate}%`;

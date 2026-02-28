@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
+import { useState, useCallback, useEffect, useMemo } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/hooks/use-auth"
 import { ROLE_CONFIG } from "@/lib/auth"
@@ -92,12 +92,20 @@ export default function QCManagementApp() {
     setCurrentTab("focus")
   }, [])
 
+  // 센터장: hq_admin + center → 해당 센터만 표시
+  const directorScope = useMemo(() => {
+    if (user?.role === "hq_admin" && user.center) {
+      return { center: user.center }
+    }
+    return undefined
+  }, [user?.role, user?.center])
+
   const renderContent = () => {
     switch (currentTab) {
       case "dashboard":
-        return <QualityDashboard onNavigateToFocus={handleNavigateToFocus} />
+        return <QualityDashboard onNavigateToFocus={handleNavigateToFocus} scope={directorScope} />
       case "productivity":
-        return <ProductivityDashboard />
+        return <ProductivityDashboard scope={directorScope} />
       case "sla":
         return <SLADashboard />
       case "attendance":

@@ -48,7 +48,7 @@ export function aggregateQcByCategory(
   errorCounts: QcErrorCounts,
   totalEvals: number,
 ): Array<{ categoryId: CoachingCategoryId; errorCount: number; errorRate: number }> {
-  const result: Record<CoachingCategoryId, number> = {} as any
+  const result = {} as Record<CoachingCategoryId, number>
   for (const cat of COACHING_CATEGORIES) {
     result[cat.id] = 0
   }
@@ -292,7 +292,7 @@ const PRESCRIPTION_TEMPLATES: Record<CoachingCategoryId, {
   },
   satisfaction: {
     weak: '체감만족 우수사례 분석 + 신속 응대 기법 학습',
-    critical: '고객 체감 만족도 집중 코칭 + CSAT 저점 건 사례 분석',
+    critical: '고객 체감 만족도 집중 코칭 + 상담평점 저점 건 사례 분석',
   },
   communication: {
     weak: '언어표현/맞춤법 자가점검 + 주 1회 피드백',
@@ -399,10 +399,10 @@ export function determineCoachingTier(
     }
   }
 
-  // 4. 기존 부진상담사 → 최소 "위험"
+  // 4. 기존 집중관리상담사 → 최소 "위험"
   if (isExistingUnderperformer && tierOrder.indexOf(tier) < 2) {
     tier = '위험'
-    reasons.push('기존 부진상담사 → 최소 위험')
+    reasons.push('기존 집중관리상담사 → 최소 위험')
   }
 
   return { tier, reason: reasons.join(' | ') }
@@ -452,8 +452,8 @@ export function getWeeklyReportPhase(dayOfMonth: number): 'month_start' | 'week2
 /**
  * 주간/월간 데이터로 미흡상담사 4개 기준을 판정한다.
  *
- * @param weeklyData 주간 데이터 (QC 태도/오상담 오류율, CSAT 저점 건수)
- * @param monthlyData 월간 데이터 (QA 업무지식 점수, CSAT 저점 건수)
+ * @param weeklyData 주간 데이터 (QC 태도/오상담 오류율, 상담평점 저점 건수)
+ * @param monthlyData 월간 데이터 (QA 업무지식 점수, 상담평점 저점 건수)
  * @param tenureMonths 상담사 근속개월
  */
 export function evaluateUnderperformingCriteria(
@@ -548,7 +548,7 @@ export function evaluateUnderperformingCriteria(
  *
  * @param criterionId 판정 대상 항목
  * @param recentWeeklyValues 최근 N주간 실측값 배열 (최신이 마지막)
- * @param nextMonthValue M+1 월간 실측값 (QA, CSAT 월간용)
+ * @param nextMonthValue M+1 월간 실측값 (QA, 상담평점 월간용)
  */
 export function checkResolution(
   criterionId: UnderperformingCriterionId,
@@ -560,7 +560,7 @@ export function checkResolution(
 
   const { resolution, direction } = criterion
 
-  // M+1 기준 해소 (QA 업무지식, CSAT 월간)
+  // M+1 기준 해소 (QA 업무지식, 상담평점 월간)
   if (resolution.nextMonth && nextMonthValue !== undefined) {
     if (criterionId === 'qa_knowledge') {
       return nextMonthValue >= resolution.threshold // M+1 ≥7점
@@ -571,7 +571,7 @@ export function checkResolution(
     }
   }
 
-  // 연속 주 기준 해소 (QC 태도, QC 오상담, CSAT 주간)
+  // 연속 주 기준 해소 (QC 태도, QC 오상담, 상담평점 주간)
   if (resolution.consecutiveWeeks) {
     const needed = resolution.consecutiveWeeks
     if (recentWeeklyValues.length < needed) return false

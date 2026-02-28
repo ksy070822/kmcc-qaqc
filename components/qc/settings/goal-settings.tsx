@@ -463,7 +463,7 @@ export function GoalSettings() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>센터</Label>
-                <Select value={formData.center} onValueChange={(v: any) => setFormData({ ...formData, center: v })}>
+                <Select value={formData.center} onValueChange={(v) => setFormData({ ...formData, center: v as "전체" | "용산" | "광주" })}>
                   <SelectTrigger className="bg-white border-slate-200">
                     <SelectValue />
                   </SelectTrigger>
@@ -476,7 +476,7 @@ export function GoalSettings() {
               </div>
               <div className="space-y-2">
                 <Label>유형</Label>
-                <Select value={formData.type} onValueChange={(v: any) => setFormData({ ...formData, type: v })}>
+                <Select value={formData.type} onValueChange={(v) => setFormData({ ...formData, type: v as "attitude" | "counseling" | "total" })}>
                   <SelectTrigger className="bg-white border-slate-200">
                     <SelectValue />
                   </SelectTrigger>
@@ -502,7 +502,7 @@ export function GoalSettings() {
               </div>
               <div className="space-y-2">
                 <Label>기간 유형</Label>
-                <Select value={formData.period} onValueChange={(v: any) => setFormData({ ...formData, period: v })}>
+                <Select value={formData.period} onValueChange={(v) => setFormData({ ...formData, period: v as "monthly" | "quarterly" | "yearly" })}>
                   <SelectTrigger className="bg-white border-slate-200">
                     <SelectValue />
                   </SelectTrigger>

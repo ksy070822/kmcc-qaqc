@@ -13,7 +13,7 @@ function getMonthEndDate(month: string): string {
   const d = parse(`${month}-01`, 'yyyy-MM-dd', new Date())
   return format(endOfMonth(d), 'yyyy-MM-dd')
 }
-import { getTenureBand, COACHING_CATEGORIES, QC_ERROR_TO_CATEGORY, ALERT_THRESHOLDS } from "@/lib/constants"
+import { getTenureBand, COACHING_CATEGORIES, QC_ERROR_TO_CATEGORY, ALERT_THRESHOLDS, QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT } from "@/lib/constants"
 import {
   assessCategoryWeaknesses,
   generatePrescriptions,
@@ -175,6 +175,78 @@ export async function getAgentQaScores(
   }
 
   return items
+}
+
+/**
+ * 배치: 여러 상담사의 QA 점수를 1회 쿼리로 조회
+ */
+async function getAllAgentQaScores(
+  agentIds: string[],
+  month: string,
+): Promise<Map<string, Array<{ itemKey: string; score: number; maxScore: number }>>> {
+  const result = new Map<string, Array<{ itemKey: string; score: number; maxScore: number }>>()
+  if (agentIds.length === 0) return result
+
+  const bq = getBigQueryClient()
+  const startDate = `${month}-01`
+  const endDate = getMonthEndDate(month)
+
+  const query = `
+    SELECT
+      agent_id,
+      AVG(greeting_score) AS greetingScore,
+      AVG(empathy_care) AS empathyCare,
+      AVG(listening_focus) AS listeningFocus,
+      AVG(response_expression) AS responseExpression,
+      AVG(identity_check) AS identityCheck,
+      AVG(required_search) AS requiredSearch,
+      AVG(inquiry_comprehension) AS inquiryComprehension,
+      AVG(business_knowledge) AS businessKnowledge,
+      AVG(explanation_ability) AS explanationAbility,
+      AVG(system_processing) AS systemProcessing,
+      AVG(consultation_history) AS consultationHistory,
+      AVG(perceived_satisfaction) AS perceivedSatisfaction,
+      AVG(promptness) AS promptness,
+      AVG(language_expression) AS languageExpression,
+      AVG(voice_performance) AS voicePerformance,
+      AVG(spelling) AS spelling,
+      COUNT(*) AS eval_count
+    FROM ${QA_EVALUATIONS}
+    WHERE agent_id IN UNNEST(@agentIds)
+      AND evaluation_date BETWEEN @startDate AND @endDate
+    GROUP BY agent_id
+  `
+
+  const [rows] = await bq.query({
+    query,
+    params: { agentIds, startDate, endDate },
+  })
+
+  if (!rows) return result
+
+  const maxScores: Record<string, number> = {
+    greetingScore: 6, empathyCare: 17, listeningFocus: 5, responseExpression: 5,
+    identityCheck: 5, requiredSearch: 5, inquiryComprehension: 5,
+    businessKnowledge: 15, explanationAbility: 10,
+    systemProcessing: 6, consultationHistory: 5,
+    perceivedSatisfaction: 5, promptness: 3,
+    languageExpression: 5, voicePerformance: 8, spelling: 5,
+  }
+
+  for (const row of rows as Record<string, unknown>[]) {
+    const agentId = String(row.agent_id)
+    if (Number(row.eval_count) === 0) continue
+
+    const items: Array<{ itemKey: string; score: number; maxScore: number }> = []
+    for (const [key, maxScore] of Object.entries(maxScores)) {
+      if (row[key] != null) {
+        items.push({ itemKey: key, score: Number(row[key]), maxScore })
+      }
+    }
+    result.set(agentId, items)
+  }
+
+  return result
 }
 
 // ============================================================
@@ -395,7 +467,7 @@ export async function getNewHireList(
     params: { agentIds, startDate, endDate },
   })
 
-  // CSAT (채팅 신입만) — dw_review 테이블에서 평균 평점 + 저점비율 조회
+  // 상담평점 (채팅 신입만) — dw_review 테이블에서 평균 평점 + 저점비율 조회
   const csatQuery = `
     SELECT
       COALESCE(c.user_id, c.first_user_id) AS agent_id,
@@ -460,7 +532,7 @@ export async function getNewHireList(
     })
   }
 
-  // CSAT 맵
+  // 상담평점 맵
   const csatMap = new Map<string, { avg: number; lowRate: number }>()
   for (const r of csatRows as Record<string, unknown>[]) {
     csatMap.set(String(r.agent_id), {
@@ -628,8 +700,8 @@ export async function getWeaknessHeatmapData(
       COUNTIF(history_error OR flag_keyword_error OR consult_type_error) AS cat_records,
       COUNT(*) AS total_evals
     FROM ${EVALUATIONS} e
-    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
-    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
+    LEFT JOIN (SELECT DISTINCT id, name, \`group\`, position FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
+    LEFT JOIN (SELECT DISTINCT id, name, \`group\`, position FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
     WHERE e.evaluation_date BETWEEN @startDate AND @endDate
       ${center ? "AND CASE WHEN hy.id IS NOT NULL THEN '용산' WHEN hg.id IS NOT NULL THEN '광주' ELSE '' END = @center" : ''}
     GROUP BY 1, 2, 3
@@ -746,18 +818,18 @@ export async function generateCoachingPlans(
       SAFE_DIVIDE(
         COUNTIF(empathy_error OR apology_error OR unkind_error OR
           greeting_error OR additional_inquiry_error),
-        COUNT(*) * 5
+        COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}
       ) * 100 AS att_rate,
       SAFE_DIVIDE(
         COUNTIF(identity_check_error OR required_search_error OR wrong_guide_error OR
           guide_error OR process_missing_error OR process_incomplete_error OR
           system_error OR id_mapping_error OR
           history_error OR flag_keyword_error OR consult_type_error),
-        COUNT(*) * 11
+        COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}
       ) * 100 AS ops_rate
     FROM ${EVALUATIONS} e
-    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
-    LEFT JOIN (SELECT DISTINCT id, name FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
+    LEFT JOIN (SELECT DISTINCT id, name, \`group\`, position, hire_date FROM ${HR_YONGSAN}) hy ON e.agent_id = hy.id
+    LEFT JOIN (SELECT DISTINCT id, name, \`group\`, position, hire_date FROM ${HR_GWANGJU}) hg ON e.agent_id = hg.id
     WHERE e.evaluation_date BETWEEN @startDate AND @endDate
       ${center ? "AND CASE WHEN hy.id IS NOT NULL THEN '용산' WHEN hg.id IS NOT NULL THEN '광주' ELSE '' END = @center" : ''}
     GROUP BY 1
@@ -771,10 +843,30 @@ export async function generateCoachingPlans(
 
   if (!agentRows || agentRows.length === 0) return []
 
-  const plans: AgentCoachingPlan[] = []
   const now = new Date()
+  const typedRows = agentRows as Record<string, unknown>[]
 
-  for (const row of agentRows as Record<string, unknown>[]) {
+  // ── Phase 1: 전체 상담사 QA 점수 배치 조회 (N쿼리 → 1쿼리) ──
+  const allAgentIds = typedRows.map(r => String(r.agent_id))
+  const qaScoresMap = await getAllAgentQaScores(allAgentIds, month)
+
+  // ── Phase 2: 동기 루프 — QC오류 + QA점수 → 취약점·리스크·티어 ──
+  const errFields: Record<string, string> = {
+    err_greeting: '첫인사끝인사누락', err_additional_inquiry: '추가문의누락',
+    err_empathy: '공감표현누락', err_apology: '사과표현누락', err_unkindness: '불친절',
+    err_identity: '본인확인누락', err_required_search: '필수탐색누락',
+    err_wrong_guide: '오안내', err_guide: '가이드미준수',
+    err_system_omission: '전산처리누락', err_system_correction: '전산처리미흡정정',
+    err_system_processing: '전산조작미흡오류', err_call_pick_trip: '콜픽트립ID매핑누락오기재',
+    err_consultation_history: '상담이력기재미흡', err_flag_keyword: '플래그키워드누락오기재',
+    err_consult_type: '상담유형오설정',
+  }
+
+  // 드릴다운 필요 목록 수집용
+  const drilldownNeeds: { planIdx: number; agentId: string; type: 'knowledge' | 'records' }[] = []
+  const plans: AgentCoachingPlan[] = []
+
+  for (const row of typedRows) {
     const agentId = String(row.agent_id)
     const agentName = String(row.agent_name || '')
     const centerVal = String(row.center || '')
@@ -793,24 +885,14 @@ export async function generateCoachingPlans(
 
     // QC 오류 맵
     const errorsByItem: Record<string, number> = {}
-    const errFields: Record<string, string> = {
-      err_greeting: '첫인사끝인사누락', err_additional_inquiry: '추가문의누락',
-      err_empathy: '공감표현누락', err_apology: '사과표현누락', err_unkindness: '불친절',
-      err_identity: '본인확인누락', err_required_search: '필수탐색누락',
-      err_wrong_guide: '오안내', err_guide: '가이드미준수',
-      err_system_omission: '전산처리누락', err_system_correction: '전산처리미흡정정',
-      err_system_processing: '전산조작미흡오류', err_call_pick_trip: '콜픽트립ID매핑누락오기재',
-      err_consultation_history: '상담이력기재미흡', err_flag_keyword: '플래그키워드누락오기재',
-      err_consult_type: '상담유형오설정',
-    }
     for (const [field, itemKey] of Object.entries(errFields)) {
       const count = Number(row[field]) || 0
       if (count > 0) errorsByItem[itemKey] = count
     }
     const totalEvals = Number(row.total_evals) || 0
 
-    // QA 점수 조회 → QaScoreData + QaMaxScoreMap 분리
-    const qaItems = await getAgentQaScores(agentId, month)
+    // QA 점수 — 배치 맵에서 조회 (BQ 호출 없음)
+    const qaItems = qaScoresMap.get(agentId) || []
     const qaScoreData: Record<string, number | null> = {}
     const qaMaxScoreMap: Record<string, number> = {}
     for (const item of qaItems) {
@@ -823,12 +905,11 @@ export async function generateCoachingPlans(
       errorsByItem, totalEvals, qaScoreData, qaMaxScoreMap,
     )
 
-    // 리스크 점수 — 통합 리스크 계산 (QA+QC+CSAT+Quiz 가중치 반영)
+    // 리스크 점수
     const attRate = Number(row.att_rate) || 0
     const opsRate = Number(row.ops_rate) || 0
     const qcTotalRate = attRate + opsRate
 
-    // QA 종합 점수 계산 (개별 항목에서 합산)
     let qaScore: number | undefined
     if (qaItems.length > 0) {
       const totalScore = qaItems.reduce((s, i) => s + (i.score ?? 0), 0)
@@ -836,7 +917,6 @@ export async function generateCoachingPlans(
       qaScore = totalMax > 0 ? (totalScore / totalMax) * 100 : undefined
     }
 
-    // 통합 리스크 계산용 부분 Summary 구성
     const partialSummary = {
       qcTotalRate,
       qcEvalCount: totalEvals,
@@ -846,35 +926,9 @@ export async function generateCoachingPlans(
       knowledgeScore: null,
     } as unknown as AgentMonthlySummary
 
-    const riskScore = calculateRiskScore(partialSummary, {
-      channel,
-      tenureMonths,
-    })
-
-    // 코칭 티어
+    const riskScore = calculateRiskScore(partialSummary, { channel, tenureMonths })
     const tierResult = determineCoachingTier(riskScore, tenureBand)
-
-    // 처방 생성
     const prescriptions = generatePrescriptions(weaknesses)
-
-    // 업무지식 부진 시 상담유형 드릴다운
-    const knowledgeWeak = weaknesses.find(
-      w => w.categoryId === 'knowledge' && w.severity !== 'normal',
-    )
-    let consultTypeErrors: ConsultTypeErrorAnalysis[] | undefined
-    let consultTypeCorrections: ConsultTypeCorrectionAnalysis | undefined
-
-    if (knowledgeWeak) {
-      consultTypeErrors = await getConsultTypeErrorDrilldown(agentId, month)
-    }
-
-    // 상담유형 오설정 빈도가 높으면
-    const recordsWeak = weaknesses.find(
-      w => w.categoryId === 'records' && w.severity !== 'normal',
-    )
-    if (recordsWeak) {
-      consultTypeCorrections = await getConsultTypeCorrectionStats(agentId, month)
-    }
 
     const { tier, reason: tierReason } = tierResult
     const weakCats = weaknesses
@@ -882,6 +936,7 @@ export async function generateCoachingPlans(
       .map(w => `${w.label}(${w.severity})`)
       .join(', ')
 
+    const planIdx = plans.length
     plans.push({
       agentId,
       agentName,
@@ -897,11 +952,39 @@ export async function generateCoachingPlans(
       tierReason: `${tierReason}. 취약: ${weakCats || '없음'}`,
       weaknesses,
       prescriptions,
-      consultTypeErrors,
-      consultTypeCorrections,
+      consultTypeErrors: undefined,
+      consultTypeCorrections: undefined,
       coachingFrequency: { '일반': '자율', '주의': '월1회', '위험': '격주', '심각': '주1회', '긴급': '주2회' }[tier] as string,
       status: 'planned',
     })
+
+    // 드릴다운 필요 여부 수집 (여기서 BQ 호출 안 함)
+    if (weaknesses.find(w => w.categoryId === 'knowledge' && w.severity !== 'normal')) {
+      drilldownNeeds.push({ planIdx, agentId, type: 'knowledge' })
+    }
+    if (weaknesses.find(w => w.categoryId === 'records' && w.severity !== 'normal')) {
+      drilldownNeeds.push({ planIdx, agentId, type: 'records' })
+    }
+  }
+
+  // ── Phase 3: 드릴다운 병렬 실행 ──
+  if (drilldownNeeds.length > 0) {
+    const drilldownResults = await Promise.all(
+      drilldownNeeds.map(async (need) => {
+        if (need.type === 'knowledge') {
+          return { ...need, result: await getConsultTypeErrorDrilldown(need.agentId, month) }
+        } else {
+          return { ...need, result: await getConsultTypeCorrectionStats(need.agentId, month) }
+        }
+      })
+    )
+    for (const dr of drilldownResults) {
+      if (dr.type === 'knowledge') {
+        plans[dr.planIdx].consultTypeErrors = dr.result as ConsultTypeErrorAnalysis[]
+      } else {
+        plans[dr.planIdx].consultTypeCorrections = dr.result as ConsultTypeCorrectionAnalysis
+      }
+    }
   }
 
   return plans
@@ -1129,7 +1212,7 @@ import type {
  *
  * - QC 상담태도/오상담 오류율 (주 단위, 검수 10건↑)
  * - QA 업무지식 점수 (월 단위, 1개월 미만 제외)
- * - CSAT 저점(1·2점) 건수 (주/월 단위)
+ * - 상담평점 저점(1·2점) 건수 (주/월 단위)
  *
  * @param weekStart 주간 시작일 (YYYY-MM-DD)
  * @param weekEnd 주간 종료일 (YYYY-MM-DD)
@@ -1163,7 +1246,7 @@ export async function getUnderperformingAgents(
       FROM ${HR_GWANGJU}
       WHERE type = '상담사' AND \`group\` IS NOT NULL
     ),
-    -- QC 주간 집계 (상담태도 5항목 / 오상담 11항목)
+    -- QC 주간 집계 (상담태도 ${QC_ATTITUDE_ITEM_COUNT}항목 / 오상담 ${QC_CONSULTATION_ITEM_COUNT}항목)
     qc_weekly AS (
       SELECT
         agent_id,
@@ -1207,10 +1290,10 @@ export async function getUnderperformingAgents(
       -- QC 주간
       COALESCE(qw.eval_count, 0) AS qc_eval_count,
       CASE WHEN COALESCE(qw.eval_count, 0) > 0
-        THEN ROUND(qw.attitude_errors / (qw.eval_count * 5) * 100, 2)
+        THEN ROUND(qw.attitude_errors / (qw.eval_count * ${QC_ATTITUDE_ITEM_COUNT}) * 100, 2)
         ELSE 0 END AS qc_attitude_rate,
       CASE WHEN COALESCE(qw.eval_count, 0) > 0
-        THEN ROUND(qw.ops_errors / (qw.eval_count * 11) * 100, 2)
+        THEN ROUND(qw.ops_errors / (qw.eval_count * ${QC_CONSULTATION_ITEM_COUNT}) * 100, 2)
         ELSE 0 END AS qc_ops_rate,
       -- QA 월간
       qa.avg_knowledge_score AS qa_knowledge_score,
@@ -1336,9 +1419,9 @@ export async function getAgentWeeklyFlags(
       wr.week_end,
       COALESCE(qw.eval_count, 0) AS eval_count,
       CASE WHEN COALESCE(qw.eval_count, 0) > 0
-        THEN ROUND(qw.att_errors / (qw.eval_count * 5) * 100, 2) ELSE 0 END AS att_rate,
+        THEN ROUND(qw.att_errors / (qw.eval_count * ${QC_ATTITUDE_ITEM_COUNT}) * 100, 2) ELSE 0 END AS att_rate,
       CASE WHEN COALESCE(qw.eval_count, 0) > 0
-        THEN ROUND(qw.ops_errors / (qw.eval_count * 11) * 100, 2) ELSE 0 END AS ops_rate,
+        THEN ROUND(qw.ops_errors / (qw.eval_count * ${QC_CONSULTATION_ITEM_COUNT}) * 100, 2) ELSE 0 END AS ops_rate,
       COALESCE(cw.low_count, 0) AS csat_low
     FROM week_ranges wr
     LEFT JOIN qc_by_week qw ON wr.week_start = qw.week_start

@@ -1,5 +1,5 @@
 /**
- * 부진상담사 API — getWatchList → UnderperformingAgent 변환
+ * 집중관리상담사 API — getWatchList → UnderperformingAgent 변환
  *
  * GET /api/underperforming?center=용산&status=tracking
  */

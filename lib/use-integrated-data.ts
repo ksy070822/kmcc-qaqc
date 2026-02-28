@@ -1,5 +1,6 @@
 "use client"
 
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { useState, useCallback, useRef } from "react"
 import type {
   AgentMonthlySummary,
@@ -11,86 +12,96 @@ import type {
 // ── 통합 대시보드 데이터 훅 ──
 
 export function useIntegratedDashboardData(month: string, center?: string) {
-  const [summaries, setSummaries] = useState<AgentMonthlySummary[]>([])
-  const [stats, setStats] = useState<IntegratedDashboardStats | null>(null)
-  const [crossAnalysis, setCrossAnalysis] = useState<CrossAnalysisResult | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  // 소비자가 명시적으로 fetchData()를 호출할 때까지 쿼리를 비활성화
   const hasFetched = useRef(false)
+  const [enabled, setEnabled] = useState(false)
+
+  const centerParam = center ? `&center=${encodeURIComponent(center)}` : ""
+
+  const summaryQuery = useQuery({
+    queryKey: ['integrated-summary', month, center],
+    queryFn: async () => {
+      const res = await fetch(`/api/data?type=agent-summary&month=${month}${centerParam}`)
+      const json = await res.json()
+      if (json.success && json.data) {
+        return json.data as { summaries: AgentMonthlySummary[]; stats: IntegratedDashboardStats | null }
+      }
+      throw new Error(json.error || "데이터를 불러오지 못했습니다")
+    },
+    enabled: enabled && !!month,
+  })
+
+  const crossQuery = useQuery({
+    queryKey: ['integrated-cross-analysis', month, center],
+    queryFn: async () => {
+      const res = await fetch(`/api/data?type=cross-analysis&month=${month}${centerParam}`)
+      const json = await res.json()
+      if (json.success && json.data) {
+        return json.data as CrossAnalysisResult
+      }
+      return null
+    },
+    enabled: enabled && !!month,
+  })
 
   const fetchData = useCallback(async () => {
-    if (!month) return
-    setLoading(true)
-    setError(null)
-
-    try {
-      const centerParam = center ? `&center=${encodeURIComponent(center)}` : ""
-
-      // agent-summary + cross-analysis를 병렬 fetch
-      const [summaryRes, crossRes] = await Promise.all([
-        fetch(`/api/data?type=agent-summary&month=${month}${centerParam}`),
-        fetch(`/api/data?type=cross-analysis&month=${month}${centerParam}`),
-      ])
-
-      const summaryJson = await summaryRes.json()
-      const crossJson = await crossRes.json()
-
-      if (summaryJson.success && summaryJson.data) {
-        setSummaries(summaryJson.data.summaries || [])
-        setStats(summaryJson.data.stats || null)
-      } else {
-        setError(summaryJson.error || "데이터를 불러오지 못했습니다")
-      }
-
-      if (crossJson.success && crossJson.data) {
-        setCrossAnalysis(crossJson.data)
-      }
-
-      hasFetched.current = true
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "네트워크 오류")
-    } finally {
-      setLoading(false)
+    hasFetched.current = true
+    setEnabled(true)
+    // enabled가 true가 되면 React Query가 자동으로 fetch 시작
+    // 이미 enabled인 경우 refetch
+    if (enabled) {
+      await Promise.all([summaryQuery.refetch(), crossQuery.refetch()])
     }
-  }, [month, center])
+  }, [enabled, summaryQuery, crossQuery])
 
-  return { summaries, stats, crossAnalysis, loading, error, fetchData, hasFetched }
+  return {
+    summaries: summaryQuery.data?.summaries ?? [],
+    stats: summaryQuery.data?.stats ?? null,
+    crossAnalysis: crossQuery.data ?? null,
+    loading: summaryQuery.isLoading || crossQuery.isLoading,
+    error: summaryQuery.error?.message || crossQuery.error?.message || null,
+    fetchData,
+    hasFetched,
+  }
 }
 
 // ── 상담사 프로파일 훅 (모달 열 때만 fetch) ──
 
 export function useAgentIntegratedProfile() {
-  const [profile, setProfile] = useState<AgentIntegratedProfile | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [profileKey, setProfileKey] = useState<{ agentId: string; months: number; selectedMonth?: string } | null>(null)
+  const queryClient = useQueryClient()
+
+  const profileQuery = useQuery({
+    queryKey: ['agent-profile', profileKey?.agentId, profileKey?.months, profileKey?.selectedMonth],
+    queryFn: async () => {
+      if (!profileKey) return null
+      const monthParam = profileKey.selectedMonth ? `&selectedMonth=${encodeURIComponent(profileKey.selectedMonth)}` : ''
+      const res = await fetch(`/api/data?type=agent-profile&agentId=${encodeURIComponent(profileKey.agentId)}&months=${profileKey.months}${monthParam}`)
+      const json = await res.json()
+      if (json.success && json.data) {
+        return json.data as AgentIntegratedProfile
+      }
+      throw new Error(json.error || "프로파일을 불러오지 못했습니다")
+    },
+    enabled: !!profileKey,
+  })
 
   const fetchProfile = useCallback(async (agentId: string, months = 6, selectedMonth?: string) => {
     if (!agentId) return
-    setLoading(true)
-    setError(null)
-    setProfile(null)
-
-    try {
-      const monthParam = selectedMonth ? `&selectedMonth=${encodeURIComponent(selectedMonth)}` : ''
-      const res = await fetch(`/api/data?type=agent-profile&agentId=${encodeURIComponent(agentId)}&months=${months}${monthParam}`)
-      const json = await res.json()
-
-      if (json.success && json.data) {
-        setProfile(json.data)
-      } else {
-        setError(json.error || "프로파일을 불러오지 못했습니다")
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "네트워크 오류")
-    } finally {
-      setLoading(false)
-    }
+    setProfileKey({ agentId, months, selectedMonth })
   }, [])
 
   const clearProfile = useCallback(() => {
-    setProfile(null)
-    setError(null)
-  }, [])
+    setProfileKey(null)
+    // 캐시에서 현재 프로필 데이터 제거
+    queryClient.removeQueries({ queryKey: ['agent-profile'] })
+  }, [queryClient])
 
-  return { profile, loading, error, fetchProfile, clearProfile }
+  return {
+    profile: profileQuery.data ?? null,
+    loading: profileQuery.isLoading,
+    error: profileQuery.error?.message || null,
+    fetchProfile,
+    clearProfile,
+  }
 }

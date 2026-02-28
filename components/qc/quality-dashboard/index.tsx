@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { format, addMonths, subMonths, startOfMonth, endOfMonth } from "date-fns"
 import { ko } from "date-fns/locale"
 import { ChevronLeft, ChevronRight } from "lucide-react"
@@ -28,6 +28,7 @@ const DAILY_TABS: TabValue[] = ["qc", "csat"]
 
 interface QualityDashboardProps {
   onNavigateToFocus: () => void
+  scope?: { center?: string; service?: string }
 }
 
 // 월 내 목~수 주차 목록 생성
@@ -54,20 +55,28 @@ function getWeeksInMonth(monthDate: Date): Array<{ start: Date; end: Date; label
   return weeks
 }
 
-export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
+export function QualityDashboard({ onNavigateToFocus, scope }: QualityDashboardProps) {
   const [activeTab, setActiveTab] = useState<TabValue>("qa")
   const [crossNavAgentId, setCrossNavAgentId] = useState<string | null>(null)
   // 월간 탭(QA/Quiz/통합분석): 전월 기본
   const [monthlyMonth, setMonthlyMonth] = useState(() => subMonths(new Date(), 1))
-  // 일간 탭(QC/CSAT): 당월 기본 (전주차 자동 선택)
+  // 일간 탭(QC/상담평점): 당월 기본 (전주차 자동 선택)
   const [dailyMonth, setDailyMonth] = useState(() => new Date())
   // visitedTabs 제거 — display:none keep-alive 패턴이 Recharts removeChild 에러 유발
 
-  // QC/CSAT 기간 모드
+  // QC/상담평점 기간 모드
   const [periodMode, setPeriodMode] = useState<PeriodMode>("weekly")
   const [selectedWeekIdx, setSelectedWeekIdx] = useState(-1) // -1 = auto
   const [customStart, setCustomStart] = useState("")
   const [customEnd, setCustomEnd] = useState("")
+
+  // periodMode 전환 시 custom 입력값 초기화 (이전 입력이 잔류하는 문제 방지)
+  useEffect(() => {
+    if (periodMode !== "custom") {
+      setCustomStart("")
+      setCustomEnd("")
+    }
+  }, [periodMode])
 
   const handleTabChange = (tab: TabValue) => {
     setActiveTab(tab)
@@ -101,6 +110,7 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
 
   // 현재 주 자동 선택 (주 초반(목~토)이면 이전 완료 주차 기본 선택)
   const activeWeekIdx = useMemo(() => {
+    if (weeks.length === 0) return 0
     if (selectedWeekIdx >= 0 && selectedWeekIdx < weeks.length) return selectedWeekIdx
     const today = new Date()
     if (format(today, "yyyy-MM") === monthStr) {
@@ -113,12 +123,12 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
         if (daysIntoWeek < 3 && idx > 0) return idx - 1
         return idx
       }
-      return weeks.length - 1
+      return Math.max(0, weeks.length - 1)
     }
-    return weeks.length - 1
+    return Math.max(0, weeks.length - 1)
   }, [weeks, selectedWeekIdx, monthStr])
 
-  // QC/CSAT 날짜 범위 계산
+  // QC/상담평점 날짜 범위 계산
   const dateRange = useMemo(() => {
     if (periodMode === "weekly" && weeks.length > 0) {
       const w = weeks[activeWeekIdx] || weeks[weeks.length - 1]
@@ -174,6 +184,9 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
             <span className="text-sm font-semibold text-gray-800 min-w-[100px] text-center select-none">
               {monthLabel}
             </span>
+            <span className="text-[10px] text-gray-400 -ml-1">
+              {isDailyTab ? "일간" : "월간"}
+            </span>
             <button
               onClick={goToNextMonth}
               className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500 transition-colors cursor-pointer"
@@ -182,7 +195,7 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
             </button>
           </div>
 
-          {/* QC/CSAT: 기간 모드 */}
+          {/* QC/상담평점: 기간 모드 */}
           {isDailyTab && (
             <>
               <div className="h-4 w-px bg-gray-200" />
@@ -262,21 +275,23 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
       </div>
 
       {/* 탭 콘텐츠 — 조건부 렌더링 (display:none은 Recharts removeChild 에러 유발) */}
-      {activeTab === "qa" && <QADashboard externalMonth={monthStr} />}
+      {activeTab === "qa" && <QADashboard externalMonth={monthStr} scope={scope} />}
       {activeTab === "qc" && (
         <Dashboard
           onNavigateToFocus={onNavigateToFocus}
           externalStartDate={dateRange.start}
           externalEndDate={dateRange.end}
+          scope={scope}
         />
       )}
       {activeTab === "csat" && (
         <CSATDashboard
           externalStartDate={dateRange.start}
           externalEndDate={dateRange.end}
+          scope={scope}
         />
       )}
-      {activeTab === "quiz" && <QuizDashboard externalMonth={monthStr} />}
+      {activeTab === "quiz" && <QuizDashboard externalMonth={monthStr} scope={scope} />}
       {activeTab === "integrated" && (
         <IntegratedDashboard
           externalMonth={monthStr}
@@ -295,6 +310,7 @@ export function QualityDashboard({ onNavigateToFocus }: QualityDashboardProps) {
             setCrossNavAgentId(agentId)
             setActiveTab("integrated")
           }}
+          scope={scope}
         />
       )}
     </div>

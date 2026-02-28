@@ -6,7 +6,7 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer,
 } from "recharts"
-import type { AgentIntegratedProfile } from "@/lib/types"
+import type { AgentIntegratedProfile, RechartsPayloadEntry } from "@/lib/types"
 import { RISK_LEVEL_CONFIG, DOMAIN_LABELS, QC_RATE_CAP } from "@/lib/constants"
 
 interface AgentProfileModalProps {
@@ -201,11 +201,12 @@ export function AgentProfileModal({ profile, loading, error, onClose, onNavigate
                     return (
                       <div className="bg-white border border-gray-200 rounded-lg shadow-lg p-2 text-xs">
                         <p className="font-semibold mb-1">{label}월</p>
-                        {payload.map((p: any) => {
-                          if (p.dataKey === '상담평점' && p.payload._상담평점원본 != null) {
-                            return <p key={p.dataKey} style={{ color: p.stroke }}>상담평점: {p.payload._상담평점원본}/5.0 ({p.value})</p>
+                        {payload.map((p) => {
+                          const entry = p as unknown as RechartsPayloadEntry
+                          if (entry.dataKey === '상담평점' && entry.payload._상담평점원본 != null) {
+                            return <p key={String(entry.dataKey)} style={{ color: entry.stroke }}>{`상담평점: ${String(entry.payload._상담평점원본)}/5.0 (${entry.value})`}</p>
                           }
-                          return <p key={p.dataKey} style={{ color: p.stroke }}>{p.name}: {p.value}</p>
+                          return <p key={String(entry.dataKey)} style={{ color: entry.stroke }}>{`${entry.name}: ${entry.value}`}</p>
                         })}
                       </div>
                     )

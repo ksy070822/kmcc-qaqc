@@ -1,12 +1,15 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import type { SLAResult } from "@/lib/types"
+
+type SLATab = "scorecard" | "detail" | "simulator" | "trend" | "progress"
 
 interface UseSLADataReturn {
   scorecard: SLAResult[] | null
   trend: SLAResult[] | null
   loading: boolean
+  trendLoading: boolean
   error: string | null
   refetch: () => void
 }
@@ -31,22 +34,21 @@ async function fetchSLA<T>(type: string, month?: string, startDate?: string, end
   }
 }
 
-export function useSLAData(month?: string, startDate?: string, endDate?: string): UseSLADataReturn {
+export function useSLAData(month?: string, startDate?: string, endDate?: string, activeTab?: SLATab): UseSLADataReturn {
   const [scorecard, setScorecard] = useState<SLAResult[] | null>(null)
   const [trend, setTrend] = useState<SLAResult[] | null>(null)
   const [loading, setLoading] = useState(false)
+  const [trendLoading, setTrendLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const trendFetched = useRef(false)
 
-  const fetchAll = useCallback(async () => {
+  // 스코어카드 fetch (기본 — 모든 탭에서 필요)
+  const fetchScorecard = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [sc, tr] = await Promise.all([
-        fetchSLA<SLAResult[]>("sla-scorecard", month, startDate, endDate),
-        fetchSLA<SLAResult[]>("sla-trend"),
-      ])
+      const sc = await fetchSLA<SLAResult[]>("sla-scorecard", month, startDate, endDate)
       setScorecard(sc)
-      setTrend(tr)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -54,9 +56,43 @@ export function useSLAData(month?: string, startDate?: string, endDate?: string)
     }
   }, [month, startDate, endDate])
 
-  useEffect(() => {
-    if (month || (startDate && endDate)) fetchAll()
-  }, [month, startDate, endDate, fetchAll])
+  // 트렌드 fetch (lazy — trend 탭 진입 시에만)
+  const fetchTrend = useCallback(async () => {
+    if (trendFetched.current) return
+    setTrendLoading(true)
+    try {
+      const tr = await fetchSLA<SLAResult[]>("sla-trend")
+      setTrend(tr)
+      trendFetched.current = true
+    } catch (err) {
+      console.error("[SLA] trend fetch error:", err)
+    } finally {
+      setTrendLoading(false)
+    }
+  }, [])
 
-  return { scorecard, trend, loading, error, refetch: fetchAll }
+  // 월/기간 변경 시 스코어카드만 즉시 로드
+  useEffect(() => {
+    if (month || (startDate && endDate)) {
+      trendFetched.current = false
+      setTrend(null)
+      fetchScorecard()
+    }
+  }, [month, startDate, endDate, fetchScorecard])
+
+  // trend 탭 진입 시 트렌드 레이지 로드
+  useEffect(() => {
+    if (activeTab === "trend" && !trendFetched.current) {
+      fetchTrend()
+    }
+  }, [activeTab, fetchTrend])
+
+  const refetch = useCallback(() => {
+    trendFetched.current = false
+    setTrend(null)
+    fetchScorecard()
+    if (activeTab === "trend") fetchTrend()
+  }, [fetchScorecard, fetchTrend, activeTab])
+
+  return { scorecard, trend, loading, trendLoading, error, refetch }
 }

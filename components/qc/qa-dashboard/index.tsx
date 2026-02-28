@@ -14,6 +14,13 @@ import { useQADashboardData } from "@/lib/use-qa-dashboard-data"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+/** 이전 달 문자열 반환 (QA는 현재 월 데이터가 없을 수 있어 기본값을 전월로 설정) */
+function getPreviousMonth(): string {
+  const d = new Date()
+  d.setMonth(d.getMonth() - 1)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
+}
+
 interface QADashboardProps {
   externalMonth?: string
   scope?: { center?: string; service?: string }
@@ -26,33 +33,29 @@ export function QADashboard({ externalMonth, scope }: QADashboardProps) {
   const [selectedTenure, setSelectedTenure] = useState("all")
   const [isMounted, setIsMounted] = useState(false)
   const [activeTab, setActiveTab] = useState("item")
-  // round 탭 전용 월 내비게이션 (부모 필터와 독립)
-  const [roundMonth, setRoundMonth] = useState(() => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-  })
-  // 기본: externalMonth 또는 이전 달 (현재 월에는 데이터가 없을 수 있음)
-  const defaultMonth = externalMonth || (() => {
-    const d = new Date()
-    d.setMonth(d.getMonth() - 1)
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-  })()
-  const [filterStartDate, setFilterStartDate] = useState<string | undefined>(defaultMonth)
-  const [filterEndDate, setFilterEndDate] = useState<string | undefined>(defaultMonth)
+
+  // 기본월: externalMonth 또는 전월
+  const defaultMonth = externalMonth || getPreviousMonth()
+
+  // round 탭 전용 월 (externalMonth와 동기화)
+  const [roundMonth, setRoundMonth] = useState(defaultMonth)
+  // 필터 월 범위 (변수명: 실제로 "yyyy-MM" 월 문자열)
+  const [filterStartMonth, setFilterStartMonth] = useState<string | undefined>(defaultMonth)
+  const [filterEndMonth, setFilterEndMonth] = useState<string | undefined>(defaultMonth)
 
   useEffect(() => { setIsMounted(true) }, [])
 
-  // 외부 월 → 필터 동기화 (hook은 month 문자열 기대: "2026-02")
+  // 외부 월 → 필터 + round탭 동기화
   useEffect(() => {
     if (externalMonth) {
-      setFilterStartDate(externalMonth)
-      setFilterEndDate(externalMonth)
+      setFilterStartMonth(externalMonth)
+      setFilterEndMonth(externalMonth)
+      setRoundMonth(externalMonth)
     }
   }, [externalMonth])
 
   const { stats, centerStats, trendData, underperformerCount, loading, error, refresh } = useQADashboardData(
-    filterStartDate, filterEndDate, scope
+    filterStartMonth, filterEndMonth, scope
   )
 
   const showLoading = isMounted && loading
@@ -89,11 +92,11 @@ export function QADashboard({ externalMonth, scope }: QADashboardProps) {
         setSelectedChannel={setSelectedChannel}
         selectedTenure={selectedTenure}
         setSelectedTenure={setSelectedTenure}
-        startDate={filterStartDate}
-        endDate={filterEndDate}
+        startDate={filterStartMonth}
+        endDate={filterEndMonth}
         onDateChange={(start, end) => {
-          setFilterStartDate(start)
-          setFilterEndDate(end)
+          setFilterStartMonth(start)
+          setFilterEndMonth(end)
         }}
         onSearch={refresh}
         disableCenter={!!scope?.center}
@@ -128,7 +131,7 @@ export function QADashboard({ externalMonth, scope }: QADashboardProps) {
         </div>
 
         {activeTab === "item" && (
-          <QAItemAnalysisV2 center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />
+          <QAItemAnalysisV2 center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartMonth} endMonth={filterEndMonth} />
         )}
         {activeTab === "round" && (
           <div className="space-y-4">
@@ -136,8 +139,8 @@ export function QADashboard({ externalMonth, scope }: QADashboardProps) {
             <QARoundTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} roundMonth={roundMonth} onRoundMonthChange={setRoundMonth} />
           </div>
         )}
-        {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
-        {activeTab === "agent" && <QAAgentAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartDate} endMonth={filterEndDate} />}
+        {activeTab === "monthly" && <QAMonthlyTable center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartMonth} endMonth={filterEndMonth} />}
+        {activeTab === "agent" && <QAAgentAnalysis center={selectedCenter} service={selectedService} channel={selectedChannel} tenure={selectedTenure} startMonth={filterStartMonth} endMonth={filterEndMonth} />}
       </div>
     </div>
   )

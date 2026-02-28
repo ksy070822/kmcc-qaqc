@@ -7,6 +7,7 @@ import { AgentTable } from "./agent-table"
 import { AgentDetailModal } from "./agent-detail-modal"
 import { useAgents } from "@/hooks/use-agents"
 import { Loader2 } from "lucide-react"
+import type { AgentAnalysisRow } from "@/lib/types"
 
 export function AgentAnalysis() {
   const [search, setSearch] = useState("")
@@ -14,7 +15,7 @@ export function AgentAnalysis() {
   const [selectedChannel, setSelectedChannel] = useState("all")
   const [selectedServiceGroup, setSelectedServiceGroup] = useState("all")
   const [selectedTenure, setSelectedTenure] = useState("all")
-  const [selectedAgent, setSelectedAgent] = useState<any>(null)
+  const [selectedAgent, setSelectedAgent] = useState<AgentAnalysisRow | null>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
 
   // BigQuery에서 데이터 가져오기
@@ -186,7 +187,7 @@ export function AgentAnalysis() {
     })
   }, [agentRows, search, selectedCenter, selectedChannel, selectedServiceGroup, selectedTenure])
 
-  const handleSelectAgent = (agent: any) => {
+  const handleSelectAgent = (agent: AgentAnalysisRow) => {
     setSelectedAgent(agent)
     setDetailModalOpen(true)
   }
@@ -260,8 +261,29 @@ export function AgentAnalysis() {
           />
           <AgentTable agents={filteredAgents.map(a => {
             const withTrend = agentsWithTrends.find(awt => awt.id === a.id)
-            return withTrend ? { ...a, trend: withTrend.trend } : a
-          })} onSelectAgent={handleSelectAgent} />
+            return withTrend ? { ...a, trend: withTrend.trend ?? null } : a
+          })} onSelectAgent={(row) => {
+            // Build AgentAnalysisRow from the table row + original Agent data
+            const original = (agents || []).find(ag => ag.id === row.id)
+            if (original) {
+              const analysisRow: AgentAnalysisRow = {
+                id: original.id,
+                name: original.name,
+                center: original.center,
+                group: `${original.service}/${original.channel}`,
+                channel: original.channel,
+                tenure: original.tenureGroup || row.tenure,
+                errorRate: original.overallErrorRate,
+                overallErrorRate: original.overallErrorRate,
+                attitudeErrorRate: original.attitudeErrorRate,
+                opsErrorRate: original.opsErrorRate,
+                evaluationCount: original.totalEvaluations,
+                status: row.status,
+                topErrors: original.topErrors,
+              }
+              handleSelectAgent(analysisRow)
+            }
+          }} />
         </CardContent>
       </Card>
 

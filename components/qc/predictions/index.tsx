@@ -23,6 +23,7 @@ import {
   type AgentPrediction
 } from "@/lib/predictions"
 import { groups, serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
+import type { PredictionApiData, PredictionAgentData, PredictionWeeklyMetric, WeeklyTrendChartRow, AgentErrorInfo, RechartsPayloadEntry } from "@/lib/types"
 
 // 운영 그룹 화이트리스트 (실제 운영 서비스/채널 조합만 허용)
 const OPERATIONAL_GROUPS: Record<string, string[]> = {
@@ -46,11 +47,12 @@ function isOperationalGroup(center: string, group: string): boolean {
 
 // 관리자 직무 키워드 (제외 대상)
 const MANAGER_KEYWORDS = ["팀장", "매니저", "관리자", "리더", "supervisor", "manager", "team lead"]
-function isManager(agent: any): boolean {
+function isManager(agent: PredictionAgentData): boolean {
   const group = (agent.group || agent.service || '').toLowerCase()
   const channel = (agent.channel || '').toLowerCase()
   return MANAGER_KEYWORDS.some(kw => group.includes(kw) || channel.includes(kw))
 }
+import DOMPurify from "dompurify"
 import { getStatusColorsByProbability } from "@/lib/utils"
 import { usePredictions } from "@/hooks/use-predictions"
 import { useAgents } from "@/hooks/use-agents"
@@ -63,7 +65,7 @@ interface PredictionsProps {
 }
 
 // API 응답을 GroupPrediction 형식으로 변환
-function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
+function convertToGroupPredictions(apiData: PredictionApiData[]): GroupPrediction[] {
   return apiData.map((data) => {
     const [service, channel] = data.serviceChannel.split('_')
     
@@ -72,20 +74,20 @@ function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
       predictedRate: data.predictedAttitudeRate,
       targetRate: data.targetAttitudeRate,
       achievementProbability: data.attitudeAchievementProb,
-      trend: data.attitudeTrend,
-      riskLevel: data.attitudeRiskLevel,
-      weeklyRates: data.weeklyMetrics.map((m: any) => m.attitudeRate),
+      trend: data.attitudeTrend as PredictionResult['trend'],
+      riskLevel: data.attitudeRiskLevel as PredictionResult['riskLevel'],
+      weeklyRates: data.weeklyMetrics.map((m) => m.attitudeRate),
       w4Predicted: data.w4PredictedAttitude,
     }
-    
+
     const processPrediction: PredictionResult = {
       currentRate: data.currentOpsRate,
       predictedRate: data.predictedOpsRate,
       targetRate: data.targetOpsRate,
       achievementProbability: data.opsAchievementProb,
-      trend: data.opsTrend,
-      riskLevel: data.opsRiskLevel,
-      weeklyRates: data.weeklyMetrics.map((m: any) => m.opsRate),
+      trend: data.opsTrend as PredictionResult['trend'],
+      riskLevel: data.opsRiskLevel as PredictionResult['riskLevel'],
+      weeklyRates: data.weeklyMetrics.map((m) => m.opsRate),
       w4Predicted: data.w4PredictedOps,
     }
     
@@ -101,7 +103,7 @@ function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
       achievementProbability: totalProb,
       trend: attitudePrediction.trend === 'improving' || processPrediction.trend === 'improving' ? 'improving' :
              attitudePrediction.trend === 'worsening' || processPrediction.trend === 'worsening' ? 'worsening' : 'stable',
-      riskLevel: data.overallRiskLevel,
+      riskLevel: data.overallRiskLevel as PredictionResult['riskLevel'],
       weeklyRates: [],
       w4Predicted: (attitudePrediction.w4Predicted + processPrediction.w4Predicted) / 2,
     }
@@ -124,7 +126,7 @@ function convertToGroupPredictions(apiData: any[]): GroupPrediction[] {
 }
 
 // API 응답을 AgentPrediction 형식으로 변환 (관리자 직무 제외)
-function convertToAgentPredictions(agents: any[], predictionsData?: any[]): AgentPrediction[] {
+function convertToAgentPredictions(agents: PredictionAgentData[], predictionsData?: PredictionApiData[]): AgentPrediction[] {
   // 관리자 직무 제외
   const filteredAgents = agents.filter(agent => !isManager(agent))
 
@@ -138,7 +140,7 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
     let trend: 'improving' | 'stable' | 'worsening' = 'stable'
     if (predictionsData && predictionsData.length > 0) {
       const groupKey = `${agent.center}_${agent.service}/${agent.channel}`
-      const groupPrediction = predictionsData.find((p: any) => 
+      const groupPrediction = predictionsData.find((p) =>
         p.center === agent.center && 
         p.dimensionValue === `${agent.service}/${agent.channel}`
       )
@@ -173,13 +175,14 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
     
     // 실제 주요 오류 항목 사용 (topErrors가 있으면 사용, 없으면 빈 배열)
     // topErrors는 이미 AgentErrorInfo 형태 (name, count, rate 포함)
-    const mainErrors = (agent.topErrors || []).map((err: any) => {
+    const mainErrors = (agent.topErrors || []).map((err) => {
       // AgentErrorInfo 형태인지 확인
       if (typeof err === 'string') {
-        return { name: err, rate: 0 }
+        return { name: err, count: 0, rate: 0 }
       }
       return {
-        name: err.name || err,
+        name: err.name,
+        count: err.count ?? 0,
         rate: err.rate || 0,
       }
     })
@@ -201,9 +204,9 @@ function convertToAgentPredictions(agents: any[], predictionsData?: any[]): Agen
 }
 
 // 주차별 추이 차트 데이터 생성 (API 데이터 기반)
-function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
+function generateWeeklyTrendDataFromAPI(predictions: PredictionApiData[]): WeeklyTrendChartRow[] {
   const weeks = ['W1', 'W2', 'W3', 'W4']
-  const result: any[] = []
+  const result: WeeklyTrendChartRow[] = []
 
   const yongsanPreds = predictions.filter(p => p.center === '용산')
   const gwangjuPreds = predictions.filter(p => p.center === '광주')
@@ -211,7 +214,7 @@ function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
   const gwangjuCount = gwangjuPreds.length || 1
 
   weeks.forEach((week) => {
-    const weekData: any = {
+    const weekData: WeeklyTrendChartRow = {
       week,
       용산_태도: 0,
       용산_오상담: 0,
@@ -229,7 +232,7 @@ function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
       let gwangjuHasW4 = false
 
       predictions.forEach((p) => {
-        const w4Metric = p.weeklyMetrics?.find((m: any) => m.week === 'W4')
+        const w4Metric = p.weeklyMetrics?.find((m) => m.week === 'W4')
         if (w4Metric) {
           if (p.center === '용산') { weekData.용산_태도 += w4Metric.attitudeRate; weekData.용산_오상담 += w4Metric.opsRate; yongsanHasW4 = true }
           if (p.center === '광주') { weekData.광주_태도 += w4Metric.attitudeRate; weekData.광주_오상담 += w4Metric.opsRate; gwangjuHasW4 = true }
@@ -251,7 +254,7 @@ function generateWeeklyTrendDataFromAPI(predictions: any[]): any[] {
         weekData.광주_태도 = Number((weekData.광주_태도 / gwangjuCount).toFixed(2))
         weekData.광주_오상담 = Number((weekData.광주_오상담 / gwangjuCount).toFixed(2))
       }
-      weekData.isPredicted = true
+      weekData.isPredicted = 1
     } else {
       // W1~W3: 실적 데이터 사용
       predictions.forEach((p) => {
@@ -767,19 +770,22 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                           [&_ul]:my-1 [&_li]:my-0.5 [&_p]:my-1
                           [&_strong]:text-slate-900"
                         dangerouslySetInnerHTML={{
-                          __html: aiAnalysis
-                            .replace(/^### (.*$)/gm, '<h3>$1</h3>')
-                            .replace(/^## (.*$)/gm, '<h2>$1</h2>')
-                            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                            .replace(/^- \[ \] (.*$)/gm, '<li class="flex items-start gap-2"><input type="checkbox" disabled class="mt-1" /><span>$1</span></li>')
-                            .replace(/^- (.*$)/gm, '<li>$1</li>')
-                            .replace(/(<li>[\s\S]*?<\/li>)/gm, (match) => {
-                              if (!match.startsWith('<ul>')) return match;
-                              return match;
-                            })
-                            .replace(/((?:<li[^>]*>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>')
-                            .replace(/\n\n/g, '</p><p>')
-                            .replace(/\n/g, '<br/>')
+                          __html: DOMPurify.sanitize(
+                            aiAnalysis
+                              .replace(/^### (.*$)/gm, '<h3>$1</h3>')
+                              .replace(/^## (.*$)/gm, '<h2>$1</h2>')
+                              .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                              .replace(/^- \[ \] (.*$)/gm, '<li class="flex items-start gap-2"><input type="checkbox" disabled class="mt-1" /><span>$1</span></li>')
+                              .replace(/^- (.*$)/gm, '<li>$1</li>')
+                              .replace(/(<li>[\s\S]*?<\/li>)/gm, (match) => {
+                                if (!match.startsWith('<ul>')) return match;
+                                return match;
+                              })
+                              .replace(/((?:<li[^>]*>[\s\S]*?<\/li>\n?)+)/g, '<ul>$1</ul>')
+                              .replace(/\n\n/g, '</p><p>')
+                              .replace(/\n/g, '<br/>'),
+                            { ADD_ATTR: ['disabled', 'class'] },
+                          )
                         }}
                       />
                       <div className="border-t pt-3 flex justify-end">
@@ -938,7 +944,7 @@ export function Predictions({ onNavigateToFocus }: PredictionsProps) {
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {p.mainErrors && p.mainErrors.length > 0 ? (
-                            p.mainErrors.slice(0, 2).map((err: any, j: number) => (
+                            p.mainErrors.slice(0, 2).map((err, j) => (
                               <Badge key={j} variant="outline" className="text-xs">
                                 {typeof err === 'string' ? err : err.name || '오류'}
                                 {typeof err === 'object' && err.rate !== undefined && ' (' + err.rate.toFixed(1) + '%)'}

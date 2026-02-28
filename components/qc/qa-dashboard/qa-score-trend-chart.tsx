@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   ComposedChart, Bar, Area, XAxis, YAxis, CartesianGrid,
@@ -21,7 +22,7 @@ interface QAScoreTrendChartProps {
   scopeCenter?: string
 }
 
-export function QAScoreTrendChart({ data, scopeCenter }: QAScoreTrendChartProps) {
+export const QAScoreTrendChart = memo(function QAScoreTrendChart({ data, scopeCenter }: QAScoreTrendChartProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -70,4 +71,4 @@ export function QAScoreTrendChart({ data, scopeCenter }: QAScoreTrendChartProps)
       </CardContent>
     </Card>
   )
-}
+})

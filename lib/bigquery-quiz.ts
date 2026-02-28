@@ -37,13 +37,17 @@ const BASE_WHERE = `${SCORE_SQL} IS NOT NULL AND s.exam_mode = 'exam'`
 
 // 필터 빌더
 function buildQuizFilters(
-  filters: { center?: string; month?: string; startMonth?: string; endMonth?: string },
+  filters: { center?: string; service?: string; month?: string; startMonth?: string; endMonth?: string },
 ): { where: string; params: Record<string, string> } {
   let where = ""
   const params: Record<string, string> = {}
   if (filters.center) {
     where += ` AND ${CENTER_SQL} = @center`
     params.center = filters.center
+  }
+  if (filters.service) {
+    where += ` AND ${SERVICE_SQL} = @service`
+    params.service = filters.service
   }
   if (filters.month) {
     where += ` AND s.month = @month`
@@ -60,15 +64,33 @@ function buildQuizFilters(
   return { where, params }
 }
 
+// scope 필터 빌더 (관리자용: center + service)
+function buildQuizScopeFilter(center?: string, service?: string): { where: string; params: Record<string, string> } {
+  let where = ""
+  const params: Record<string, string> = {}
+  if (center) {
+    where += ` AND ${CENTER_SQL} = @scopeCenter`
+    params.scopeCenter = center
+  }
+  if (service) {
+    where += ` AND ${SERVICE_SQL} = @scopeService`
+    params.scopeService = service
+  }
+  return { where, params }
+}
+
 /**
  * 직무테스트 대시보드 KPI
  */
 export async function getQuizDashboardStats(
   startMonth?: string | null,
-  endMonth?: string | null
+  endMonth?: string | null,
+  scopeCenter?: string,
+  scopeService?: string
 ): Promise<{ success: boolean; data?: QuizDashboardStats; error?: string }> {
   try {
     const bq = getBigQueryClient()
+    const scope = buildQuizScopeFilter(scopeCenter, scopeService)
 
     const monthFilter = startMonth && endMonth
       ? `AND s.month >= @startMonth AND s.month <= @endMonth`
@@ -90,12 +112,14 @@ export async function getQuizDashboardStats(
         FROM ${SUBMISSIONS} s
         WHERE ${BASE_WHERE}
           ${monthFilter}
+          ${scope.where}
       ),
       prev_period AS (
         SELECT AVG(${SCORE_SQL}) AS avg_score
         FROM ${SUBMISSIONS} s
         WHERE ${BASE_WHERE}
           ${prevMonthFilter}
+          ${scope.where}
       )
       SELECT
         cp.avg_score, cp.total_submissions, cp.unique_agents, cp.pass_rate,
@@ -104,7 +128,7 @@ export async function getQuizDashboardStats(
       FROM current_period cp, prev_period pp
     `
 
-    const params: Record<string, string> = {}
+    const params: Record<string, string> = { ...scope.params }
     if (startMonth) params.startMonth = startMonth
     if (endMonth) params.endMonth = endMonth
 
@@ -143,10 +167,13 @@ export async function getQuizDashboardStats(
  * 직무테스트 월별 추이
  */
 export async function getQuizScoreTrend(
-  months = 6
+  months = 6,
+  scopeCenter?: string,
+  scopeService?: string
 ): Promise<{ success: boolean; data?: QuizTrendData[]; error?: string }> {
   try {
     const bq = getBigQueryClient()
+    const scope = buildQuizScopeFilter(scopeCenter, scopeService)
 
     const query = `
       SELECT
@@ -159,11 +186,12 @@ export async function getQuizScoreTrend(
       FROM ${SUBMISSIONS} s
       WHERE ${BASE_WHERE}
         AND s.month >= FORMAT_DATE('%Y-%m', DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL @months MONTH))
+        ${scope.where}
       GROUP BY s.month
       ORDER BY s.month
     `
 
-    const [rows] = await bq.query({ query, params: { months } })
+    const [rows] = await bq.query({ query, params: { months, ...scope.params } })
 
     const data: QuizTrendData[] = (rows as Record<string, unknown>[]).map(row => ({
       month: String(row.month),
@@ -187,6 +215,7 @@ export async function getQuizScoreTrend(
 export async function getQuizAgentStats(
   filters: {
     center?: string
+    service?: string
     month?: string
     startMonth?: string
     endMonth?: string
@@ -243,7 +272,7 @@ export async function getQuizAgentStats(
  * 직무테스트 서비스별 월별 추이 (최근 6개월)
  */
 export async function getQuizServiceTrend(
-  filters: { center?: string; months?: number }
+  filters: { center?: string; service?: string; months?: number }
 ): Promise<{ success: boolean; data?: QuizServiceTrendRow[]; error?: string }> {
   try {
     const bq = getBigQueryClient()
@@ -254,6 +283,10 @@ export async function getQuizServiceTrend(
     if (filters.center) {
       centerWhere = ` AND ${CENTER_SQL} = @center`
       params.center = filters.center
+    }
+    if (filters.service) {
+      centerWhere += ` AND ${SERVICE_SQL} = @service`
+      params.service = filters.service
     }
 
     const query = `

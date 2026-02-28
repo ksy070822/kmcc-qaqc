@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, memo } from "react"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, Cell } from "recharts"
 import type { QuizServiceTrendRow } from "@/lib/types"
 
@@ -21,7 +21,7 @@ const SERVICE_COLORS: Record<string, string> = {
 
 const SERVICE_ORDER = ["택시", "대리", "배송", "바이크/마스", "주차/카오너", "화물", "심야"]
 
-export function QuizServiceTrend({ data }: Props) {
+export const QuizServiceTrend = memo(function QuizServiceTrend({ data }: Props) {
   // 최신 월 기준 서비스별 평균점수 바 차트 + 월별 추이 테이블
   const { barData, tableData, services, months } = useMemo(() => {
     if (!data || data.length === 0) return { barData: [], tableData: [], services: [], months: [] }
@@ -186,4 +186,4 @@ export function QuizServiceTrend({ data }: Props) {
       </div>
     </div>
   )
-}
+})

@@ -1,4 +1,5 @@
 import { getBigQueryClient, getHrAgentsList } from "@/lib/bigquery"
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT, QC_TOTAL_ITEM_COUNT, getCenterQCTargets } from "@/lib/constants"
 import type {
   MypageProfile,
   MypageQCDetail,
@@ -6,6 +7,9 @@ import type {
   MypageQADetail,
   MypageQuizDetail,
   AgentSummaryRow,
+  AgentProductivityDay,
+  AgentProductivityAvg,
+  AgentProductivityData,
 } from "@/lib/types"
 
 // ── Cross-project 테이블 참조 ──
@@ -38,15 +42,10 @@ const QUIZ_SERVICE_SQL = `CASE COALESCE(s.\`group\`, s.service)
     ELSE COALESCE(s.\`group\`, s.service)
   END`
 
-// CSAT 센터 판별
+// 상담평점 센터 판별
 const CSAT_CENTER_SQL = `CASE u.team_id1 WHEN 14 THEN '광주' WHEN 15 THEN '용산' END`
 
-// 센터별 QC 목표치
-function getCenterTargets(center: string): { att: number; ops: number } {
-  if (center === "용산") return { att: 3.3, ops: 3.9 }
-  if (center === "광주") return { att: 2.7, ops: 1.7 }
-  return { att: 3.0, ops: 3.0 }
-}
+// 센터별 QC 목표치 → getCenterQCTargets (from constants.ts)
 
 // 현재 월, 전월 계산
 function getCurrentAndPrevMonth(month?: string): { current: string; prev: string } {
@@ -79,10 +78,10 @@ export async function getAgentProfile(
         ANY_VALUE(e.center) AS center,
         SAFE_DIVIDE(
           SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
-          COUNT(*) * 5) AS att_rate,
+          COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) AS att_rate,
         SAFE_DIVIDE(
           SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-          COUNT(*) * 11) AS ops_rate
+          COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) AS ops_rate
       FROM ${EVALUATIONS} e
       WHERE e.agent_id = @agentId
         AND FORMAT_DATE('%Y-%m', e.evaluation_date) IN (SELECT month FROM months)
@@ -107,7 +106,7 @@ export async function getAgentProfile(
       SELECT
         SAFE_DIVIDE(
           SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END + CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-          COUNT(*) * 16) AS avg_rate
+          COUNT(*) * ${QC_TOTAL_ITEM_COUNT}) AS avg_rate
       FROM ${EVALUATIONS} e, cur_month cm
       WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = cm.m
         AND e.center = (SELECT center FROM qc_trend ORDER BY month DESC LIMIT 1)
@@ -176,7 +175,7 @@ export async function getAgentProfile(
     bq.query({ query: mainQuery, params }),
     bq.query({ query: csatQuery, params }).catch((err) => {
       console.error("[bigquery-mypage] CSAT cross-project query failed:", err)
-      return [[] as Record<string, unknown>[]] as const
+      return null
     }),
   ])
 
@@ -184,7 +183,7 @@ export async function getAgentProfile(
 
   let csatMap = new Map<string, number>()
   let csatGroupAvg = 0
-  const csatRows = csatResult[0] as Record<string, unknown>[]
+  const csatRows = csatResult ? (csatResult[0] as Record<string, unknown>[]) : []
   for (const row of csatRows) {
     csatMap.set(String(row.month), Number(row.avg_score) || 0)
     if (row.center_avg != null) csatGroupAvg = Number(row.center_avg) || 0
@@ -291,8 +290,8 @@ export async function getAgentQCDetail(
     ),
     center_avg AS (
       SELECT
-        SAFE_DIVIDE(SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * 5) AS att_rate,
-        SAFE_DIVIDE(SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * 11) AS ops_rate
+        SAFE_DIVIDE(SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) AS att_rate,
+        SAFE_DIVIDE(SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) AS ops_rate
       FROM ${EVALUATIONS} e
       WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = @currentMonth
         AND e.center = (SELECT center FROM agent_current)
@@ -314,21 +313,21 @@ export async function getAgentQCDetail(
   const attErrors = Number(row.att_errors) || 0
   const opsErrors = Number(row.ops_errors) || 0
   const center = String(row.center || "")
-  const targets = getCenterTargets(center)
+  const targets = getCenterQCTargets(center)
 
-  const attRate = evalCount > 0 ? (attErrors / (evalCount * 5)) * 100 : 0
-  const opsRate = evalCount > 0 ? (opsErrors / (evalCount * 11)) * 100 : 0
+  const attRate = evalCount > 0 ? (attErrors / (evalCount * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+  const opsRate = evalCount > 0 ? (opsErrors / (evalCount * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
 
   const prevEvalCount = Number(row.prev_eval_count) || 0
-  const prevAttRate = prevEvalCount > 0 ? (Number(row.prev_att_errors) / (prevEvalCount * 5)) * 100 : 0
-  const prevOpsRate = prevEvalCount > 0 ? (Number(row.prev_ops_errors) / (prevEvalCount * 11)) * 100 : 0
+  const prevAttRate = prevEvalCount > 0 ? (Number(row.prev_att_errors) / (prevEvalCount * QC_ATTITUDE_ITEM_COUNT)) * 100 : 0
+  const prevOpsRate = prevEvalCount > 0 ? (Number(row.prev_ops_errors) / (prevEvalCount * QC_CONSULTATION_ITEM_COUNT)) * 100 : 0
 
   // 6-month trend
   const trendQuery = `
     SELECT
       FORMAT_DATE('%Y-%m', e.evaluation_date) AS month,
-      SAFE_DIVIDE(SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * 5) AS att_rate,
-      SAFE_DIVIDE(SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * 11) AS ops_rate
+      SAFE_DIVIDE(SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) AS att_rate,
+      SAFE_DIVIDE(SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0, COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) AS ops_rate
     FROM ${EVALUATIONS} e
     WHERE e.agent_id = @agentId
       AND e.evaluation_date >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL 6 MONTH)
@@ -854,8 +853,27 @@ export async function getAgentQuizDetail(
 }
 
 // ══════════════════════════════════════════════════════════════
-// getAgentCSATDetail — 상담사 CSAT 상세 (cross-project)
+// getAgentCSATDetail — 상담사 상담평점 상세 (cross-project)
 // ══════════════════════════════════════════════════════════════
+
+const CSAT_TAG_KR: Record<string, string> = {
+  FAST: "빠른 상담 연결", EASY: "알기쉬운 설명", EXACT: "정확한 문의파악",
+  KIND: "친절한 상담", ACTIVE: "적극적인 상담", ETC: "기타",
+  WAIT: "상담 연결 지연", DIFFICULT: "어려운 설명", INEXACT: "문의내용 이해못함",
+  UNKIND: "불친절한 상담", PASSIVE: "형식적인 상담",
+}
+
+async function safeQuery(
+  bq: ReturnType<typeof getBigQueryClient>,
+  opts: { query: string; params: Record<string, unknown> },
+): Promise<Record<string, unknown>[]> {
+  try {
+    return (await bq.query(opts))[0] as Record<string, unknown>[]
+  } catch (e) {
+    console.error("[CSAT safeQuery]", e)
+    return []
+  }
+}
 
 export async function getAgentCSATDetail(
   agentId: string,
@@ -865,15 +883,38 @@ export async function getAgentCSATDetail(
 ): Promise<MypageCSATDetail> {
   const { current, prev } = getCurrentAndPrevMonth(month)
 
+  const emptyCompare = { agent: 0, center: 0, serviceGroup: 0 }
   const empty: MypageCSATDetail = {
     totalReviews: 0,
+    totalConsults: 0,
+    reviewRate: 0,
     avgScore: 0,
+    score5Count: 0,
     score5Rate: 0,
+    score1Count: 0,
+    score1Rate: 0,
+    score2Count: 0,
+    score2Rate: 0,
+    lowScoreCount: 0,
     lowScoreRate: 0,
+    compare: {
+      avgScore: { ...emptyCompare },
+      score5Rate: { ...emptyCompare },
+      lowScoreRate: { ...emptyCompare },
+      reviewRate: { ...emptyCompare },
+    },
     prevMonthAvg: 0,
+    prevScore5Rate: 0,
+    prevLowScoreRate: 0,
     centerAvg: 0,
+    percentile: 0,
+    period,
+    periodLabel: "",
     monthlyTrend: [],
     recentReviews: [],
+    sentimentPositive: [],
+    sentimentNegative: [],
+    sentimentTags: [],
   }
 
   // Service path mapping
@@ -895,8 +936,9 @@ export async function getAgentCSATDetail(
     const bq = getBigQueryClient()
 
     // ── 기간 필터 빌드 ──
-    let currentFilter: string
+    let currentFilter: string   // review date filter (r.created_at)
     let prevFilter: string
+    let consultFilter: string   // consult date filter (c.created_at)
     let periodLabel: string
 
     if (period === "weekly") {
@@ -907,19 +949,37 @@ export async function getAgentCSATDetail(
       prevFilter = `DATE(r.created_at) BETWEEN
         DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset - 1} WEEK)
         AND DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset - 1} WEEK + INTERVAL 6 DAY)`
+      consultFilter = `DATE(c.created_at) BETWEEN
+        DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset} WEEK)
+        AND DATE_ADD(DATE_TRUNC(CURRENT_DATE('Asia/Seoul'), WEEK(THURSDAY)), INTERVAL ${weekOffset} WEEK + INTERVAL 6 DAY)`
       periodLabel = `주간 (offset ${weekOffset})`
     } else {
       currentFilter = `FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth`
       prevFilter = `FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @prevMonth`
+      consultFilter = `FORMAT_DATE('%Y-%m', DATE(c.created_at)) = @currentMonth`
       periodLabel = current
     }
 
-    // ── 1) 메인 KPI + 전기간 비교 ──
+    // team_id1 서브쿼리 (센터 판별용)
+    const teamIdSubquery = `(SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1)`
+    // 에이전트의 가장 많은 incoming_path 서브쿼리 (서비스그룹 판별용)
+    const agentPathSubquery = `(
+      SELECT c2.incoming_path
+      FROM ${CONSULT} c2
+      JOIN ${CEMS_USER} u2 ON COALESCE(c2.user_id, c2.first_user_id) = u2.id
+      WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) AND c2.channel_code = 'c1_chat'
+      GROUP BY c2.incoming_path ORDER BY COUNT(*) DESC LIMIT 1
+    )`
+
+    // ── 1) 메인 KPI + 전기간 비교 + 센터/서비스그룹 비교 ──
     const mainQuery = `
       WITH agent_current AS (
         SELECT
           COUNT(*) AS total_reviews,
           AVG(r.score) AS avg_score,
+          COUNTIF(r.score = 5) AS score5_count,
+          COUNTIF(r.score = 1) AS score1_count,
+          COUNTIF(r.score = 2) AS score2_count,
           SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate,
           SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate
         FROM ${CHAT_INQUIRE} ci
@@ -929,6 +989,14 @@ export async function getAgentCSATDetail(
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
         WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
           AND ${currentFilter}
+      ),
+      agent_consults AS (
+        SELECT COUNT(*) AS total_consults
+        FROM ${CONSULT} c
+        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+        WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
+          AND c.channel_code = 'c1_chat'
+          AND ${consultFilter}
       ),
       agent_prev AS (
         SELECT
@@ -943,17 +1011,49 @@ export async function getAgentCSATDetail(
         WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
           AND ${prevFilter}
       ),
-      center_current AS (
-        SELECT AVG(r.score) AS avg_score
+      center_compare AS (
+        SELECT
+          AVG(r.score) AS avg_score,
+          SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate,
+          SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate,
+          SAFE_DIVIDE(
+            COUNT(*),
+            (SELECT COUNT(*) FROM ${CONSULT} c2
+             JOIN ${CEMS_USER} u2 ON COALESCE(c2.user_id, c2.first_user_id) = u2.id
+             WHERE u2.team_id1 = ${teamIdSubquery} AND c2.channel_code = 'c1_chat'
+               AND ${consultFilter.replace(/\bc\./g, "c2.")}
+            )
+          ) * 100 AS review_rate
         FROM ${CHAT_INQUIRE} ci
         JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
         JOIN ${REVIEW} r ON r.review_request_id = rr.id
         JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-        WHERE u.team_id1 = (
-          SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
-        )
-        AND ${currentFilter}
+        WHERE u.team_id1 = ${teamIdSubquery}
+          AND ${currentFilter}
+      ),
+      service_compare AS (
+        SELECT
+          AVG(r.score) AS avg_score,
+          SAFE_DIVIDE(COUNTIF(r.score = 5), COUNT(*)) * 100 AS score5_rate,
+          SAFE_DIVIDE(COUNTIF(r.score <= 2), COUNT(*)) * 100 AS low_score_rate,
+          SAFE_DIVIDE(
+            COUNT(*),
+            (SELECT COUNT(*) FROM ${CONSULT} c2
+             JOIN ${CEMS_USER} u2 ON COALESCE(c2.user_id, c2.first_user_id) = u2.id
+             WHERE u2.team_id1 IN (14, 15) AND c2.channel_code = 'c1_chat'
+               AND c2.incoming_path = ${agentPathSubquery}
+               AND ${consultFilter.replace(/\bc\./g, "c2.")}
+            )
+          ) * 100 AS review_rate
+        FROM ${CHAT_INQUIRE} ci
+        JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+        JOIN ${REVIEW} r ON r.review_request_id = rr.id
+        JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+        JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+        WHERE u.team_id1 IN (14, 15)
+          AND c.incoming_path = ${agentPathSubquery}
+          AND ${currentFilter}
       ),
       agent_ranks AS (
         SELECT u.username AS uid, AVG(r.score) AS avg_score
@@ -962,10 +1062,8 @@ export async function getAgentCSATDetail(
         JOIN ${REVIEW} r ON r.review_request_id = rr.id
         JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-        WHERE u.team_id1 = (
-          SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
-        )
-        AND ${currentFilter}
+        WHERE u.team_id1 = ${teamIdSubquery}
+          AND ${currentFilter}
         GROUP BY uid
       ),
       percentile AS (
@@ -976,13 +1074,24 @@ export async function getAgentCSATDetail(
         FROM agent_ranks ar
       )
       SELECT
-        ac.total_reviews, ac.avg_score, ac.score5_rate, ac.low_score_rate,
+        ac.total_reviews, ac.avg_score,
+        ac.score5_count, ac.score1_count, ac.score2_count,
+        ac.score5_rate, ac.low_score_rate,
+        acon.total_consults,
         ap.avg_score AS prev_avg_score,
         ap.score5_rate AS prev_score5_rate,
         ap.low_score_rate AS prev_low_score_rate,
         cc.avg_score AS center_avg_score,
+        cc.score5_rate AS center_score5_rate,
+        cc.low_score_rate AS center_low_score_rate,
+        cc.review_rate AS center_review_rate,
+        sc.avg_score AS sg_avg_score,
+        sc.score5_rate AS sg_score5_rate,
+        sc.low_score_rate AS sg_low_score_rate,
+        sc.review_rate AS sg_review_rate,
         p.pctile AS percentile
-      FROM agent_current ac, agent_prev ap, center_current cc, percentile p
+      FROM agent_current ac, agent_consults acon, agent_prev ap,
+           center_compare cc, service_compare sc, percentile p
     `
 
     // ── 2) 트렌드 (항상 월 단위 6개월) ──
@@ -1009,9 +1118,7 @@ export async function getAgentCSATDetail(
         JOIN ${REVIEW} r ON r.review_request_id = rr.id
         JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
         JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-        WHERE u.team_id1 = (
-          SELECT u2.team_id1 FROM ${CEMS_USER} u2 WHERE u2.username = @agentId AND u2.team_id1 IN (14, 15) LIMIT 1
-        )
+        WHERE u.team_id1 = ${teamIdSubquery}
         AND DATE(r.created_at) >= DATE_SUB(CURRENT_DATE('Asia/Seoul'), INTERVAL 6 MONTH)
         GROUP BY month
       )
@@ -1055,7 +1162,7 @@ export async function getAgentCSATDetail(
         CAST(ci.id AS STRING) AS consult_id,
         c.incoming_path AS service_path,
         r.score,
-        r.comment
+        r.content AS comment
       FROM ${CHAT_INQUIRE} ci
       JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
       JOIN ${REVIEW} r ON r.review_request_id = rr.id
@@ -1064,38 +1171,85 @@ export async function getAgentCSATDetail(
       WHERE u.username = @agentId AND u.team_id1 IN (14, 15)
         AND ${currentFilter}
         AND r.score >= 4
-        AND r.comment IS NOT NULL AND r.comment != ''
+        AND r.content IS NOT NULL AND r.content != ''
       ORDER BY r.created_at DESC
       LIMIT 20
     `
 
     const params = { agentId, currentMonth: current, prevMonth: prev }
 
-    const [[mainRows], [trendRows], [tagRows], [positiveRows]] = await Promise.all([
-      bq.query({ query: mainQuery, params }),
-      bq.query({ query: trendQuery, params: { agentId } }),
-      bq.query({ query: tagQuery, params }),
-      bq.query({ query: positiveQuery, params }),
+    const [mainRows, trendRows, tagRows, positiveRows] = await Promise.all([
+      safeQuery(bq, { query: mainQuery, params }),
+      safeQuery(bq, { query: trendQuery, params: { agentId } }),
+      safeQuery(bq, { query: tagQuery, params }),
+      safeQuery(bq, { query: positiveQuery, params }),
     ])
 
-    const row = (mainRows as Record<string, unknown>[])[0] || {}
+    const row = mainRows[0] || {}
 
-    const monthlyTrend = (trendRows as Record<string, unknown>[]).map(r => ({
+    // ── KPI 계산 ──
+    const totalReviews = Number(row.total_reviews) || 0
+    const totalConsults = Number(row.total_consults) || 0
+    const reviewRate = totalConsults > 0
+      ? Math.round((totalReviews / totalConsults) * 1000) / 10
+      : 0
+    const avgScore = Math.round((Number(row.avg_score) || 0) * 100) / 100
+    const score5Count = Number(row.score5_count) || 0
+    const score1Count = Number(row.score1_count) || 0
+    const score2Count = Number(row.score2_count) || 0
+    const lowScoreCount = score1Count + score2Count
+    const score5Rate = Math.round((Number(row.score5_rate) || 0) * 10) / 10
+    const score1Rate = totalReviews > 0
+      ? Math.round((score1Count / totalReviews) * 1000) / 10
+      : 0
+    const score2Rate = totalReviews > 0
+      ? Math.round((score2Count / totalReviews) * 1000) / 10
+      : 0
+    const lowScoreRate = Math.round((Number(row.low_score_rate) || 0) * 10) / 10
+
+    // ── 비교 지표 ──
+    const compare = {
+      avgScore: {
+        agent: avgScore,
+        center: Math.round((Number(row.center_avg_score) || 0) * 100) / 100,
+        serviceGroup: Math.round((Number(row.sg_avg_score) || 0) * 100) / 100,
+      },
+      score5Rate: {
+        agent: score5Rate,
+        center: Math.round((Number(row.center_score5_rate) || 0) * 10) / 10,
+        serviceGroup: Math.round((Number(row.sg_score5_rate) || 0) * 10) / 10,
+      },
+      lowScoreRate: {
+        agent: lowScoreRate,
+        center: Math.round((Number(row.center_low_score_rate) || 0) * 10) / 10,
+        serviceGroup: Math.round((Number(row.sg_low_score_rate) || 0) * 10) / 10,
+      },
+      reviewRate: {
+        agent: reviewRate,
+        center: Math.round((Number(row.center_review_rate) || 0) * 10) / 10,
+        serviceGroup: Math.round((Number(row.sg_review_rate) || 0) * 10) / 10,
+      },
+    }
+
+    const monthlyTrend = trendRows.map(r => ({
       month: String(r.month),
       agentAvg: Math.round((Number(r.agent_avg) || 0) * 100) / 100,
       centerAvg: Math.round((Number(r.center_avg) || 0) * 100) / 100,
     }))
 
-    // Tag processing
-    const tagData = tagRows as Record<string, unknown>[]
+    // Tag processing — apply Korean mapping
+    const tagData = tagRows
     const totalTags = tagData.reduce((s, t) => s + (Number(t.cnt) || 0), 0)
 
-    const sentimentTags = tagData.map(t => ({
-      label: String(t.tag),
-      count: Number(t.cnt) || 0,
-      pct: totalTags > 0 ? Math.round(((Number(t.cnt) || 0) / totalTags) * 1000) / 10 : 0,
-      type: (String(t.option_type) === "POSITIVE" ? "positive" : "negative") as "positive" | "negative",
-    }))
+    const sentimentTags = tagData.map(t => {
+      const rawLabel = String(t.tag)
+      return {
+        label: CSAT_TAG_KR[rawLabel] || rawLabel,
+        count: Number(t.cnt) || 0,
+        pct: totalTags > 0 ? Math.round(((Number(t.cnt) || 0) / totalTags) * 1000) / 10 : 0,
+        type: (String(t.option_type) === "POSITIVE" ? "positive" : "negative") as "positive" | "negative",
+      }
+    })
 
     const sentimentPositive = sentimentTags
       .filter(t => t.type === "positive")
@@ -1105,19 +1259,28 @@ export async function getAgentCSATDetail(
       .map(t => ({ label: t.label, value: t.count }))
 
     // Positive reviews
-    const recentReviews = (positiveRows as Record<string, unknown>[]).map(r => ({
+    const recentReviews = positiveRows.map(r => ({
       date: String(r.review_date),
       consultId: String(r.consult_id || ""),
       service: servicePathMap[String(r.service_path)] || String(r.service_path || ""),
       score: Number(r.score) || 0,
-      comment: String(r.comment || ""),
+      comment: String(r.comment ?? ""),
     }))
 
     return {
-      totalReviews: Number(row.total_reviews) || 0,
-      avgScore: Math.round((Number(row.avg_score) || 0) * 100) / 100,
-      score5Rate: Math.round((Number(row.score5_rate) || 0) * 10) / 10,
-      lowScoreRate: Math.round((Number(row.low_score_rate) || 0) * 10) / 10,
+      totalReviews,
+      totalConsults,
+      reviewRate,
+      avgScore,
+      score5Count,
+      score5Rate,
+      score1Count,
+      score1Rate,
+      score2Count,
+      score2Rate,
+      lowScoreCount,
+      lowScoreRate,
+      compare,
       prevMonthAvg: Math.round((Number(row.prev_avg_score) || 0) * 100) / 100,
       prevScore5Rate: Math.round((Number(row.prev_score5_rate) || 0) * 10) / 10,
       prevLowScoreRate: Math.round((Number(row.prev_low_score_rate) || 0) * 10) / 10,
@@ -1146,10 +1309,6 @@ export async function getAgentsSummary(
   month?: string,
 ): Promise<AgentSummaryRow[]> {
   const bq = getBigQueryClient()
-  const hrAgents = await getHrAgentsList(center)
-
-  if (hrAgents.length === 0) return []
-
   const targetMonth = month || new Date().toISOString().slice(0, 7)
 
   const query = `
@@ -1178,7 +1337,7 @@ export async function getAgentsSummary(
             + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END
             + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END
             + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-          COUNT(*) * 11
+          COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}
         ) AS ops_rate
       FROM ${EVALUATIONS} e
       WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = @month
@@ -1204,7 +1363,13 @@ export async function getAgentsSummary(
     FULL OUTER JOIN quiz_summary qz ON qc.agent_id = qz.agent_id
   `
 
-  const [rows] = await bq.query({ query, params: { month: targetMonth } })
+  // HR 목록과 BQ 쿼리를 병렬로 실행
+  const [hrAgents, [rows]] = await Promise.all([
+    getHrAgentsList(center),
+    bq.query({ query, params: { month: targetMonth } }),
+  ])
+
+  if (hrAgents.length === 0) return []
 
   // Build a map from BQ results
   const kpiMap = new Map<string, { service: string | null; channel: string | null; attRate: number | null; opsRate: number | null; quizScore: number | null }>()
@@ -1238,4 +1403,211 @@ export async function getAgentsSummary(
       shift: null,
     }
   })
+}
+
+// ══════════════════════════════════════════════════════════════
+// 상담사 개인 생산성 (ATT, ACW, AHT)
+// ══════════════════════════════════════════════════════════════
+
+const IPCC_QSA = "`dataanalytics-25f2.dw_ipcc_iprondb.tb_stat_ic_que_skill_agt_dd`"
+const IPCC_AGTM = "`dataanalytics-25f2.dw_ipcc_iprondb.tb_stat_ic_agt_state_dd`"
+const CEMS_CONSULT_MY = "`dataanalytics-25f2.dw_cems.consult`"
+const CEMS_CHAT_INQ = "`dataanalytics-25f2.dw_cems.chat_inquire`"
+
+function getMonthRange(month?: string): { startDate: string; endDate: string } {
+  const now = month || new Date().toISOString().slice(0, 7)
+  const [y, m] = now.split("-").map(Number)
+  const start = `${y}-${String(m).padStart(2, "0")}-01`
+  const lastDay = new Date(y, m, 0).getDate()
+  const end = `${y}-${String(m).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`
+  return { startDate: start, endDate: end }
+}
+
+/** 일별 데이터 → 집계 요약 계산 */
+function computeAvg(days: AgentProductivityDay[]): AgentProductivityAvg {
+  if (days.length === 0) return { answered: 0, attSec: 0, acwSec: 0, ahtSec: 0 }
+  const totalAnswered = days.reduce((s, d) => s + d.answered, 0)
+  const totalAtt = days.reduce((s, d) => s + d.attSec * d.answered, 0)
+  const totalAcw = days.reduce((s, d) => s + d.acwSec * d.answered, 0)
+  const avgAtt = totalAnswered > 0 ? Math.round(totalAtt / totalAnswered) : 0
+  const avgAcw = totalAnswered > 0 ? Math.round(totalAcw / totalAnswered) : 0
+  return {
+    answered: totalAnswered,
+    attSec: avgAtt,
+    acwSec: avgAcw,
+    ahtSec: avgAtt + avgAcw,
+  }
+}
+
+/** 유선 상담사 개인 생산성 */
+async function getAgentVoiceProductivity(
+  agentId: string,
+  month?: string,
+): Promise<AgentProductivityData | null> {
+  const bq = getBigQueryClient()
+  const { startDate, endDate } = getMonthRange(month)
+
+  const query = `
+    WITH daily_ib AS (
+      SELECT
+        PARSE_DATE('%Y%m%d', CAST(psr_time_key AS STRING)) AS stat_date,
+        SUM(qsa_1030) AS ib_answered,
+        SUM(qsa_1210) AS talk_sec
+      FROM ${IPCC_QSA}
+      WHERE agent_login_id = @agentId
+        AND call_attribute = 10
+        AND PARSE_DATE('%Y%m%d', CAST(psr_time_key AS STRING))
+            BETWEEN @startDate AND @endDate
+        AND group_name NOT LIKE '%Outbound%'
+        AND group_name NOT LIKE '%RM(O/B)%'
+        AND group_name NOT LIKE '%센터교육%'
+        AND group_name NOT LIKE '%퇴직자%'
+        AND group_name NOT LIKE '%파트너%'
+      GROUP BY 1
+    ),
+    daily_wrap AS (
+      SELECT
+        PARSE_DATE('%Y%m%d', CAST(psr_time_key AS STRING)) AS stat_date,
+        SUM(agtm_1130) AS wrap_cnt,
+        SUM(agtm_1200) AS wrap_sec
+      FROM ${IPCC_AGTM}
+      WHERE agent_login_id = @agentId
+        AND PARSE_DATE('%Y%m%d', CAST(psr_time_key AS STRING))
+            BETWEEN @startDate AND @endDate
+      GROUP BY 1
+    )
+    SELECT
+      FORMAT_DATE('%Y-%m-%d', ib.stat_date) AS stat_date,
+      ib.ib_answered,
+      SAFE_DIVIDE(ib.talk_sec, ib.ib_answered) AS att_sec,
+      SAFE_DIVIDE(w.wrap_sec, GREATEST(w.wrap_cnt, 1)) AS acw_sec,
+      SAFE_DIVIDE(ib.talk_sec, ib.ib_answered)
+        + SAFE_DIVIDE(w.wrap_sec, GREATEST(w.wrap_cnt, 1)) AS aht_sec
+    FROM daily_ib ib
+    LEFT JOIN daily_wrap w ON ib.stat_date = w.stat_date
+    WHERE ib.ib_answered > 0
+    ORDER BY ib.stat_date
+  `
+
+  const [rows] = await bq.query({ query, params: { agentId, startDate, endDate } })
+  const typedRows = rows as Record<string, unknown>[]
+
+  if (typedRows.length === 0) return null
+
+  const daily: AgentProductivityDay[] = typedRows.map(r => {
+    const dateVal = r.stat_date as { value?: string } | string
+    return {
+      date: typeof dateVal === "object" && dateVal?.value ? dateVal.value : String(dateVal),
+      answered: Number(r.ib_answered) || 0,
+      attSec: Math.round(Number(r.att_sec) || 0),
+      acwSec: Math.round(Number(r.acw_sec) || 0),
+      ahtSec: Math.round(Number(r.aht_sec) || 0),
+    }
+  })
+
+  return buildProductivityResult("유선", daily)
+}
+
+/** 채팅 상담사 개인 생산성 */
+async function getAgentChatProductivity(
+  agentId: string,
+  month?: string,
+): Promise<AgentProductivityData | null> {
+  const bq = getBigQueryClient()
+  const { startDate, endDate } = getMonthRange(month)
+
+  const query = `
+    WITH agent_consults AS (
+      SELECT
+        DATE(c.created_at) AS stat_date,
+        CASE WHEN c.first_assign_at IS NOT NULL
+              AND ci.chat_end_status IS NOT NULL
+              AND ci.chat_start_at IS NOT NULL THEN 1 ELSE 0 END AS is_answered,
+        COALESCE(TIMESTAMP_DIFF(ci.chat_end_at, ci.chat_start_at, SECOND), 0) AS chat_sec,
+        COALESCE(TIMESTAMP_DIFF(c.first_consult_start_at, ci.chat_end_at, SECOND), 0) AS wrapup_sec
+      FROM ${CEMS_CONSULT_MY} c
+      JOIN ${CEMS_CHAT_INQ} ci ON c.chat_inquire_id = ci.id
+      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+      WHERE u.username = @agentId
+        AND DATE(c.created_at) BETWEEN @startDate AND @endDate
+        AND c.channel_code = 'c1_chat'
+        AND c.incoming_path NOT LIKE 'c2_voice_%'
+    )
+    SELECT
+      FORMAT_DATE('%Y-%m-%d', stat_date) AS stat_date,
+      SUM(is_answered) AS answered,
+      SAFE_DIVIDE(
+        SUM(CASE WHEN is_answered = 1 AND chat_sec > 0 AND chat_sec < 36000 THEN chat_sec ELSE 0 END),
+        SUM(CASE WHEN is_answered = 1 AND chat_sec > 0 AND chat_sec < 36000 THEN 1 ELSE 0 END)
+      ) AS att_sec,
+      SAFE_DIVIDE(
+        SUM(CASE WHEN is_answered = 1 AND wrapup_sec > 0 AND wrapup_sec < 36000 THEN wrapup_sec ELSE 0 END),
+        SUM(CASE WHEN is_answered = 1 AND wrapup_sec > 0 AND wrapup_sec < 36000 THEN 1 ELSE 0 END)
+      ) AS acw_sec,
+      SAFE_DIVIDE(
+        SUM(CASE WHEN is_answered = 1 AND chat_sec > 0 AND chat_sec < 36000 THEN chat_sec + GREATEST(wrapup_sec, 0) ELSE 0 END),
+        SUM(CASE WHEN is_answered = 1 AND chat_sec > 0 AND chat_sec < 36000 THEN 1 ELSE 0 END)
+      ) AS aht_sec
+    FROM agent_consults
+    GROUP BY stat_date
+    HAVING SUM(is_answered) > 0
+    ORDER BY stat_date
+  `
+
+  const [rows] = await bq.query({ query, params: { agentId, startDate, endDate } })
+  const typedRows = rows as Record<string, unknown>[]
+
+  if (typedRows.length === 0) return null
+
+  const daily: AgentProductivityDay[] = typedRows.map(r => {
+    const dateVal = r.stat_date as { value?: string } | string
+    return {
+      date: typeof dateVal === "object" && dateVal?.value ? dateVal.value : String(dateVal),
+      answered: Number(r.answered) || 0,
+      attSec: Math.round(Number(r.att_sec) || 0),
+      acwSec: Math.round(Number(r.acw_sec) || 0),
+      ahtSec: Math.round(Number(r.aht_sec) || 0),
+    }
+  })
+
+  return buildProductivityResult("채팅", daily)
+}
+
+/** 일별 데이터 → 월간/주간/최근일 요약 */
+function buildProductivityResult(
+  channel: "유선" | "채팅",
+  daily: AgentProductivityDay[],
+): AgentProductivityData {
+  const monthAvg = computeAvg(daily)
+
+  // 최근 7일 (영업일 기준)
+  const last7 = daily.slice(-7)
+  const weekAvg = computeAvg(last7)
+
+  // 최근일
+  const latest = daily[daily.length - 1]
+  const latestDay = {
+    date: latest?.date ?? "",
+    answered: latest?.answered ?? 0,
+    attSec: latest?.attSec ?? 0,
+    acwSec: latest?.acwSec ?? 0,
+    ahtSec: latest?.ahtSec ?? 0,
+  }
+
+  return { channel, daily, monthAvg, weekAvg, latestDay }
+}
+
+/** 상담사 개인 생산성 (유선/채팅 자동 분기) */
+export async function getAgentProductivity(
+  agentId: string,
+  channel: string,
+  month?: string,
+): Promise<AgentProductivityData | null> {
+  try {
+    if (channel === "채팅") return await getAgentChatProductivity(agentId, month)
+    return await getAgentVoiceProductivity(agentId, month)
+  } catch (err) {
+    console.error("[mypage] getAgentProductivity error:", err)
+    return null
+  }
 }

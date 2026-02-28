@@ -3,8 +3,10 @@
 import { useState, useMemo, useEffect } from "react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { evaluationItems, serviceGroups, channelTypes, tenureCategories } from "@/lib/constants"
+import React from "react"
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+import type { TenureStatRow } from "@/lib/types"
 
 // 심야는 채널 통합 (유선+채팅 합산)
 const MERGED_CHANNEL_SERVICES = ["심야"]
@@ -25,10 +27,17 @@ function buildServiceChannelKeys(center: "용산" | "광주"): { key: string; la
   return keys
 }
 
-export function TenureErrorTable() {
-  const [selectedCenter, setSelectedCenter] = useState<"all" | "용산" | "광주">("all")
-  const [selectedService, setSelectedService] = useState("all")
-  const [tenureStats, setTenureStats] = useState<any[]>([])
+interface TenureErrorTableProps {
+  scopeCenter?: string
+  scopeService?: string
+}
+
+export function TenureErrorTable({ scopeCenter, scopeService }: TenureErrorTableProps = {}) {
+  const [selectedCenter, setSelectedCenter] = useState<"all" | "용산" | "광주">(
+    (scopeCenter as "용산" | "광주") || "all"
+  )
+  const [selectedService, setSelectedService] = useState(scopeService || "all")
+  const [tenureStats, setTenureStats] = useState<TenureStatRow[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -93,7 +102,7 @@ export function TenureErrorTable() {
     }
 
     // 실제 데이터 매핑
-    tenureStats.forEach((stat: any) => {
+    tenureStats.forEach((stat) => {
       const isMerged = MERGED_CHANNEL_SERVICES.includes(stat.service)
       const key = isMerged
         ? `${stat.center}-${stat.service}-통합`
@@ -227,7 +236,7 @@ export function TenureErrorTable() {
             </thead>
             <tbody>
               {groupedByCenterKeys.map((group) => (
-                <>
+                <React.Fragment key={group.center}>
                   {/* 센터 헤더 행 */}
                   <tr key={`header-${group.center}`} className={cn(
                     "border-b-2",
@@ -315,7 +324,6 @@ export function TenureErrorTable() {
                             (sum, tenure) =>
                               sum +
                               evaluationItems
-                                .slice(0, 8)
                                 .reduce((s, item) => s + (tenureData[key]?.[tenure]?.[item.id] || 0), 0),
                             0,
                           )}
@@ -325,7 +333,7 @@ export function TenureErrorTable() {
 
                     return [...tenureRows, subtotalRow]
                   })}
-                </>
+                </React.Fragment>
               ))}
             </tbody>
           </table>

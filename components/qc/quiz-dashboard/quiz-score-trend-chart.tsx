@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts"
 import type { QuizTrendData } from "@/lib/types"
@@ -8,7 +9,7 @@ interface Props {
   data: QuizTrendData[]
 }
 
-export function QuizScoreTrendChart({ data }: Props) {
+export const QuizScoreTrendChart = memo(function QuizScoreTrendChart({ data }: Props) {
   if (!data || data.length === 0) {
     return (
       <Card>
@@ -43,4 +44,4 @@ export function QuizScoreTrendChart({ data }: Props) {
       </CardContent>
     </Card>
   )
-}
+})

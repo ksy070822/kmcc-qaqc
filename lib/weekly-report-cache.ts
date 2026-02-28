@@ -7,6 +7,7 @@
  */
 
 import { getBigQueryClient } from "@/lib/bigquery"
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT, CENTER_TARGET_RATES } from "@/lib/constants"
 
 const EVALUATIONS = "`csopp-25f2.KMCC_QC.evaluations`"
 const CACHE_TABLE = "`csopp-25f2.KMCC_QC.weekly_report_cache`"
@@ -133,24 +134,24 @@ export async function generateBatchWeeklyReports(
   const summaryQuery = `
     WITH tw AS (
       SELECT agent_id, COUNT(*) AS evals,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE evaluation_date BETWEEN @weekStart AND @weekEnd
       GROUP BY agent_id
     ),
     pw AS (
       SELECT agent_id,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE evaluation_date BETWEEN @prevWeekStart AND @prevWeekEnd
       GROUP BY agent_id
     ),
     mo AS (
       SELECT agent_id, COUNT(*) AS evals,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE evaluation_date BETWEEN @monthStart AND @weekEnd
       GROUP BY agent_id
@@ -255,7 +256,7 @@ export async function generateBatchWeeklyReports(
         monthEvaluations: Number(s.m_evals) || 0,
         monthAttitudeRate: Math.round((Number(s.m_att) || 0) * 10) / 10,
         monthOpsRate: Math.round((Number(s.m_ops) || 0) * 10) / 10,
-        isUnderperforming: attRate > 3.3 || opsRate > 3.9,
+        isUnderperforming: attRate > CENTER_TARGET_RATES.용산.attitude || opsRate > CENTER_TARGET_RATES.용산.ops,
         topIssues,
         itemErrors,
         evaluations: evalsMap.get(agentId) || [],
@@ -312,24 +313,24 @@ export async function generateSingleWeeklyReport(
   const summaryQuery = `
     WITH this_week AS (
       SELECT COUNT(*) AS evals,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE agent_id = @agentId
         AND evaluation_date BETWEEN @weekStart AND @weekEnd
     ),
     prev_week AS (
       SELECT
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE agent_id = @agentId
         AND evaluation_date BETWEEN @prevWeekStart AND @prevWeekEnd
     ),
     this_month AS (
       SELECT COUNT(*) AS evals,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM ${EVALUATIONS}
       WHERE agent_id = @agentId
         AND evaluation_date BETWEEN @monthStart AND @weekEnd
@@ -405,7 +406,7 @@ export async function generateSingleWeeklyReport(
     monthEvaluations: Number(s.m_evals) || 0,
     monthAttitudeRate: Math.round((Number(s.m_att) || 0) * 10) / 10,
     monthOpsRate: Math.round((Number(s.m_ops) || 0) * 10) / 10,
-    isUnderperforming: attRate > 3.3 || opsRate > 3.9,
+    isUnderperforming: attRate > CENTER_TARGET_RATES.용산.attitude || opsRate > CENTER_TARGET_RATES.용산.ops,
     topIssues,
     itemErrors,
     evaluations,

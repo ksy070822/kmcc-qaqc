@@ -18,6 +18,7 @@ import {
   generateSingleWeeklyReport,
   type WeeklyReport,
 } from "@/lib/weekly-report-cache"
+import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth-server"
 
 const EMPTY_DETAIL: WeeklyReport = {
   evaluationCount: 0,
@@ -39,19 +40,21 @@ function fmt(d: Date): string {
 }
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const agentId = searchParams.get("agentId")
-  const startDate = searchParams.get("startDate")
-  const endDate = searchParams.get("endDate")
-
-  if (!agentId) {
-    return NextResponse.json(
-      { success: false, error: "agentId는 필수입니다." },
-      { status: 400 },
-    )
-  }
-
   try {
+    const auth = requireAuth(request)
+    // agent role: force own agentId; admin/instructor/manager: allow query param
+    const { searchParams } = new URL(request.url)
+    const agentId = auth.role === 'agent' ? auth.agentId : (searchParams.get("agentId") || auth.agentId)
+    const startDate = searchParams.get("startDate")
+    const endDate = searchParams.get("endDate")
+
+    if (!agentId) {
+      return NextResponse.json(
+        { success: false, error: "agentId는 필수입니다." },
+        { status: 400 },
+      )
+    }
+
     let weekStart: string
     let weekEnd: string
 
@@ -86,8 +89,9 @@ export async function GET(request: NextRequest) {
     // 2) 캐시 없으면 실시간 생성 (fallback)
     const detail = await generateSingleWeeklyReport(agentId, weekStart, weekEnd)
     return NextResponse.json({ success: true, detail, cached: false })
-  } catch (error) {
-    console.error("[API] Mypage weekly error:", error)
+  } catch (err) {
+    if (err instanceof AuthError) return authErrorResponse(err)
+    console.error("[API] Mypage weekly error:", err)
     return NextResponse.json(
       { success: false, error: "주간 리포트 조회 중 오류가 발생했습니다." },
       { status: 500 },

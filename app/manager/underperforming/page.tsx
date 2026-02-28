@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { UnderperformingTable } from "@/components/qc/focus/underperforming-table"
 import { TrackingDetailModal } from "@/components/qc/focus/tracking-detail-modal"
 import { useAuth } from "@/hooks/use-auth"
+import { useLatestDate } from "@/hooks/use-latest-date"
 import type { UnderperformingAgent } from "@/lib/types"
 import type { MultiDomainMetrics, AgentMultiDomainRow } from "@/lib/bigquery-role-metrics"
 import { UNDERPERFORMING_THRESHOLDS_V2 } from "@/lib/constants"
@@ -31,6 +32,7 @@ const THRESHOLDS = {
 
 export default function UnderperformingPage() {
   const { user, loading: authLoading } = useAuth()
+  const { latestDate } = useLatestDate()
   const [detailOpen, setDetailOpen] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<UnderperformingAgent | null>(null)
   const [channelFilter, setChannelFilter] = useState("")
@@ -45,13 +47,12 @@ export default function UnderperformingPage() {
 
   useEffect(() => {
     async function fetchDomainSummary() {
-      if (!user?.center) return
+      if (!user?.center || !latestDate) return
       try {
         setSummaryLoading(true)
 
         const currentMonth = new Date().toISOString().slice(0, 7)
 
-        // Fetch agent-level multi-domain data for underperforming count
         const agentParams = new URLSearchParams({
           type: "agent-list",
           center: user.center,
@@ -59,22 +60,17 @@ export default function UnderperformingPage() {
         })
         if (user.service) agentParams.set("service", user.service)
 
-        // Fetch center-level metrics for targets context
-        const ldRes = await fetch("/api/data?type=latest-date")
-        const ldData = await ldRes.json()
-        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
-
         const metricsParams = new URLSearchParams({
           type: "multi-domain-metrics",
-          refDate,
+          refDate: latestDate,
           center: user.center,
         })
         if (user.service) metricsParams.set("service", user.service)
 
-        // HR 메타데이터 조회
         const hrParams = new URLSearchParams({ center: user.center })
         if (user.service) hrParams.set("service", user.service)
 
+        // 3개 API 병렬 호출 (latest-date 워터폴 제거됨)
         const [agentRes, metricsRes, hrRes] = await Promise.all([
           fetch(`/api/role-metrics?${agentParams}`),
           fetch(`/api/role-metrics?${metricsParams}`),
@@ -109,7 +105,7 @@ export default function UnderperformingPage() {
     }
 
     fetchDomainSummary()
-  }, [user?.center])
+  }, [user?.center, user?.service, latestDate])
 
   // 채널/시간대 필터링된 agent 목록
   const filteredAgentList = useMemo(() => {
@@ -192,9 +188,9 @@ export default function UnderperformingPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-bold text-slate-900">부진상담사 관리</h1>
+        <h1 className="text-xl font-bold text-slate-900">집중관리상담사 관리</h1>
         <p className="text-sm text-slate-500 mt-1">
-          부진상담사 등록, 트래킹, 코칭 기록을 관리합니다.
+          집중관리상담사 등록, 트래킹, 코칭 기록을 관리합니다.
         </p>
       </div>
 
@@ -288,7 +284,7 @@ function DomainUnderperformingSummary({
         <CardContent className="py-6">
           <div className="flex items-center justify-center">
             <Loader2 className="h-5 w-5 animate-spin mr-2 text-slate-400" />
-            <span className="text-sm text-slate-500">항목별 부진 현황 로딩 중...</span>
+            <span className="text-sm text-slate-500">항목별 집중관리 현황 로딩 중...</span>
           </div>
         </CardContent>
       </Card>
@@ -339,7 +335,7 @@ function DomainUnderperformingSummary({
     },
     {
       key: "csat",
-      label: "CSAT",
+      label: "상담평점",
       count: counts.csat,
       threshold: `${THRESHOLDS.csat}점 미만`,
       icon: Star,
@@ -366,7 +362,7 @@ function DomainUnderperformingSummary({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-semibold text-slate-600">항목별 부진 현황</h2>
+            <h2 className="text-sm font-semibold text-slate-600">항목별 집중관리 현황</h2>
             <Badge variant="outline" className="text-xs text-slate-400 border-slate-200">
               {new Date().toISOString().slice(0, 7)} 기준
             </Badge>
@@ -374,7 +370,7 @@ function DomainUnderperformingSummary({
           <div className="flex items-center gap-2">
             <UserX className="h-4 w-4 text-red-400" />
             <span className="text-sm text-slate-600">
-              부진 대상 총{" "}
+              집중관리 대상 총{" "}
               <span className="font-bold text-red-600">{counts.total}명</span>
               <span className="text-slate-400"> / {totalAgents}명</span>
             </span>

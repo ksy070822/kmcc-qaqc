@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   BarChart,
@@ -12,6 +13,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts"
+import { ChartABToggle } from "@/components/ui/chart-ab-toggle"
+import { GoalAchievementChartB } from "./goal-achievement-chart-b"
 
 interface GoalAchievementChartProps {
   data: Array<{
@@ -23,7 +26,7 @@ interface GoalAchievementChartProps {
   }>
 }
 
-export function GoalAchievementChart({ data }: GoalAchievementChartProps) {
+const GoalAchievementChartA = memo(function GoalAchievementChartA({ data }: GoalAchievementChartProps) {
   return (
     <Card>
       <CardHeader>
@@ -60,4 +63,13 @@ export function GoalAchievementChart({ data }: GoalAchievementChartProps) {
       </CardContent>
     </Card>
   )
-}
+})
+
+export const GoalAchievementChart = memo(function GoalAchievementChart(props: GoalAchievementChartProps) {
+  return (
+    <ChartABToggle
+      chartA={<GoalAchievementChartA {...props} />}
+      chartB={<GoalAchievementChartB {...props} />}
+    />
+  )
+})

@@ -1,117 +1,119 @@
 "use client"
 
-import { useState, useEffect, useCallback, useRef } from "react"
-import type { CSATDashboardStats, CSATTrendData, CSATDailyRow, CSATWeeklyRow, CSATLowScoreWeekly, CSATTagRow } from "@/lib/types"
+import { useQuery } from "@tanstack/react-query"
+import type {
+  CSATDashboardStats,
+  CSATTrendData,
+  CSATDailyRow,
+  CSATWeeklyRow,
+  CSATLowScoreWeekly,
+  CSATHourlyBreakdown,
+  CSATTenureBreakdown,
+  CSATReviewRow,
+} from "@/lib/types"
 
 const API_BASE = "/api/data"
 
-export function useCSATDashboardData(startDate?: string, endDate?: string) {
-  const [stats, setStats] = useState<CSATDashboardStats | null>(null)
-  const [trendData, setTrendData] = useState<CSATTrendData[]>([])
-  const [dailyData, setDailyData] = useState<CSATDailyRow[]>([])
-  const [weeklyData, setWeeklyData] = useState<CSATWeeklyRow[]>([])
-  const [lowScoreData, setLowScoreData] = useState<CSATLowScoreWeekly[]>([])
-  const [tagData, setTagData] = useState<CSATTagRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [mounted, setMounted] = useState(false)
-  const hasFetched = useRef(false)
+// JSON fetch 헬퍼
+async function fetchJson<T>(url: string, label: string): Promise<T | null> {
+  const res = await fetch(url)
+  const json = await res.json()
+  if (json.success && json.data) {
+    return json.data as T
+  }
+  console.warn(`[CSAT Dashboard] ${label} fetch failed:`, json)
+  if (json.error) throw new Error(json.error)
+  return null
+}
 
-  const fetchData = useCallback(async () => {
-    setLoading(true)
-    setError(null)
+export function useCSATDashboardData(startDate?: string, endDate?: string, scope?: { center?: string; service?: string }) {
+  const dateParams = `${startDate ? `&startDate=${startDate}` : ""}${endDate ? `&endDate=${endDate}` : ""}`
+  const scopeParams = `${scope?.center ? `&center=${encodeURIComponent(scope.center)}` : ""}${scope?.service ? `&service=${encodeURIComponent(scope.service)}` : ""}`
 
-    try {
-      const dateParams = `${startDate ? `&startDate=${startDate}` : ""}${endDate ? `&endDate=${endDate}` : ""}`
+  const statsQuery = useQuery({
+    queryKey: ['csat-stats', startDate, endDate, scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATDashboardStats>(
+      `${API_BASE}?type=csat-dashboard${dateParams}${scopeParams}`,
+      'Stats'
+    ),
+  })
 
-      const [statsRes, trendRes, dailyRes, weeklyRes, lowScoreRes, tagRes] = await Promise.all([
-        fetch(`${API_BASE}?type=csat-dashboard${dateParams}`),
-        fetch(`${API_BASE}?type=csat-trend&days=30`),
-        fetch(`${API_BASE}?type=csat-daily${dateParams}`),
-        fetch(`${API_BASE}?type=csat-weekly`),
-        fetch(`${API_BASE}?type=csat-low-score`),
-        fetch(`${API_BASE}?type=csat-tags${dateParams}`),
-      ])
+  const trendQuery = useQuery({
+    queryKey: ['csat-trend', scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATTrendData[]>(
+      `${API_BASE}?type=csat-trend&days=180${scopeParams}`,
+      'Trend'
+    ),
+  })
 
-      const [statsData, trendDataRes, dailyDataRes, weeklyDataRes, lowScoreDataRes, tagDataRes] = await Promise.all([
-        statsRes.json(),
-        trendRes.json(),
-        dailyRes.json(),
-        weeklyRes.json(),
-        lowScoreRes.json(),
-        tagRes.json(),
-      ])
+  const dailyQuery = useQuery({
+    queryKey: ['csat-daily', startDate, endDate, scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATDailyRow[]>(
+      `${API_BASE}?type=csat-daily${dateParams}${scopeParams}`,
+      'Daily'
+    ),
+  })
 
-      if (statsData.success && statsData.data) {
-        setStats(statsData.data)
-      } else {
-        console.warn("[CSAT Dashboard] Stats fetch failed:", statsData)
-        if (statsData.error) setError(statsData.error)
-      }
+  // 추이 차트용: 날짜 필터 없이 180일 기본 범위
+  const trendDailyQuery = useQuery({
+    queryKey: ['csat-trend-daily', scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATDailyRow[]>(
+      `${API_BASE}?type=csat-daily${scopeParams}`,
+      'TrendDaily'
+    ),
+  })
 
-      if (trendDataRes.success && trendDataRes.data) {
-        setTrendData(trendDataRes.data)
-      } else {
-        console.warn("[CSAT Dashboard] Trend fetch failed:", trendDataRes)
-      }
+  const weeklyQuery = useQuery({
+    queryKey: ['csat-weekly', scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATWeeklyRow[]>(
+      `${API_BASE}?type=csat-weekly${scopeParams}`,
+      'Weekly'
+    ),
+  })
 
-      if (dailyDataRes.success && dailyDataRes.data) {
-        setDailyData(dailyDataRes.data)
-      } else {
-        console.warn("[CSAT Dashboard] Daily fetch failed:", dailyDataRes)
-      }
+  const lowScoreQuery = useQuery({
+    queryKey: ['csat-low-score', scope?.center, scope?.service],
+    queryFn: () => fetchJson<CSATLowScoreWeekly[]>(
+      `${API_BASE}?type=csat-low-score${scopeParams}`,
+      'LowScore'
+    ),
+  })
 
-      if (weeklyDataRes.success && weeklyDataRes.data) {
-        setWeeklyData(weeklyDataRes.data)
-      } else {
-        console.warn("[CSAT Dashboard] Weekly fetch failed:", weeklyDataRes)
-      }
+  const breakdownQuery = useQuery({
+    queryKey: ['csat-breakdown', startDate, endDate, scope?.center, scope?.service],
+    queryFn: () => fetchJson<{ hourly: CSATHourlyBreakdown[]; tenure: CSATTenureBreakdown[] }>(
+      `${API_BASE}?type=csat-breakdown${dateParams}${scopeParams}`,
+      'Breakdown'
+    ),
+  })
 
-      if (lowScoreDataRes.success && lowScoreDataRes.data) {
-        setLowScoreData(lowScoreDataRes.data)
-      } else {
-        console.warn("[CSAT Dashboard] LowScore fetch failed:", lowScoreDataRes)
-      }
-
-      if (tagDataRes.success && tagDataRes.data) {
-        setTagData(tagDataRes.data)
-      } else {
-        console.warn("[CSAT Dashboard] Tag fetch failed:", tagDataRes)
-      }
-    } catch (err) {
-      console.error("[CSAT Dashboard] Data fetch error:", err)
-      setError(String(err))
-    } finally {
-      setLoading(false)
-    }
-  }, [startDate, endDate])
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  useEffect(() => {
-    if (mounted && !hasFetched.current) {
-      hasFetched.current = true
-      fetchData()
-    }
-  }, [mounted, fetchData])
-
-  useEffect(() => {
-    if (mounted && hasFetched.current) {
-      fetchData()
-    }
-  }, [startDate, endDate, mounted, fetchData])
+  const reviewListQuery = useQuery({
+    queryKey: ['csat-review-list', startDate, endDate, scope?.center, scope?.service],
+    queryFn: () => fetchJson<{ summary: { positive: number; negative: number; total: number }; reviews: CSATReviewRow[] }>(
+      `${API_BASE}?type=csat-review-list${dateParams}${scopeParams}`,
+      'ReviewList'
+    ),
+  })
 
   return {
-    stats,
-    trendData,
-    dailyData,
-    weeklyData,
-    lowScoreData,
-    tagData,
-    loading: !mounted || loading,
-    error,
-    refresh: fetchData,
+    stats: statsQuery.data ?? null,
+    trendData: trendQuery.data ?? [],
+    dailyData: dailyQuery.data ?? [],
+    trendDailyData: trendDailyQuery.data ?? [],
+    weeklyData: weeklyQuery.data ?? [],
+    lowScoreData: lowScoreQuery.data ?? [],
+    breakdownData: breakdownQuery.data ?? null,
+    reviewListData: reviewListQuery.data ?? null,
+    loading: statsQuery.isLoading || trendQuery.isLoading || dailyQuery.isLoading || weeklyQuery.isLoading || lowScoreQuery.isLoading || breakdownQuery.isLoading || reviewListQuery.isLoading,
+    error: statsQuery.error?.message || trendQuery.error?.message || dailyQuery.error?.message || weeklyQuery.error?.message || lowScoreQuery.error?.message || breakdownQuery.error?.message || reviewListQuery.error?.message || null,
+    refresh: () => {
+      statsQuery.refetch()
+      trendQuery.refetch()
+      dailyQuery.refetch()
+      weeklyQuery.refetch()
+      lowScoreQuery.refetch()
+      breakdownQuery.refetch()
+      reviewListQuery.refetch()
+    },
   }
 }

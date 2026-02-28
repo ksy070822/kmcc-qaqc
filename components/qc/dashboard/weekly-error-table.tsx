@@ -12,11 +12,12 @@ const businessItems = evaluationItems.filter((item) => item.category === "오상
 
 interface WeeklyErrorTableProps {
   selectedCenter?: string
+  selectedService?: string
   startDate?: string
   endDate?: string
 }
 
-export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, endDate: propEndDate }: WeeklyErrorTableProps) {
+export function WeeklyErrorTable({ selectedCenter, selectedService, startDate: propStartDate, endDate: propEndDate }: WeeklyErrorTableProps) {
   const [category, setCategory] = useState<"all" | "상담태도" | "오상담/오처리">("all")
 
   // 필터 날짜 우선, 없으면 최근 6주
@@ -33,6 +34,7 @@ export function WeeklyErrorTable({ selectedCenter, startDate: propStartDate, end
     startDate: startDateStr,
     endDate,
     center: selectedCenter && selectedCenter !== "all" ? selectedCenter : undefined,
+    service: selectedService && selectedService !== "all" ? selectedService : undefined,
   })
 
   // 데이터 변환 (과거→최신 정렬)

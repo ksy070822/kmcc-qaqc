@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2, Save, Send, TrendingUp, TrendingDown, FileText, Plus, X } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Loader2, Save, Send, TrendingUp, TrendingDown, FileText, Plus, X, RefreshCw, ShieldCheck, ShieldOff } from "lucide-react"
 import { AgentPicker } from "./agent-picker"
 import { useWeeklyReports } from "@/hooks/use-weekly-reports"
-import type { WeeklyReportInput, UnderperformingRegistration } from "@/lib/types"
-import { format, getYear } from "date-fns"
-import { ko } from "date-fns/locale"
+import { useUnderperforming } from "@/hooks/use-underperforming"
+import { useLatestDate } from "@/hooks/use-latest-date"
+import type { WeeklyReportInput, UnderperformingRegistration, PreviousAgentDecision } from "@/lib/types"
+import { getYear } from "date-fns"
 
 interface WeeklyReportFormProps {
   center?: string
@@ -48,26 +49,25 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
   })
   const [metricsLoading, setMetricsLoading] = useState(true)
 
+  // 최신 데이터 날짜 (캐시된 hook 사용 — 워터폴 제거)
+  const { latestDate: cachedLatestDate } = useLatestDate()
+
   // 최신 데이터 날짜 기준으로 주차 계산 + 집계 데이터 로딩
   useEffect(() => {
     async function loadMetrics() {
+      if (!cachedLatestDate) return
       try {
         setMetricsLoading(true)
-        // 1. 최신 평가 날짜 가져오기
-        const dateRes = await fetch("/api/data?type=latest-date")
-        const dateData = await dateRes.json()
-        const latestDate = dateData.success && dateData.latestDate
-          ? new Date(dateData.latestDate)
-          : new Date()
+        const latestDate = new Date(cachedLatestDate)
 
-        // 2. 주차 정보 계산 (목~수 기준)
+        // 1. 주차 정보 계산 (목~수 기준)
         const ws = getThursdayWeekLabel(latestDate)
         const wr = getThursdayWeekRange(latestDate)
         setCurrentWeek(ws)
         setWeekRange({ start: wr.start, end: wr.end })
         setWeekNumber(String(wr.weekNum))
 
-        // 3. 집계 데이터 가져오기 (센터+서비스 기준)
+        // 2. 집계 데이터 가져오기 (센터+서비스 기준)
         // weekly-group-metrics API는 2주치 범위를 받아 중간점에서 분리함
         if (center && service) {
           const thisWeek = getThursdayWeek(latestDate)
@@ -99,7 +99,7 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
       }
     }
     loadMetrics()
-  }, [center, service])
+  }, [center, service, cachedLatestDate])
 
   // 관리자 입력 필드
   const [prevWeekActivities, setPrevWeekActivities] = useState("")
@@ -107,7 +107,38 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
   const [causeAnalysis, setCauseAnalysis] = useState("")
   const [nextWeekPlan, setNextWeekPlan] = useState("")
 
-  // 부진상담사 등록
+  // 전주 집중관리상담사 (자동 로딩)
+  const { data: previousAgents, loading: prevAgentsLoading } = useUnderperforming({
+    center,
+    service,
+    enabled: !!center && !!service,
+  })
+  const [prevDecisions, setPrevDecisions] = useState<PreviousAgentDecision[]>([])
+  const [prevDecisionsInitialized, setPrevDecisionsInitialized] = useState(false)
+
+  // 전주 관리상담사 데이터가 로딩되면 초기 결정값 세팅
+  useEffect(() => {
+    if (prevDecisionsInitialized || previousAgents.length === 0) return
+    const decisions: PreviousAgentDecision[] = previousAgents
+      .filter((a) => a.status === "tracking" || a.status === "registered")
+      .map((a) => ({
+        agentId: a.agentId,
+        agentName: a.agentName,
+        center: a.center,
+        service: a.service,
+        channel: a.channel,
+        decision: "maintain" as const,
+        feedback: "",
+        attitudeRate: a.currentAttitudeRate,
+        opsRate: a.currentOpsRate,
+      }))
+    if (decisions.length > 0) {
+      setPrevDecisions(decisions)
+      setPrevDecisionsInitialized(true)
+    }
+  }, [previousAgents, prevDecisionsInitialized])
+
+  // 신규 집중관리상담사 등록
   const [registeredAgents, setRegisteredAgents] = useState<UnderperformingRegistration[]>([])
   const [showAgentPicker, setShowAgentPicker] = useState(false)
 
@@ -151,6 +182,7 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
       causeAnalysis,
       nextWeekPlan,
       registeredAgents: registeredAgents.length > 0 ? registeredAgents : undefined,
+      previousAgentDecisions: prevDecisions.length > 0 ? prevDecisions : undefined,
       status,
     }
 
@@ -280,12 +312,118 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
         </CardContent>
       </Card>
 
-      {/* 부진상담사 등록 */}
+      {/* 전주 집중관리상담사 유지/해제 */}
+      {(prevAgentsLoading || prevDecisions.length > 0) && (
+        <Card className="border-slate-200">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-slate-900 text-base">
+              <RefreshCw className="h-4 w-4 text-[#1e3a5f]" />
+              전주 집중관리상담사
+              {prevDecisions.length > 0 && (
+                <Badge className="bg-blue-100 text-blue-700 border-blue-200">
+                  {prevDecisions.length}명
+                </Badge>
+              )}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {prevAgentsLoading ? (
+              <div className="flex items-center justify-center py-6">
+                <Loader2 className="h-5 w-5 animate-spin mr-2 text-slate-400" />
+                <span className="text-sm text-slate-500">전주 관리 상담사 로딩 중...</span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {prevDecisions.map((pd) => (
+                  <div
+                    key={pd.agentId}
+                    className={`border rounded-lg p-4 transition-colors ${
+                      pd.decision === "release"
+                        ? "border-orange-200 bg-orange-50/50"
+                        : "border-slate-200 bg-slate-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-slate-900">
+                          {pd.agentId} / {pd.agentName}
+                        </span>
+                        <Badge variant="outline" className="bg-white border-slate-200 text-xs">
+                          {pd.center} {pd.service}
+                        </Badge>
+                        <Badge variant="outline" className="bg-white border-slate-200 text-xs">
+                          {pd.channel}
+                        </Badge>
+                        <span className="text-xs text-slate-500 ml-1">
+                          태도 {pd.attitudeRate.toFixed(1)}% | 오상담 {pd.opsRate.toFixed(1)}%
+                        </span>
+                      </div>
+                      <Select
+                        value={pd.decision}
+                        onValueChange={(val: "maintain" | "release") => {
+                          setPrevDecisions((prev) =>
+                            prev.map((d) =>
+                              d.agentId === pd.agentId ? { ...d, decision: val } : d,
+                            ),
+                          )
+                        }}
+                      >
+                        <SelectTrigger className={`w-[120px] h-8 text-sm ${
+                          pd.decision === "maintain"
+                            ? "bg-[#1e3a5f] text-white border-[#1e3a5f]"
+                            : "bg-orange-100 text-orange-700 border-orange-300"
+                        }`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="maintain">
+                            <span className="flex items-center gap-1">
+                              <ShieldCheck className="h-3.5 w-3.5" /> 유지
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="release">
+                            <span className="flex items-center gap-1">
+                              <ShieldOff className="h-3.5 w-3.5" /> 해제
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-slate-500">
+                        {pd.decision === "maintain" ? "금주 코칭 피드백" : "해제 사유"}
+                      </Label>
+                      <Textarea
+                        value={pd.feedback}
+                        onChange={(e) => {
+                          setPrevDecisions((prev) =>
+                            prev.map((d) =>
+                              d.agentId === pd.agentId ? { ...d, feedback: e.target.value } : d,
+                            ),
+                          )
+                        }}
+                        placeholder={
+                          pd.decision === "maintain"
+                            ? "이번 주 코칭 내용 및 개선 피드백을 입력하세요"
+                            : "해제 사유를 입력하세요 (예: 오류율 목표 달성)"
+                        }
+                        className="mt-1 bg-white border-slate-200 min-h-[60px] text-sm"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 신규 집중관리상담사 등록 */}
       <Card className="border-slate-200">
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center justify-between">
             <span className="flex items-center gap-2 text-slate-900 text-base">
-              부진상담사 등록
+              신규 집중관리상담사 등록
               {registeredAgents.length > 0 && (
                 <Badge className="bg-red-100 text-red-700 border-red-200">
                   {registeredAgents.length}명
@@ -299,14 +437,14 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
               className="border-slate-200 bg-transparent"
             >
               <Plus className="mr-1 h-4 w-4" />
-              부진상담사 추가
+              집중관리상담사 추가
             </Button>
           </CardTitle>
         </CardHeader>
         <CardContent>
           {registeredAgents.length === 0 ? (
             <div className="text-center py-6 text-slate-400 text-sm">
-              등록된 부진상담사가 없습니다. [+ 부진상담사 추가] 버튼으로 추가하세요.
+              등록된 집중관리상담사가 없습니다. [+ 집중관리상담사 추가] 버튼으로 추가하세요.
             </div>
           ) : (
             <div className="space-y-4">
@@ -407,7 +545,7 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
         </Button>
       </div>
 
-      {/* 부진상담사 선택 모달 */}
+      {/* 집중관리상담사 선택 모달 */}
       {showAgentPicker && (
         <AgentPicker
           open={showAgentPicker}
@@ -415,7 +553,10 @@ export function WeeklyReportForm({ center, service, onSaved }: WeeklyReportFormP
           center={center}
           service={service}
           onSelect={handleAddAgent}
-          excludeAgentIds={registeredAgents.map((a) => a.agentId)}
+          excludeAgentIds={[
+            ...registeredAgents.map((a) => a.agentId),
+            ...prevDecisions.map((d) => d.agentId),
+          ]}
         />
       )}
     </div>

@@ -68,6 +68,14 @@ export const TEST_PRESETS: { key: string; label: string; sub: string; color: str
     user: { userId: 'admin01', userName: '본사관리자', role: 'hq_admin', center: null, service: null, channel: null, agentId: null, workHours: null },
   },
   {
+    key: 'director_yongsan', label: '센터장(용산)', sub: 'jennie1.koc · 제니', color: 'bg-[#2c6edb]/80 hover:bg-[#202237] text-white',
+    user: { userId: 'jennie1.koc', userName: '제니', role: 'hq_admin', center: '용산', service: null, channel: null, agentId: null, workHours: null },
+  },
+  {
+    key: 'director_gwangju', label: '센터장(광주)', sub: 'edgar1.itx · 에드가', color: 'bg-[#2c6edb]/80 hover:bg-[#202237] text-white',
+    user: { userId: 'edgar1.itx', userName: '에드가', role: 'hq_admin', center: '광주', service: null, channel: null, agentId: null, workHours: null },
+  },
+  {
     key: 'instructor', label: '강사', sub: '용산', color: 'bg-[#ffcd00] hover:bg-[#ffcd00]/80 text-black',
     user: { userId: 'instructor01', userName: '강사', role: 'instructor', center: '용산', service: null, channel: null, agentId: null, workHours: null },
   },

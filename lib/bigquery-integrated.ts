@@ -8,6 +8,9 @@ import {
   TENURE_RISK_MULTIPLIER,
   COVERAGE_DAMPENING,
   getTenureBand,
+  QC_ATTITUDE_ITEM_COUNT,
+  QC_CONSULTATION_ITEM_COUNT,
+  getCenterQCTargets,
 } from "@/lib/constants"
 import type {
   AgentMonthlySummary,
@@ -77,19 +80,19 @@ export function calculateRiskScore(
     let qcRate = summary.qcTotalRate
     // 베이지안 축소: 그룹 평균이 있으면 보정
     if (options?.groupQcAvgRate != null) {
-      const bayesian = bayesianShrinkage(
+      const adjustedRate = bayesianShrinkage(
         summary.qcTotalRate / 100,
         summary.qcEvalCount,
         options.groupQcAvgRate / 100,
       )
-      qcRate = bayesian.adjustedRate * 100
+      qcRate = adjustedRate * 100
     }
     const qcNorm = Math.min((qcRate / QC_RATE_CAP) * 100, 100)
     weightedScore += qcNorm * weights.qc
     totalWeight += weights.qc
   }
 
-  // CSAT: (5 - score) / 4 * 100 — 유선은 weight=0이므로 자동 제외
+  // 상담평점: (5 - score) / 4 * 100 — 유선은 weight=0이므로 자동 제외
   if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0 && weights.csat > 0) {
     const csatRisk = ((5 - summary.csatAvgScore) / 4) * 100
     weightedScore += csatRisk * weights.csat
@@ -175,7 +178,7 @@ function assessStrengthWeakness(
     result.push({ domain: "qc", level: "nodata", note: "검수 대상 아님" })
   }
 
-  // CSAT (참고용 — 저점 ≠ 상담사 미흡)
+  // 상담평점 (참고용 — 저점 ≠ 상담사 미흡)
   if (summary.csatAvgScore != null && summary.csatReviewCount && summary.csatReviewCount > 0) {
     if (summary.csatAvgScore >= 4.5) result.push({ domain: "csat", level: "strong", note: `${summary.csatAvgScore.toFixed(2)}점` })
     else if (summary.csatAvgScore >= 3.5) result.push({ domain: "csat", level: "normal", note: `${summary.csatAvgScore.toFixed(2)}점` })
@@ -196,12 +199,7 @@ function assessStrengthWeakness(
   return result
 }
 
-// 센터별 QC 목표치
-function getCenterTargets(center: string): { att: number; ops: number } {
-  if (center === "용산") return { att: 3.3, ops: 3.9 }
-  if (center === "광주") return { att: 2.7, ops: 1.7 }
-  return { att: 3.0, ops: 3.0 }
-}
+// 센터별 QC 목표치 → getCenterQCTargets (from constants.ts)
 
 // ══════════════════════════════════════════════════════════════
 // 함수 A: getAgentMonthlySummaries — 상담사별 월간 통합 데이터
@@ -220,7 +218,7 @@ export async function getAgentMonthlySummaries(
       params.center = filters.center
     }
 
-    // QC + QA + Quiz를 KMCC_QC 데이터셋에서 조회 (CSAT는 별도 cross-project)
+    // QC + QA + Quiz를 KMCC_QC 데이터셋에서 조회 (상담평점은 별도 cross-project)
     const mainQuery = `
       WITH qc_monthly AS (
         SELECT
@@ -304,7 +302,7 @@ export async function getAgentMonthlySummaries(
                 + CASE WHEN e.apology_error THEN 1 ELSE 0 END
                 + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END
                 + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
-              COUNT(*) * 5) AS att_rate,
+              COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) AS att_rate,
             SAFE_DIVIDE(
               SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END
                 + CASE WHEN e.guide_error THEN 1 ELSE 0 END
@@ -317,7 +315,7 @@ export async function getAgentMonthlySummaries(
                 + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END
                 + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END
                 + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-              COUNT(*) * 11) AS ops_rate
+              COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) AS ops_rate
           FROM ${EVALUATIONS} e
           WHERE e.evaluation_date >= DATE_SUB(PARSE_DATE('%Y-%m-%d', CONCAT(@month, '-01')), INTERVAL 3 MONTH)
             AND e.evaluation_date < PARSE_DATE('%Y-%m-%d', CONCAT(@month, '-01'))
@@ -335,8 +333,8 @@ export async function getAgentMonthlySummaries(
           COALESCE(qa.channel, qc.channel, hr.hr_position) AS channel,
           qa.avg_score AS qa_score,
           qa.eval_count AS qa_eval_count,
-          SAFE_DIVIDE(qc.att_errors * 100.0, qc.eval_count * 5) AS qc_att_rate,
-          SAFE_DIVIDE(qc.ops_errors * 100.0, qc.eval_count * 11) AS qc_ops_rate,
+          SAFE_DIVIDE(qc.att_errors * 100.0, qc.eval_count * ${QC_ATTITUDE_ITEM_COUNT}) AS qc_att_rate,
+          SAFE_DIVIDE(qc.ops_errors * 100.0, qc.eval_count * ${QC_CONSULTATION_ITEM_COUNT}) AS qc_ops_rate,
           qc.eval_count AS qc_eval_count,
           qz.avg_score AS quiz_score,
           qz.test_count AS quiz_test_count,
@@ -357,7 +355,7 @@ export async function getAgentMonthlySummaries(
 
     const [mainRows] = await bq.query({ query: mainQuery, params })
 
-    // CSAT cross-project 쿼리 (별도 실행)
+    // 상담평점 cross-project 쿼리 (별도 실행)
     const csatQuery = `
       SELECT
         u.username AS agent_id,
@@ -376,7 +374,7 @@ export async function getAgentMonthlySummaries(
 
     const [csatRows] = await bq.query({ query: csatQuery, params })
 
-    // CSAT를 map으로 변환
+    // 상담평점을 map으로 변환
     const csatMap = new Map<string, { avgScore: number; reviewCount: number }>()
     for (const row of csatRows as Record<string, unknown>[]) {
       csatMap.set(String(row.agent_id), {
@@ -439,7 +437,7 @@ export async function getAgentMonthlySummaries(
       return summary
     })
 
-    // CSAT에만 있는 상담사도 추가
+    // 상담평점에만 있는 상담사도 추가
     for (const [agentId, csat] of csatMap) {
       if (!summaries.find(s => s.agentId === agentId)) {
         const summary: AgentMonthlySummary = {
@@ -576,10 +574,10 @@ export async function getAgentIntegratedProfile(
           ANY_VALUE(e.channel) AS channel,
           SAFE_DIVIDE(
             SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
-            COUNT(*) * 5) AS att_rate,
+            COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) AS att_rate,
           SAFE_DIVIDE(
             SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-            COUNT(*) * 11) AS ops_rate,
+            COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) AS ops_rate,
           COUNT(*) AS eval_count
         FROM ${EVALUATIONS} e
         WHERE e.agent_id = @agentId
@@ -635,7 +633,7 @@ export async function getAgentIntegratedProfile(
 
     const [mainRows] = await bq.query({ query: mainQuery, params })
 
-    // CSAT 추이
+    // 상담평점 추이
     const csatQuery = `
       SELECT
         FORMAT_DATE('%Y-%m', DATE(r.created_at)) AS month,
@@ -694,7 +692,7 @@ export async function getAgentIntegratedProfile(
       ? monthlyTrend.find(m => m.month === selectedMonth) || monthlyTrend[monthlyTrend.length - 1]
       : monthlyTrend[monthlyTrend.length - 1]
     const latestMonth = targetMonth
-    const targets = getCenterTargets(center)
+    const targets = getCenterQCTargets(center)
 
     const current: AgentMonthlySummary = {
       summaryId: `${agentId}_${latestMonth?.month || ""}`,
@@ -803,7 +801,7 @@ export async function getCrossAnalysis(
     // "단일 도메인만 부진" 상담사
     const weakInOnlyOne: (AgentMonthlySummary & { weakDomain: string })[] = []
     for (const s of summaries) {
-      const targets = getCenterTargets(s.center)
+      const targets = getCenterQCTargets(s.center)
       const sw = assessStrengthWeakness(s, targets.att, targets.ops)
       const weakDomains = sw.filter(d => d.level === "weak")
       const strongOrNormal = sw.filter(d => d.level === "strong" || d.level === "normal")

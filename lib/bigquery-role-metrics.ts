@@ -1,8 +1,9 @@
 /**
  * bigquery-role-metrics.ts
- * 강사/관리자 대시보드용 7도메인(QC+QA+CSAT+Quiz+생산성+SLA+근태) 센터/그룹 레벨 집계
+ * 강사/관리자 대시보드용 7도메인(QC+QA+상담평점+Quiz+생산성+SLA+근태) 센터/그룹 레벨 집계
  */
 import { getBigQueryClient } from "@/lib/bigquery"
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT } from "@/lib/constants"
 import { getVoiceProductivity, getChatProductivity } from "@/lib/bigquery-productivity"
 import { getSLAScorecard } from "@/lib/bigquery-sla"
 import { getAttendanceOverview } from "@/lib/bigquery-attendance"
@@ -25,7 +26,7 @@ const QUIZ_CENTER_SQL = `CASE
     ELSE s.center
   END`
 
-// 센터별 CSAT team_id 매핑
+// 센터별 상담평점 team_id 매핑
 const CSAT_TEAM_MAP: Record<string, number> = { "광주": 14, "용산": 15 }
 
 // ── 공통 타입 ──
@@ -40,7 +41,7 @@ export interface MultiDomainMetrics {
   qaAvgScore: number
   qaPrevAvgScore: number
   qaEvalCount: number
-  // CSAT (월간)
+  // 상담평점 (월간)
   csatAvgScore: number
   csatPrevAvgScore: number
   csatReviewCount: number
@@ -77,7 +78,7 @@ export interface AgentMultiDomainRow {
   qcOpsRate: number | null
   // QA
   qaScore: number | null
-  // CSAT
+  // 상담평점
   csatScore: number | null
   csatCount: number
   // Quiz
@@ -86,7 +87,7 @@ export interface AgentMultiDomainRow {
 
 // ══════════════════════════════════════════════════════════════
 // getCenterMultiDomainMetrics — 강사/관리자용: 센터 단위 7도메인 KPI
-// 품질(QC+QA+CSAT+Quiz) + 생산성 + SLA + 근태
+// 품질(QC+QA+상담평점+Quiz) + 생산성 + SLA + 근태
 // ══════════════════════════════════════════════════════════════
 
 export async function getCenterMultiDomainMetrics(
@@ -173,21 +174,77 @@ export async function getCenterMultiDomainMetrics(
       ${quizCenterFilter}
   `
 
-  // ── 병렬 실행 ──
+  // ── CSAT 쿼리 문자열 사전 구성 ──
+  const teamFilter = center && CSAT_TEAM_MAP[center]
+    ? `AND u.team_id1 = ${CSAT_TEAM_MAP[center]}`
+    : "AND u.team_id1 IN (14, 15)"
+
+  const csatQuery = `
+    SELECT AVG(r.score) AS avg_score, COUNT(*) AS cnt
+    FROM ${CHAT_INQUIRE} ci
+    JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+    JOIN ${REVIEW} r ON r.review_request_id = rr.id
+    JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+    JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+    WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth ${teamFilter}
+  `
+  const csatPrevQ = `
+    SELECT AVG(r.score) AS avg_score
+    FROM ${CHAT_INQUIRE} ci
+    JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+    JOIN ${REVIEW} r ON r.review_request_id = rr.id
+    JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+    JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+    WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @prevMonth ${teamFilter}
+  `
+
+  // ── 생산성/SLA/근태 파라미터 사전 계산 ──
+  const monthDateRange = getMonthDateRange(currentMonth)
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const attDate = yesterday.toISOString().slice(0, 10)
+
+  // ══ 전체 병렬 실행 (11개 쿼리/호출을 한 번에) ══
   const [
     [qcRows],
     [qaRows],
     [qaPrevRows],
     [quizRows],
     [quizPrevRows],
+    csatResult,
+    csatPrevResult,
+    voiceRes,
+    chatRes,
+    slaRes,
+    slaPrevRes,
+    attRes,
   ] = await Promise.all([
+    // 품질: QC + QA + Quiz (5 BQ 쿼리)
     bq.query({ query: qcQuery, params }),
     bq.query({ query: qaQuery, params }),
     bq.query({ query: qaPrevQuery, params }),
     bq.query({ query: quizQuery, params }),
     bq.query({ query: quizPrevQuery, params }),
+    // CSAT (2 cross-project 쿼리)
+    bq.query({ query: csatQuery, params }).catch((err) => {
+      console.error("[bigquery-role-metrics] CSAT query error:", err)
+      return [[] as Record<string, unknown>[]] as const
+    }),
+    bq.query({ query: csatPrevQ, params }).catch((err) => {
+      console.error("[bigquery-role-metrics] CSAT prev query error:", err)
+      return [[] as Record<string, unknown>[]] as const
+    }),
+    // 생산성 (2 호출)
+    getVoiceProductivity(null, monthDateRange.startDate, monthDateRange.endDate).catch(() => ({ success: false as const, data: null })),
+    getChatProductivity(null, monthDateRange.startDate, monthDateRange.endDate).catch(() => ({ success: false as const, data: null })),
+    // SLA (2 호출)
+    getSLAScorecard(currentMonth).catch(() => ({ success: false as const, data: null })),
+    getSLAScorecard(prevMonth).catch(() => ({ success: false as const, data: null })),
+    // 근태 (1 호출)
+    getAttendanceOverview(attDate).catch(() => ({ success: false as const, data: null })),
   ])
 
+  // ── QC 결과 처리 ──
   const qc = (qcRows as Record<string, unknown>[])[0] || {}
   const twEvals = Number(qc.evals) || 0
   const pwEvals = Number(qc.pw_evals) || 0
@@ -197,155 +254,95 @@ export async function getCenterMultiDomainMetrics(
   const quiz = (quizRows as Record<string, unknown>[])[0] || {}
   const quizPrev = (quizPrevRows as Record<string, unknown>[])[0] || {}
 
-  // ── CSAT (별도 처리: cross-project, 센터 team_id 기반) ──
+  // ── 상담평점 결과 처리 ──
   let csatAvg = 0, csatPrevAvg = 0, csatCount = 0
-  try {
-    const teamFilter = center && CSAT_TEAM_MAP[center]
-      ? `AND u.team_id1 = ${CSAT_TEAM_MAP[center]}`
-      : "AND u.team_id1 IN (14, 15)"
+  const csatRow = ((csatResult as Record<string, unknown>[])[0]) || {}
+  const csatPrevRow = ((csatPrevResult as Record<string, unknown>[])[0]) || {}
+  csatAvg = Number(csatRow.avg_score) || 0
+  csatCount = Number(csatRow.cnt) || 0
+  csatPrevAvg = Number(csatPrevRow.avg_score) || 0
 
-    const csatQuery = `
-      SELECT AVG(r.score) AS avg_score, COUNT(*) AS cnt
-      FROM ${CHAT_INQUIRE} ci
-      JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
-      JOIN ${REVIEW} r ON r.review_request_id = rr.id
-      JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
-      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-      WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @currentMonth ${teamFilter}
-    `
-    const csatPrevQ = `
-      SELECT AVG(r.score) AS avg_score
-      FROM ${CHAT_INQUIRE} ci
-      JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
-      JOIN ${REVIEW} r ON r.review_request_id = rr.id
-      JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
-      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-      WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @prevMonth ${teamFilter}
-    `
-
-    const [[csatRows], [csatPrevRows]] = await Promise.all([
-      bq.query({ query: csatQuery, params }),
-      bq.query({ query: csatPrevQ, params }),
-    ])
-
-    const csatRow = (csatRows as Record<string, unknown>[])[0] || {}
-    const csatPrevRow = (csatPrevRows as Record<string, unknown>[])[0] || {}
-    csatAvg = Number(csatRow.avg_score) || 0
-    csatCount = Number(csatRow.cnt) || 0
-    csatPrevAvg = Number(csatPrevRow.avg_score) || 0
-  } catch (err) {
-    console.error("[bigquery-role-metrics] CSAT cross-project error:", err)
-  }
-
-  // ── 생산성 (월간: 유선/채팅 응대율) ──
+  // ── 생산성 결과 처리 ──
   let voiceResponseRate = 0
   let chatResponseRate = 0
-  try {
-    const monthDateRange = getMonthDateRange(currentMonth)
-    const [voiceRes, chatRes] = await Promise.all([
-      getVoiceProductivity(null, monthDateRange.startDate, monthDateRange.endDate),
-      getChatProductivity(null, monthDateRange.startDate, monthDateRange.endDate),
-    ])
-    if (voiceRes.success && voiceRes.data) {
-      const overviews = voiceRes.data.overview
-      if (center) {
-        const match = overviews.find((o) => o.center === center)
-        voiceResponseRate = match?.responseRate ?? 0
-      } else {
-        // 전체: 가중 평균
-        const totalOffer = overviews.reduce((s, o) => s + o.totalIncoming, 0)
-        const totalAns = overviews.reduce((s, o) => s + o.totalAnswered, 0)
-        voiceResponseRate = totalOffer > 0 ? round1((totalAns / totalOffer) * 100) : 0
-      }
+  if (voiceRes.success && voiceRes.data) {
+    const overviews = voiceRes.data.overview
+    if (center) {
+      const match = overviews.find((o) => o.center === center)
+      voiceResponseRate = match?.responseRate ?? 0
+    } else {
+      const totalOffer = overviews.reduce((s, o) => s + o.totalIncoming, 0)
+      const totalAns = overviews.reduce((s, o) => s + o.totalAnswered, 0)
+      voiceResponseRate = totalOffer > 0 ? round1((totalAns / totalOffer) * 100) : 0
     }
-    if (chatRes.success && chatRes.data) {
-      const overviews = chatRes.data.overview
-      if (center) {
-        const match = overviews.find((o) => o.center === center)
-        chatResponseRate = match?.responseRate ?? 0
-      } else {
-        const totalIn = overviews.reduce((s, o) => s + o.totalIncoming, 0)
-        const totalAns = overviews.reduce((s, o) => s + o.totalAnswered, 0)
-        chatResponseRate = totalIn > 0 ? round1((totalAns / totalIn) * 100) : 0
-      }
+  }
+  if (chatRes.success && chatRes.data) {
+    const overviews = chatRes.data.overview
+    if (center) {
+      const match = overviews.find((o) => o.center === center)
+      chatResponseRate = match?.responseRate ?? 0
+    } else {
+      const totalIn = overviews.reduce((s, o) => s + o.totalIncoming, 0)
+      const totalAns = overviews.reduce((s, o) => s + o.totalAnswered, 0)
+      chatResponseRate = totalIn > 0 ? round1((totalAns / totalIn) * 100) : 0
     }
-  } catch (err) {
-    console.error("[bigquery-role-metrics] Productivity error:", err)
   }
 
-  // ── SLA (월간: 점수 + 등급) ──
+  // ── SLA 결과 처리 ──
   let slaScore = 0, slaGrade = "-"
   let slaPrevScore = 0, slaPrevGrade = "-"
-  try {
-    const [slaRes, slaPrevRes] = await Promise.all([
-      getSLAScorecard(currentMonth),
-      getSLAScorecard(prevMonth),
-    ])
-    if (slaRes.success && slaRes.data) {
-      if (center) {
-        const match = slaRes.data.find((r) => r.center === center)
-        if (match) { slaScore = round1(match.totalScore); slaGrade = match.grade }
-      } else {
-        // 전체: 센터 평균
-        const avg = slaRes.data.reduce((s, r) => s + r.totalScore, 0) / (slaRes.data.length || 1)
-        slaScore = round1(avg)
-        slaGrade = slaRes.data.length > 0 ? slaRes.data[0].grade : "-"
-      }
+  if (slaRes.success && slaRes.data) {
+    if (center) {
+      const match = slaRes.data.find((r) => r.center === center)
+      if (match) { slaScore = round1(match.totalScore); slaGrade = match.grade }
+    } else {
+      const avg = slaRes.data.reduce((s, r) => s + r.totalScore, 0) / (slaRes.data.length || 1)
+      slaScore = round1(avg)
+      slaGrade = slaRes.data.length > 0 ? slaRes.data[0].grade : "-"
     }
-    if (slaPrevRes.success && slaPrevRes.data) {
-      if (center) {
-        const match = slaPrevRes.data.find((r) => r.center === center)
-        if (match) { slaPrevScore = round1(match.totalScore); slaPrevGrade = match.grade }
-      } else {
-        const avg = slaPrevRes.data.reduce((s, r) => s + r.totalScore, 0) / (slaPrevRes.data.length || 1)
-        slaPrevScore = round1(avg)
-        slaPrevGrade = slaPrevRes.data.length > 0 ? slaPrevRes.data[0].grade : "-"
-      }
+  }
+  if (slaPrevRes.success && slaPrevRes.data) {
+    if (center) {
+      const match = slaPrevRes.data.find((r) => r.center === center)
+      if (match) { slaPrevScore = round1(match.totalScore); slaPrevGrade = match.grade }
+    } else {
+      const avg = slaPrevRes.data.reduce((s, r) => s + r.totalScore, 0) / (slaPrevRes.data.length || 1)
+      slaPrevScore = round1(avg)
+      slaPrevGrade = slaPrevRes.data.length > 0 ? slaPrevRes.data[0].grade : "-"
     }
-  } catch (err) {
-    console.error("[bigquery-role-metrics] SLA error:", err)
   }
 
-  // ── 근태 (최신 영업일 기준) ──
+  // ── 근태 결과 처리 ──
   let attendanceRate = 0, attendancePlanned = 0, attendanceActual = 0
-  try {
-    // 어제 날짜 기준 (HR 스냅샷은 전일까지)
-    const yesterday = new Date()
-    yesterday.setDate(yesterday.getDate() - 1)
-    const attDate = yesterday.toISOString().slice(0, 10)
-    const attRes = await getAttendanceOverview(attDate)
-    if (attRes.success && attRes.data) {
-      if (center) {
-        const match = attRes.data.find((a) => a.center === center)
-        if (match) {
-          attendanceRate = match.attendanceRate
-          attendancePlanned = match.planned
-          attendanceActual = match.actual
-        }
-      } else {
-        attendancePlanned = attRes.data.reduce((s, a) => s + a.planned, 0)
-        attendanceActual = attRes.data.reduce((s, a) => s + a.actual, 0)
-        attendanceRate = attendancePlanned > 0
-          ? round1((attendanceActual / attendancePlanned) * 100)
-          : 0
+  if (attRes.success && attRes.data) {
+    if (center) {
+      const match = attRes.data.find((a) => a.center === center)
+      if (match) {
+        attendanceRate = match.attendanceRate
+        attendancePlanned = match.planned
+        attendanceActual = match.actual
       }
+    } else {
+      attendancePlanned = attRes.data.reduce((s, a) => s + a.planned, 0)
+      attendanceActual = attRes.data.reduce((s, a) => s + a.actual, 0)
+      attendanceRate = attendancePlanned > 0
+        ? round1((attendanceActual / attendancePlanned) * 100)
+        : 0
     }
-  } catch (err) {
-    console.error("[bigquery-role-metrics] Attendance error:", err)
   }
 
   return {
     // 품질: QC
     qcEvaluations: twEvals,
-    qcAttitudeRate: twEvals > 0 ? round2((Number(qc.att_errors) / (twEvals * 5)) * 100) : 0,
-    qcOpsRate: twEvals > 0 ? round2((Number(qc.ops_errors) / (twEvals * 11)) * 100) : 0,
-    qcPrevAttitudeRate: pwEvals > 0 ? round2((Number(qc.pw_att_errors) / (pwEvals * 5)) * 100) : 0,
-    qcPrevOpsRate: pwEvals > 0 ? round2((Number(qc.pw_ops_errors) / (pwEvals * 11)) * 100) : 0,
+    qcAttitudeRate: twEvals > 0 ? round2((Number(qc.att_errors) / (twEvals * QC_ATTITUDE_ITEM_COUNT)) * 100) : 0,
+    qcOpsRate: twEvals > 0 ? round2((Number(qc.ops_errors) / (twEvals * QC_CONSULTATION_ITEM_COUNT)) * 100) : 0,
+    qcPrevAttitudeRate: pwEvals > 0 ? round2((Number(qc.pw_att_errors) / (pwEvals * QC_ATTITUDE_ITEM_COUNT)) * 100) : 0,
+    qcPrevOpsRate: pwEvals > 0 ? round2((Number(qc.pw_ops_errors) / (pwEvals * QC_CONSULTATION_ITEM_COUNT)) * 100) : 0,
     // 품질: QA
     qaAvgScore: round1(Number(qa.avg_score) || 0),
     qaPrevAvgScore: round1(Number(qaPrev.avg_score) || 0),
     qaEvalCount: Number(qa.eval_count) || 0,
-    // 품질: CSAT
+    // 품질: 상담평점
     csatAvgScore: round2(csatAvg),
     csatPrevAvgScore: round2(csatPrevAvg),
     csatReviewCount: csatCount,
@@ -402,11 +399,11 @@ export async function getAgentListMultiDomain(
       COUNT(*) AS eval_count,
       SAFE_DIVIDE(
         SUM(CASE WHEN e.greeting_error THEN 1 ELSE 0 END + CASE WHEN e.empathy_error THEN 1 ELSE 0 END + CASE WHEN e.apology_error THEN 1 ELSE 0 END + CASE WHEN e.additional_inquiry_error THEN 1 ELSE 0 END + CASE WHEN e.unkind_error THEN 1 ELSE 0 END) * 100.0,
-        COUNT(*) * 5
+        COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}
       ) AS att_rate,
       SAFE_DIVIDE(
         SUM(CASE WHEN e.consult_type_error THEN 1 ELSE 0 END + CASE WHEN e.guide_error THEN 1 ELSE 0 END + CASE WHEN e.identity_check_error THEN 1 ELSE 0 END + CASE WHEN e.required_search_error THEN 1 ELSE 0 END + CASE WHEN e.wrong_guide_error THEN 1 ELSE 0 END + CASE WHEN e.process_missing_error THEN 1 ELSE 0 END + CASE WHEN e.process_incomplete_error THEN 1 ELSE 0 END + CASE WHEN e.system_error THEN 1 ELSE 0 END + CASE WHEN e.id_mapping_error THEN 1 ELSE 0 END + CASE WHEN e.flag_keyword_error THEN 1 ELSE 0 END + CASE WHEN e.history_error THEN 1 ELSE 0 END) * 100.0,
-        COUNT(*) * 11
+        COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}
       ) AS ops_rate
     FROM ${EVALUATIONS} e
     WHERE FORMAT_DATE('%Y-%m', e.evaluation_date) = @month ${centerFilter} ${serviceFilter}
@@ -429,38 +426,43 @@ export async function getAgentListMultiDomain(
     GROUP BY s.user_id
   `
 
-  const [[qcRows], [qaRows], [quizRows]] = await Promise.all([
+  // CSAT 쿼리도 병렬로 실행
+  const teamFilter = center && CSAT_TEAM_MAP[center]
+    ? `AND u.team_id1 = ${CSAT_TEAM_MAP[center]}`
+    : "AND u.team_id1 IN (14, 15)"
+
+  const csatQuery = `
+    SELECT u.username AS agent_id, AVG(r.score) AS avg_score, COUNT(*) AS cnt
+    FROM ${CHAT_INQUIRE} ci
+    JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
+    JOIN ${REVIEW} r ON r.review_request_id = rr.id
+    JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
+    JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
+    WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @month ${teamFilter}
+    GROUP BY u.username
+  `
+
+  const [qcResult, qaResult, quizResult, csatResult] = await Promise.all([
     bq.query({ query: qcQuery, params }),
     bq.query({ query: qaQuery, params }),
     bq.query({ query: quizQuery, params }),
+    bq.query({ query: csatQuery, params }).catch(err => {
+      console.error("[bigquery-role-metrics] CSAT agent list error:", err)
+      return [[] as Record<string, unknown>[]] as const
+    }),
   ])
 
-  // CSAT 상담사별 (cross-project)
-  const csatMap = new Map<string, { score: number; count: number }>()
-  try {
-    const teamFilter = center && CSAT_TEAM_MAP[center]
-      ? `AND u.team_id1 = ${CSAT_TEAM_MAP[center]}`
-      : "AND u.team_id1 IN (14, 15)"
+  const [qcRows] = qcResult
+  const [qaRows] = qaResult
+  const [quizRows] = quizResult
+  const [csatRows] = csatResult
 
-    const csatQuery = `
-      SELECT u.username AS agent_id, AVG(r.score) AS avg_score, COUNT(*) AS cnt
-      FROM ${CHAT_INQUIRE} ci
-      JOIN ${REVIEW_REQUEST} rr ON ci.review_id = rr.id
-      JOIN ${REVIEW} r ON r.review_request_id = rr.id
-      JOIN ${CONSULT} c ON c.chat_inquire_id = ci.id
-      JOIN ${CEMS_USER} u ON COALESCE(c.user_id, c.first_user_id) = u.id
-      WHERE FORMAT_DATE('%Y-%m', DATE(r.created_at)) = @month ${teamFilter}
-      GROUP BY u.username
-    `
-    const [csatRows] = await bq.query({ query: csatQuery, params })
-    for (const row of csatRows as Record<string, unknown>[]) {
-      csatMap.set(String(row.agent_id), {
-        score: Number(row.avg_score) || 0,
-        count: Number(row.cnt) || 0,
-      })
-    }
-  } catch (err) {
-    console.error("[bigquery-role-metrics] CSAT agent list error:", err)
+  const csatMap = new Map<string, { score: number; count: number }>()
+  for (const row of csatRows as Record<string, unknown>[]) {
+    csatMap.set(String(row.agent_id), {
+      score: Number(row.avg_score) || 0,
+      count: Number(row.cnt) || 0,
+    })
   }
 
   // QA, Quiz를 Map으로
@@ -481,7 +483,7 @@ export async function getAgentListMultiDomain(
     allAgentIds.add(id)
     qcMap.set(id, row)
   }
-  // QA/Quiz/CSAT에만 있는 상담사도 추가
+  // QA/Quiz/상담평점에만 있는 상담사도 추가
   for (const id of [...qaMap.keys(), ...quizMap.keys(), ...csatMap.keys()]) {
     allAgentIds.add(id)
   }

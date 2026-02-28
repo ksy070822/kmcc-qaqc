@@ -1,13 +1,14 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MypageSummaryCard } from "@/components/mypage/mypage-summary-card"
 import { MypageTrendChart } from "@/components/mypage/mypage-trend-chart"
-import { useMypageProfile } from "@/hooks/use-mypage-profile"
+import { useMypageContext } from "@/contexts/mypage-context"
 import type { UserInfo } from "@/lib/auth"
-import { ShieldCheck, Star, ClipboardCheck, BookOpen, Loader2, Phone, MessageSquare } from "lucide-react"
+import type { AgentProductivityData } from "@/lib/types"
+import { ShieldCheck, Star, ClipboardCheck, BookOpen, Loader2, Phone, MessageSquare, Clock, Headphones } from "lucide-react"
 
 function getPerformanceLevel(qcRate: number): { label: string; color: string } {
   if (qcRate <= 2.0) return { label: "우수", color: "bg-emerald-50 text-emerald-700 border-emerald-200" }
@@ -23,31 +24,7 @@ interface MypageMainViewProps {
 }
 
 export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProps) {
-  const { data, loading } = useMypageProfile(agentId)
-  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
-
-  useEffect(() => {
-    async function fetchProductivity() {
-      if (!user?.center) return
-      try {
-        const refDate = new Date().toISOString().slice(0, 10)
-        const params = new URLSearchParams({
-          type: "multi-domain-metrics",
-          refDate,
-          center: user.center,
-        })
-        const res = await fetch(`/api/role-metrics?${params}`)
-        const d = await res.json()
-        if (d.success) {
-          setProductivity({
-            voice: d.metrics.voiceResponseRate ?? 0,
-            chat: d.metrics.chatResponseRate ?? 0,
-          })
-        }
-      } catch { /* silent */ }
-    }
-    fetchProductivity()
-  }, [user?.center])
+  const { baseMetrics: data, profileLoading: loading } = useMypageContext()
 
   if (loading) {
     return (
@@ -58,6 +35,21 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
     )
   }
 
+  // 신규 상담사: 모든 지표가 0/null이고 트렌드 데이터도 비어있으면 빈 상태 표시
+  const hasNoData = data && (
+    data.qcRate === 0 && data.qcPrevRate === 0 && data.qcGroupAvg === 0 &&
+    data.csatScore === 0 && data.csatPrevScore === 0 && data.csatGroupAvg === 0 &&
+    data.qaScore === 0 && data.qaPrevScore === 0 && data.qaGroupAvg === 0 &&
+    data.quizScore === 0 && data.quizPrevScore === 0 && data.quizGroupAvg === 0 &&
+    (!data.trendData || data.trendData.length === 0 || data.trendData.every(t =>
+      (t.qcRate === null || t.qcRate === 0) &&
+      (t.csatScore === null || t.csatScore === 0) &&
+      (t.qaScore === null || t.qaScore === 0) &&
+      (t.quizScore === null || t.quizScore === 0)
+    ))
+  )
+
+  const isVoiceAgent = user?.channel === "유선"
   const qcRate = data?.qcRate ?? 0
   const level = getPerformanceLevel(qcRate)
 
@@ -87,102 +79,183 @@ export function MypageMainView({ agentId, user, onNavigate }: MypageMainViewProp
         </Badge>
       </div>
 
-      {/* 4 Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <MypageSummaryCard
-          title="QC 모니터링"
-          icon={ShieldCheck}
-          headerColor="bg-slate-900"
-          mainValue={qcRate.toFixed(1)}
-          mainSuffix="%"
-          comparisons={[
-            { label: "전월 대비", value: qcPrevDiff, higherIsBetter: false },
-            { label: "그룹 평균 대비", value: qcGroupDiff, higherIsBetter: false },
-          ]}
-          onDetailClick={() => onNavigate("qc")}
-        />
-        <MypageSummaryCard
-          title="상담 평점"
-          icon={Star}
-          headerColor="bg-[#2c6edb]"
-          mainValue={(data?.csatScore ?? 0).toFixed(1)}
-          mainSuffix="점"
-          comparisons={[
-            { label: "전월 대비", value: csatPrevDiff, higherIsBetter: true, suffix: "점" },
-            { label: "그룹 평균 대비", value: csatGroupDiff, higherIsBetter: true, suffix: "점" },
-          ]}
-          onDetailClick={() => onNavigate("csat")}
-        />
-        <MypageSummaryCard
-          title="QA 평가"
-          icon={ClipboardCheck}
-          headerColor="bg-[#4A6FA5]"
-          mainValue={(data?.qaScore ?? 0).toFixed(1)}
-          mainSuffix="점"
-          comparisons={[
-            { label: "전월 대비", value: qaPrevDiff, higherIsBetter: true, suffix: "점" },
-            { label: "그룹 평균 대비", value: qaGroupDiff, higherIsBetter: true, suffix: "점" },
-          ]}
-          onDetailClick={() => onNavigate("qa")}
-        />
-        <MypageSummaryCard
-          title="업무지식 테스트"
-          icon={BookOpen}
-          headerColor="bg-[#6B93D6]"
-          mainValue={(data?.quizScore ?? 0).toFixed(1)}
-          mainSuffix="점"
-          comparisons={[
-            { label: "전월 대비", value: quizPrevDiff, higherIsBetter: true, suffix: "점" },
-            { label: "그룹 평균 대비", value: quizGroupDiff, higherIsBetter: true, suffix: "점" },
-          ]}
-          onDetailClick={() => onNavigate("quiz")}
-        />
-      </div>
+      {/* 데이터 없는 신규 상담사 안내 */}
+      {hasNoData && (
+        <Card className="border-slate-200 bg-slate-50">
+          <CardContent className="py-8 text-center">
+            <p className="text-sm text-slate-500">평가 데이터가 아직 없습니다</p>
+            <p className="text-xs text-slate-400 mt-1">평가가 완료되면 이곳에 성과 현황이 표시됩니다.</p>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* 생산성 (센터 기준) */}
-      {productivity && (
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Phone className="h-3.5 w-3.5" />
-              생산성 (센터 기준)
-            </h2>
-            <button
-              onClick={() => onNavigate("productivity")}
-              className="text-[11px] font-medium text-slate-500 hover:text-blue-600 flex items-center gap-0.5 transition-colors"
-            >
-              상세 보기 →
-            </button>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Card>
-              <CardContent className="pt-4 pb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-indigo-50">
-                    <Phone className="h-3.5 w-3.5 text-indigo-600" />
-                  </div>
-                  <span className="text-xs text-slate-500">유선 응대율</span>
-                </div>
-                <span className="text-xl font-bold text-slate-900">{productivity.voice.toFixed(1)}%</span>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-4 pb-3">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="flex h-7 w-7 items-center justify-center rounded-md bg-violet-50">
-                    <MessageSquare className="h-3.5 w-3.5 text-violet-600" />
-                  </div>
-                  <span className="text-xs text-slate-500">채팅 응대율</span>
-                </div>
-                <span className="text-xl font-bold text-slate-900">{productivity.chat.toFixed(1)}%</span>
-              </CardContent>
-            </Card>
-          </div>
+      {/* Summary Cards — 유선은 CSAT 없이 3장, 채팅은 4장 */}
+      {!hasNoData && (
+        <div className={`grid grid-cols-1 md:grid-cols-2 ${isVoiceAgent ? "lg:grid-cols-3" : "lg:grid-cols-4"} gap-4`}>
+          <MypageSummaryCard
+            title="QC 모니터링"
+            icon={ShieldCheck}
+            headerColor="bg-slate-900"
+            mainValue={qcRate.toFixed(1)}
+            mainSuffix="%"
+            comparisons={[
+              { label: "전월 대비", value: qcPrevDiff, higherIsBetter: false },
+              { label: "그룹 평균 대비", value: qcGroupDiff, higherIsBetter: false },
+            ]}
+            onDetailClick={() => onNavigate("qc")}
+          />
+          {!isVoiceAgent && (
+            <MypageSummaryCard
+              title="상담 평점"
+              icon={Star}
+              headerColor="bg-[#2c6edb]"
+              mainValue={(data?.csatScore ?? 0).toFixed(1)}
+              mainSuffix="점"
+              comparisons={[
+                { label: "전월 대비", value: csatPrevDiff, higherIsBetter: true, suffix: "점" },
+                { label: "그룹 평균 대비", value: csatGroupDiff, higherIsBetter: true, suffix: "점" },
+              ]}
+              onDetailClick={() => onNavigate("csat")}
+            />
+          )}
+          <MypageSummaryCard
+            title="QA 평가"
+            icon={ClipboardCheck}
+            headerColor="bg-[#4A6FA5]"
+            mainValue={(data?.qaScore ?? 0).toFixed(1)}
+            mainSuffix="점"
+            comparisons={[
+              { label: "전월 대비", value: qaPrevDiff, higherIsBetter: true, suffix: "점" },
+              { label: "그룹 평균 대비", value: qaGroupDiff, higherIsBetter: true, suffix: "점" },
+            ]}
+            onDetailClick={() => onNavigate("qa")}
+          />
+          <MypageSummaryCard
+            title="업무지식 테스트"
+            icon={BookOpen}
+            headerColor="bg-[#6B93D6]"
+            mainValue={(data?.quizScore ?? 0).toFixed(1)}
+            mainSuffix="점"
+            comparisons={[
+              { label: "전월 대비", value: quizPrevDiff, higherIsBetter: true, suffix: "점" },
+              { label: "그룹 평균 대비", value: quizGroupDiff, higherIsBetter: true, suffix: "점" },
+            ]}
+            onDetailClick={() => onNavigate("quiz")}
+          />
         </div>
       )}
 
+      {/* 나의 생산성 */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+            <Phone className="h-3.5 w-3.5" />
+            나의 생산성
+          </h2>
+          <button
+            onClick={() => onNavigate("productivity")}
+            className="text-[11px] font-medium text-slate-500 hover:text-blue-600 flex items-center gap-0.5 transition-colors"
+          >
+            상세 보기 →
+          </button>
+        </div>
+        <ProductivityPreview channel={user?.channel ?? null} />
+      </div>
+
       {/* Trend Chart */}
-      <MypageTrendChart data={data?.trendData ?? []} />
+      <MypageTrendChart data={data?.trendData ?? []} hideCSAT={isVoiceAgent} />
+    </div>
+  )
+}
+
+/** 메인 뷰용 생산성 미리보기 (개인 ATT/ACW/AHT) */
+function ProductivityPreview({ channel }: { channel: string | null }) {
+  const [data, setData] = useState<AgentProductivityData | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchData = useCallback(async () => {
+    try {
+      setLoading(true)
+      const res = await fetch("/api/mypage/productivity")
+      const json = await res.json()
+      if (json.success && json.data) setData(json.data)
+    } catch { /* silent */ } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchData() }, [fetchData])
+
+  if (loading) {
+    return (
+      <Card className="border-slate-200">
+        <CardContent className="py-6 flex items-center justify-center gap-2 text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          <span className="text-xs">생산성 데이터 로딩 중...</span>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  if (!data) {
+    return (
+      <Card className="border-slate-200 bg-slate-50">
+        <CardContent className="py-6 text-center">
+          <p className="text-xs text-slate-400">생산성 데이터가 없습니다</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const fmtSec = (sec: number) => {
+    if (!sec || sec <= 0) return "0:00"
+    const m = Math.floor(sec / 60)
+    const s = Math.round(sec % 60)
+    return `${m}:${String(s).padStart(2, "0")}`
+  }
+
+  const isVoice = data.channel === "유선"
+  const ChannelIcon = isVoice ? Phone : MessageSquare
+  const avg = data.monthAvg
+
+  return (
+    <div className="grid grid-cols-4 gap-3">
+      <Card>
+        <CardContent className="pt-3 pb-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Headphones className="h-3 w-3 text-emerald-500" />
+            <span className="text-[10px] text-slate-500">응대건수</span>
+          </div>
+          <span className="text-lg font-bold text-slate-900 tabular-nums">{avg.answered}<span className="text-[10px] font-normal text-slate-400 ml-0.5">건</span></span>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-3 pb-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <ChannelIcon className="h-3 w-3 text-indigo-500" />
+            <span className="text-[10px] text-slate-500">ATT</span>
+          </div>
+          <span className="text-lg font-bold text-slate-900 tabular-nums">{fmtSec(avg.attSec)}</span>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-3 pb-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Clock className="h-3 w-3 text-amber-500" />
+            <span className="text-[10px] text-slate-500">ACW</span>
+          </div>
+          <span className="text-lg font-bold text-slate-900 tabular-nums">{fmtSec(avg.acwSec)}</span>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="pt-3 pb-2.5">
+          <div className="flex items-center gap-1.5 mb-1">
+            <Clock className="h-3 w-3 text-cyan-500" />
+            <span className="text-[10px] text-slate-500">AHT</span>
+          </div>
+          <span className="text-lg font-bold text-cyan-700 tabular-nums">{fmtSec(avg.ahtSec)}</span>
+        </CardContent>
+      </Card>
     </div>
   )
 }

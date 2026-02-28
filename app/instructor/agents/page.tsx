@@ -83,7 +83,7 @@ export default function InstructorAgentsPage() {
         <MiniStat label="전체 상담사" value={`${agents.length}명`} />
         <MiniStat label="QC 검수" value={`${qcCount}명`} />
         <MiniStat label="QA 평가" value={`${qaCount}명`} />
-        <MiniStat label="CSAT 리뷰" value={`${csatCount}명`} />
+        <MiniStat label="상담평점 리뷰" value={`${csatCount}명`} />
         <MiniStat label="직무테스트" value={`${quizCount}명`} />
       </div>
 
@@ -118,7 +118,7 @@ export default function InstructorAgentsPage() {
                   <ThSort label="태도 오류율" sortKey="qcAttRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
                   <ThSort label="오상담 오류율" sortKey="qcOpsRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
                   <ThSort label="QA" sortKey="qaScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
-                  <ThSort label="CSAT" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
+                  <ThSort label="상담평점" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
                   <ThSort label="직무테스트" sortKey="quizScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} align="right" />
                 </tr>
               </thead>

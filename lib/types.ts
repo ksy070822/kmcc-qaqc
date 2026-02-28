@@ -178,7 +178,7 @@ export interface AIChatRequest {
     service?: string
     channel?: string
   }
-  context?: Record<string, any>
+  context?: Record<string, unknown>
   conversationHistory?: AIChatMessage[]
 }
 
@@ -284,10 +284,23 @@ export interface WeeklyReportInput {
   managerName?: string
   status?: 'draft' | 'submitted' | 'reviewed'
   registeredAgents?: UnderperformingRegistration[]
+  previousAgentDecisions?: PreviousAgentDecision[]
+}
+
+export interface PreviousAgentDecision {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  decision: 'maintain' | 'release'
+  feedback: string
+  attitudeRate: number
+  opsRate: number
 }
 
 // ============================================================
-// 부진상담사 관리 타입
+// 집중관리상담사 관리 타입
 // ============================================================
 
 export interface CoachingRecord {
@@ -314,6 +327,18 @@ export interface UnderperformingRegistration {
   baselineEvaluationCount: number
   coachingNote?: string
   improvementPlan?: string
+}
+
+export interface PreviousAgentDecision {
+  agentId: string
+  agentName: string
+  center: string
+  service: string
+  channel: string
+  decision: 'maintain' | 'release'
+  feedback: string
+  attitudeRate: number
+  opsRate: number
 }
 
 export interface UnderperformingAgent {
@@ -526,7 +551,7 @@ export interface QARoundStats {
 }
 
 // ============================================================
-// CSAT(상담평점) 관련 타입
+// 상담평점 관련 타입
 // ============================================================
 
 export interface CSATDashboardStats {
@@ -554,10 +579,14 @@ export interface CSATDashboardStats {
   prevTotalReviews?: number
   prevLowScoreCount?: number
   prevTotalRequests?: number
+  prevScore5Rate?: number     // 전주 5점 비율
+  prevLowScoreRate?: number   // 전주 1·2점 비율
   reviewsTrend?: number       // 평가수 전주대비 (%)
   lowScoreTrend?: number      // 저점건수 전주대비 (%)
   requestsTrend?: number      // 평가요청 전주대비 (%)
   consultsTrend?: number      // 상담완료 전주대비 (%)
+  score5Trend?: number        // 5점비율 전주대비 (%p)
+  lowScoreRateTrend?: number  // 1·2점비율 전주대비 (%p)
 }
 
 export interface CSATTrendData {
@@ -619,8 +648,46 @@ export interface CSATLowScoreWeekly {
   prevLowRate?: number    // 전주 저점비율 (전주대비 계산용)
   score1Count: number
   score2Count: number
-  score1Services: Array<{ service: string; count: number; rate: number }>
-  score2Services: Array<{ service: string; count: number; rate: number }>
+  score1Reviews: CSATReviewRow[]
+  score2Reviews: CSATReviewRow[]
+  negativeTagCounts?: Record<string, number>      // { "불친절한 상담": 3, ... }
+  prevNegativeTagCounts?: Record<string, number>   // 전주 태그 카운트
+}
+
+export interface CSATHourlyBreakdown {
+  hourBucket: string        // "09-12시" 등
+  reviewCount: number
+  avgScore: number
+  lowScoreRate: number
+  score5Rate: number
+}
+
+export interface CSATTenureBreakdown {
+  tenureGroup: string       // "3개월 미만" | "3~6개월" | "6~12개월" | "12개월 이상"
+  agentCount: number
+  reviewCount: number
+  avgScore: number
+  lowScoreRate: number
+  score5Rate: number
+}
+
+export type ComplaintCause = "상담사" | "회사정책" | "상담정책" | "이용자" | null
+
+export interface CSATReviewRow {
+  date: string
+  agentName: string
+  agentId: string
+  consultId: string
+  service: string
+  depth1?: string
+  depth2?: string
+  depth3?: string
+  depth4?: string
+  score: number
+  tags: string[]            // 한글 매핑된 태그
+  sentiment: "POSITIVE" | "NEGATIVE" | null
+  comment: string
+  complaintCause?: ComplaintCause
 }
 
 // ============================================================
@@ -689,7 +756,7 @@ export interface AgentMonthlySummary {
   qcTotalRate?: number
   qcEvalCount?: number
 
-  // CSAT 지표
+  // 상담평점 지표
   csatAvgScore?: number     // 평균 평점 (5점)
   csatReviewCount?: number
 
@@ -819,19 +886,43 @@ export interface MypageQCDetail {
   coachingFeedback?: Array<{ date: string; category: string; title: string; comment: string }>
 }
 
+export interface CSATComparison {
+  agent: number
+  center: number
+  serviceGroup: number
+}
+
 export interface MypageCSATDetail {
+  // 기본 KPI
   totalReviews: number
+  totalConsults: number         // 전체 상담건수
+  reviewRate: number            // 상담대비 리뷰비중 (%)
   avgScore: number
+  // 점수 분포 (건수 + 비중)
+  score5Count: number
   score5Rate: number
+  score1Count: number
+  score1Rate: number
+  score2Count: number
+  score2Rate: number
+  lowScoreCount: number         // 불만합계(1+2점)
   lowScoreRate: number
+  // 비교 지표 (본인 / 센터평균 / 서비스그룹평균)
+  compare: {
+    avgScore: CSATComparison
+    score5Rate: CSATComparison
+    lowScoreRate: CSATComparison
+    reviewRate: CSATComparison
+  }
+  // 이전 기간 대비
   prevMonthAvg: number
   prevScore5Rate?: number
   prevLowScoreRate?: number
   centerAvg: number
   percentile?: number           // 센터 내 상위 몇%
-  targetScore?: number          // 목표 평점
   period?: 'weekly' | 'monthly'
   periodLabel?: string          // "2월 3주차" or "2026-02"
+  // 추이 & 상세
   monthlyTrend: Array<{ month: string; agentAvg: number; centerAvg: number }>
   recentReviews: Array<{
     date: string
@@ -843,7 +934,6 @@ export interface MypageCSATDetail {
   sentimentPositive?: Array<{ label: string; value: number }>
   sentimentNegative?: Array<{ label: string; value: number }>
   sentimentTags?: Array<{ label: string; count: number; pct: number; type: 'positive' | 'negative' }>
-  coachingGuide?: Array<{ type: 'strength' | 'improvement'; title: string; description: string }>
 }
 
 export interface MypageQADetail {
@@ -940,7 +1030,7 @@ export interface CoachingCategoryDef {
   qaItems: string[]         // QA 항목 columnKey 목록
   qcWeight: number          // QC 비중 (0~1)
   qaWeight: number          // QA 비중 (0~1)
-  otherWeight?: number      // 기타 (Quiz/CSAT) 비중
+  otherWeight?: number      // 기타 (Quiz/상담평점) 비중
   otherSource?: 'quiz' | 'csat'
 }
 
@@ -1067,7 +1157,7 @@ export interface NewHireProfile {
   weeklyQcErrorRate: number
   dailyQcTrend: Array<{ date: string; errorRate: number; evalCount: number }>
   categoryErrors: Array<{ categoryId: CoachingCategoryId; label: string; count: number }>
-  // CSAT (채팅 신입만)
+  // 상담평점 (채팅 신입만)
   csatAvg?: number
   csatLowRate?: number    // 1-2점 비율
   // 코호트 대비
@@ -1183,7 +1273,7 @@ export interface UnderperformingStatus {
 export interface UnderperformingCriterionConfig {
   id: UnderperformingCriterionId
   label: string
-  category: string              // QA / QC / CSAT
+  category: string              // QA / QC / 상담평점
   period: 'weekly' | 'monthly'
   threshold: number             // 선정 기준값
   direction: 'gte' | 'lte'     // gte=이상이면 적발, lte=이하이면 적발
@@ -1613,7 +1703,7 @@ export type QcConfidence = 'low' | 'moderate' | 'high'
 /** 추세 방향 */
 export type TrendDirection = 'improving' | 'stable' | 'deteriorating'
 
-/** 자동 리스크 평가 — 7도메인(QC/QA/CSAT/Quiz/생산성/근태/SLA) 종합 */
+/** 자동 리스크 평가 — 7도메인(QC/QA/상담평점/Quiz/생산성/근태/SLA) 종합 */
 export interface RiskAssessment {
   assessment_id: string
   agent_id: string
@@ -1697,4 +1787,395 @@ export interface NoticeListResponse {
   notices: Notice[]
   unreadCount: number
   total: number
+}
+
+// ============================================================
+// BigQuery 응답 Row 타입 (P2-16)
+// ============================================================
+
+/** BQ evaluations 테이블 원본 행 */
+export interface BQEvaluationRow {
+  evaluation_id: string
+  evaluation_date: string | { value: string }
+  agent_id: string
+  agent_name: string
+  center: string
+  service: string
+  channel: string
+  group?: string
+  consultation_id?: string
+  attitude_error_count: number
+  business_error_count: number
+  greeting_error: boolean
+  empathy_error: boolean
+  apology_error: boolean
+  additional_inquiry_error: boolean
+  unkind_error: boolean
+  consult_type_error: boolean
+  guide_error: boolean
+  identity_check_error: boolean
+  required_search_error: boolean
+  wrong_guide_error: boolean
+  process_missing_error: boolean
+  process_incomplete_error: boolean
+  system_error: boolean
+  id_mapping_error: boolean
+  flag_keyword_error: boolean
+  history_error: boolean
+}
+
+/** BQ agents 테이블 행 */
+export interface BQAgentRow {
+  agent_id: string
+  agent_name: string
+  center: string
+  service: string
+  channel: string
+  group: string
+  hire_date?: string | { value: string }
+  tenure_months?: number
+  manager?: string
+}
+
+/** BQ metrics_daily 집계 행 */
+export interface BQMetricsDailyRow {
+  metric_date: string | { value: string }
+  center: string
+  service: string
+  channel: string
+  evaluation_count: number
+  attitude_errors: number
+  business_errors: number
+  attitude_error_rate: number
+  business_error_rate: number
+}
+
+/** BQ predictions 테이블 행 */
+export interface BQPredictionRow {
+  prediction_id: string
+  center: string
+  service_channel: string
+  dimension_value: string
+  current_attitude_rate: number
+  current_ops_rate: number
+  predicted_attitude_rate: number
+  predicted_ops_rate: number
+  target_attitude_rate: number
+  target_ops_rate: number
+  attitude_achievement_prob: number
+  ops_achievement_prob: number
+  attitude_trend: string
+  ops_trend: string
+  overall_risk_level: string
+  weekly_metrics?: string // JSON string
+}
+
+/** BQ watch_list 테이블 행 */
+export interface BQWatchListRow {
+  agent_id: string
+  agent_name: string
+  center: string
+  service: string
+  channel: string
+  group: string
+  reason: string
+  attitude_rate: number
+  ops_rate: number
+  total_rate: number
+  evaluation_count: number
+  registered_date: string | { value: string }
+  status: string
+}
+
+/** BQ targets 테이블 행 */
+export interface BQTargetRow {
+  id: string
+  name: string
+  type: string
+  center: string
+  targetRate: number
+  periodType: string
+  periodStart: string | { value: string }
+  periodEnd: string | { value: string }
+  isActive: boolean
+  createdAt?: string
+}
+
+/** BQ qa_evaluations 테이블 행 */
+export interface BQQAEvaluationRow {
+  qa_eval_id: string
+  evaluation_date: string | { value: string }
+  evaluation_month: string
+  round: number
+  center: string
+  service: string
+  channel: string
+  agent_name: string
+  agent_id?: string
+  total_score: number
+  tenure_months?: number
+  [key: string]: unknown // 동적 QA 항목 컬럼 허용
+}
+
+/** BQ action_plans 테이블 행 */
+export interface BQActionPlanRow {
+  id: string
+  agent_id: string
+  agent_name: string
+  center?: string
+  issue: string
+  plan: string
+  target_date: string | { value: string }
+  status: string
+  result?: string
+  completed_at?: string
+  manager_feedback?: string
+  created_at: string
+  updated_at: string
+}
+
+// ============================================================
+// BigQuery 쿼리 파라미터 타입 (P2-22 통일용)
+// ============================================================
+
+/** BQ 쿼리 파라미터 맵 (string | number | boolean | string[]) */
+export type BQParams = Record<string, string | number | boolean | string[]>
+
+// ============================================================
+// 컴포넌트 내부 타입 (P2-15 any 제거용)
+// ============================================================
+
+/** 목표 현황 보드: API 응답 목표 데이터 */
+export interface GoalApiResponse {
+  id: string
+  name: string
+  type: string
+  center: string
+  targetRate: number
+  periodType: string
+  periodStart: string
+  periodEnd: string
+  isActive: boolean
+  normalizedType?: "attitude" | "counseling" | "total"
+  _isSynthetic?: boolean
+  attitudeTargetRate?: number
+  businessTargetRate?: number
+}
+
+/** 예측 API 응답: 주간 메트릭 */
+export interface PredictionWeeklyMetric {
+  week: string
+  attitudeRate: number
+  opsRate: number
+}
+
+/** 예측 API 응답: 그룹 예측 데이터 */
+export interface PredictionApiData {
+  center: string
+  serviceChannel: string
+  dimensionValue: string
+  currentAttitudeRate: number
+  currentOpsRate: number
+  predictedAttitudeRate: number
+  predictedOpsRate: number
+  targetAttitudeRate: number
+  targetOpsRate: number
+  attitudeAchievementProb: number
+  opsAchievementProb: number
+  attitudeTrend: string
+  opsTrend: string
+  attitudeRiskLevel: string
+  opsRiskLevel: string
+  overallRiskLevel: string
+  weeklyMetrics: PredictionWeeklyMetric[]
+  w4PredictedAttitude: number
+  w4PredictedOps: number
+  weeklyAttitude?: Array<{ week: string; rate: number }>
+  weeklyOps?: Array<{ week: string; rate: number }>
+}
+
+/** 예측 API 응답: 상담사 데이터 */
+export interface PredictionAgentData {
+  id: string
+  name: string
+  center: string
+  service: string
+  channel: string
+  group?: string
+  attitudeErrorRate: number
+  opsErrorRate: number
+  topErrors?: Array<{ name: string; rate: number; count?: number } | string>
+}
+
+/** 주간 추이 차트 데이터 행 */
+export interface WeeklyTrendChartRow {
+  week: string
+  용산_태도: number
+  용산_오상담: number
+  광주_태도: number
+  광주_오상담: number
+  목표_태도: number
+  목표_오상담: number
+  [key: string]: string | number
+}
+
+/** 히트맵 데이터 행 */
+export interface HeatmapDataRow {
+  categoryId: string
+  label: string
+  score: number
+  agentCount: number
+  severity: string
+}
+
+/** CSAT 서비스 테이블 행 */
+export interface CSATServiceRow {
+  service: string
+  center: string
+  avgScore: number
+  reviewCount: number
+}
+
+/** CSAT 일별 테이블 행 */
+export interface CSATDailyTableRow {
+  date: string
+  center: string
+  reviewCount: number
+  avgScore: number
+  score5Count: number
+  score4Count: number
+  score3Count: number
+  score2Count: number
+  score1Count: number
+}
+
+/** 액션 플랜 (hooks용) */
+export interface ActionPlanData {
+  id?: string
+  agentId: string
+  agentName?: string
+  center?: string
+  issue: string
+  plan: string
+  targetDate: string
+  status: string
+  result?: string
+  improvement?: number
+}
+
+/** 포커스(집중관리) 상담사 플랜 */
+export interface FocusAgentPlan {
+  agentId: string
+  status: 'completed' | 'in-progress' | 'delayed' | string
+  improvement?: number
+}
+
+/** 상담사 에러 정보 */
+export interface AgentErrorInfo {
+  name: string
+  rate: number
+  count?: number
+}
+
+// ============================================================
+// 목표관리 (Multi-Domain Goals) 타입
+// ============================================================
+
+export type TargetDomain = 'qc' | 'qa' | 'csat' | 'sla' | 'productivity'
+
+export interface MultiDomainTarget {
+  targetId?: string
+  domain: TargetDomain
+  year: number
+  center: string       // '용산' | '광주' | '전체'
+  targetSubtype: string
+  targetValue: number
+  targetUnit: string   // '%' | '점' | '초'
+  isActive: boolean
+  updatedAt?: string
+  updatedBy?: string
+}
+
+/** Recharts Tooltip payload 항목 */
+export interface RechartsPayloadEntry {
+  dataKey: string
+  name: string
+  value: number
+  stroke?: string
+  payload: Record<string, unknown>
+}
+
+/** 근속기간별 오류 통계 행 */
+export interface TenureStatRow {
+  center: string
+  service: string
+  channel: string
+  tenureGroup: string
+  agentCount: number
+  items: Record<string, number>
+}
+
+/** 코칭 추세 데이터 포인트 */
+export interface CoachingTrendPoint {
+  month: string
+  attitudeRate: number
+  opsRate: number
+  totalRate: number
+}
+
+/** 목표 설정 폼 데이터 */
+export interface GoalSettingsFormData {
+  center: string
+  type: string
+  targetRate: string
+  period: string
+  startDate: string
+  endDate: string
+}
+
+/** 상담사 분석 행 (agents 컴포넌트) */
+export interface AgentAnalysisRow {
+  id: string
+  name: string
+  center: string
+  group: string
+  channel: string
+  tenure: string
+  errorRate: number
+  overallErrorRate: number
+  attitudeErrorRate: number
+  opsErrorRate: number
+  evaluationCount: number
+  status: string
+  topErrors?: Array<{ name: string; rate: number; count?: number }>
+}
+
+// ============================================================
+// 상담사 개인 생산성 (Agent Productivity)
+// ============================================================
+
+/** 일별 생산성 데이터 */
+export interface AgentProductivityDay {
+  date: string
+  answered: number
+  attSec: number
+  acwSec: number
+  ahtSec: number
+}
+
+/** 집계 요약 (일간/주간/월간) */
+export interface AgentProductivityAvg {
+  answered: number
+  attSec: number
+  acwSec: number
+  ahtSec: number
+}
+
+/** 상담사 개인 생산성 전체 응답 */
+export interface AgentProductivityData {
+  channel: "유선" | "채팅"
+  daily: AgentProductivityDay[]
+  monthAvg: AgentProductivityAvg
+  weekAvg: AgentProductivityAvg
+  latestDay: AgentProductivityAvg & { date: string }
 }

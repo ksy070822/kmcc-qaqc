@@ -19,7 +19,7 @@ export function AIAssistant() {
   >()
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const chatInterfaceRef = useRef<ChatInterfaceRef | null>(null)
-  const prevSelectionRef = useRef<{ agentId?: string; group?: any }>({})
+  const prevSelectionRef = useRef<{ agentId?: string; group?: { service?: string; channel?: string } }>({})
 
   // 선택이 변경되면 자동 분석 트리거
   useEffect(() => {

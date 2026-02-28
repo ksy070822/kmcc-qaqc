@@ -3,14 +3,24 @@
 import { useState } from "react"
 import { ReportGenerator, type ReportConfig } from "./report-generator"
 import { ReportPreview } from "./report-preview"
-import { useReports } from "@/hooks/use-reports"
+import { useReports, type ReportData } from "@/hooks/use-reports"
 
 export function AnalyticsReports() {
-  const [currentReport, setCurrentReport] = useState<any>(null)
+  const [currentReport, setCurrentReport] = useState<ReportData | null>(null)
   const { generateReport, loading: isGenerating, error } = useReports()
 
   const handleGenerate = async (config: ReportConfig) => {
-    const report = await generateReport(config as any)
+    // Convert report-generator's ReportConfig to use-reports' ReportConfig format
+    const hookConfig: Parameters<typeof generateReport>[0] = {
+      type: config.type as "weekly" | "monthly" | "quarterly" | "halfYear" | "yearly" | "custom",
+      period: config.period,
+      center: config.center,
+      service: config.serviceGroup,
+      channel: config.channel,
+      startDate: config.startDate,
+      endDate: config.endDate,
+    }
+    const report = await generateReport(hookConfig)
     if (report) {
       setCurrentReport(report)
     }
@@ -45,7 +55,7 @@ export function AnalyticsReports() {
     }
   }
 
-  const generateReportCSV = (report: any): string => {
+  const generateReportCSV = (report: ReportData): string => {
     // Basic CSV generation for report data
     let csv = "QC 품질관리 보고서\n"
     csv += `생성일: ${new Date().toLocaleString("ko-KR")}\n\n`
@@ -65,7 +75,7 @@ export function AnalyticsReports() {
       csv += `\n상세 데이터:\n`
       const headers = Object.keys(report.data[0] || {})
       csv += headers.join(",") + "\n"
-      report.data.forEach((row: any) => {
+      report.data.forEach((row) => {
         csv += headers.map((h) => {
           const value = row[h]
           return typeof value === "string" && value.includes(",") ? `"${value}"` : value

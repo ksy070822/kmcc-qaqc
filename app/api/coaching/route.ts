@@ -29,6 +29,7 @@ import {
 } from '@/lib/bigquery-coaching'
 import { detectTrend } from '@/lib/statistics'
 import { getCorsHeaders } from '@/lib/cors'
+import { getActionPlans } from '@/lib/bigquery'
 
 const corsHeaders = getCorsHeaders()
 
@@ -166,6 +167,21 @@ export async function GET(request: NextRequest) {
         const agentPlan = allPlans.filter(p => p.agentId === agentId)
         return NextResponse.json(
           { success: true, data: agentPlan },
+          { headers: corsHeaders },
+        )
+      }
+
+      // 상담사 관리자 피드백 (action_plans 기반)
+      case 'agent-feedback': {
+        if (!agentId) {
+          return NextResponse.json(
+            { success: false, error: 'agentId is required' },
+            { status: 400, headers: corsHeaders },
+          )
+        }
+        const result = await getActionPlans({ agentId })
+        return NextResponse.json(
+          { success: true, data: result.data ?? [] },
           { headers: corsHeaders },
         )
       }

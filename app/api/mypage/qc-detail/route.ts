@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAgentQCDetail } from "@/lib/bigquery-mypage"
+import { requireAuth, AuthError, authErrorResponse } from "@/lib/auth-server"
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = req.nextUrl
-  const agentId = searchParams.get("agentId")
-  const month = searchParams.get("month") || undefined
-
-  if (!agentId) {
-    return NextResponse.json({ success: false, error: "agentId required" }, { status: 400 })
-  }
-
   try {
+    const auth = requireAuth(req)
+    // agent role: force own agentId; admin/instructor/manager: allow query param
+    const agentId = auth.role === 'agent' ? auth.agentId : (req.nextUrl.searchParams.get("agentId") || auth.agentId)
+    const month = req.nextUrl.searchParams.get("month") || undefined
+
+    if (!agentId) {
+      return NextResponse.json({ success: false, error: "agentId required" }, { status: 400 })
+    }
+
     const data = await getAgentQCDetail(agentId, month)
     return NextResponse.json({ success: true, data })
-  } catch (error) {
-    console.error("[API] mypage/qc-detail error:", error)
+  } catch (err) {
+    if (err instanceof AuthError) return authErrorResponse(err)
+    console.error("[API] mypage/qc-detail error:", err)
     return NextResponse.json(
       { success: false, error: "QC 상세 조회 중 오류가 발생했습니다." },
       { status: 500 },

@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { useAuth } from "@/hooks/use-auth"
+import { useMypageContext } from "@/contexts/mypage-context"
+import { useLatestDate } from "@/hooks/use-latest-date"
 import {
   ChevronLeft,
   ChevronRight,
@@ -53,36 +54,11 @@ interface WeeklyDetail {
 }
 
 export default function WeeklyReportPage() {
-  const { user } = useAuth()
+  const { user, productivity } = useMypageContext()
+  const { latestDate } = useLatestDate()
   const [weekOffset, setWeekOffset] = useState(0)
   const [detail, setDetail] = useState<WeeklyDetail | null>(null)
   const [loading, setLoading] = useState(true)
-  const [productivity, setProductivity] = useState<{ voice: number; chat: number } | null>(null)
-
-  useEffect(() => {
-    async function fetchProductivity() {
-      if (!user?.center) return
-      try {
-        const ldRes = await fetch("/api/data?type=latest-date")
-        const ldData = await ldRes.json()
-        const refDate = ldData.latestDate || new Date().toISOString().slice(0, 10)
-        const params = new URLSearchParams({
-          type: "multi-domain-metrics",
-          refDate,
-          center: user.center,
-        })
-        const res = await fetch(`/api/role-metrics?${params}`)
-        const d = await res.json()
-        if (d.success) {
-          setProductivity({
-            voice: d.metrics.voiceResponseRate ?? 0,
-            chat: d.metrics.chatResponseRate ?? 0,
-          })
-        }
-      } catch { /* silent */ }
-    }
-    fetchProductivity()
-  }, [user?.center])
 
   const { start: weekStart, end: weekEnd } = useMemo(() => {
     const baseDate = weekOffset === 0 ? new Date() : addWeeks(new Date(), weekOffset)
@@ -165,6 +141,13 @@ export default function WeeklyReportPage() {
         <div className="flex items-center justify-center h-48">
           <Loader2 className="h-8 w-8 animate-spin text-emerald-600" />
         </div>
+      ) : !detail || (detail.evaluationCount === 0 && detail.evaluations.length === 0) ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-muted-foreground">조회된 데이터가 없습니다.</p>
+            <p className="text-xs text-slate-400 mt-1">해당 주간에 검수된 이력이 없습니다.</p>
+          </CardContent>
+        </Card>
       ) : (
         <>
           {/* 요약 카드 */}
@@ -177,13 +160,13 @@ export default function WeeklyReportPage() {
             </Card>
             <Card>
               <CardContent className="pt-5 pb-4 text-center">
-                <div className="text-2xl font-bold text-slate-900">{detail?.attitudeErrorRate.toFixed(1) ?? "0.0"}%</div>
+                <div className="text-2xl font-bold text-slate-900">{(detail?.attitudeErrorRate ?? 0).toFixed(1)}%</div>
                 <p className="text-xs text-slate-500 mt-1">태도 오류율</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="pt-5 pb-4 text-center">
-                <div className="text-2xl font-bold text-slate-900">{detail?.opsErrorRate.toFixed(1) ?? "0.0"}%</div>
+                <div className="text-2xl font-bold text-slate-900">{(detail?.opsErrorRate ?? 0).toFixed(1)}%</div>
                 <p className="text-xs text-slate-500 mt-1">오상담 오류율</p>
               </CardContent>
             </Card>
@@ -245,7 +228,7 @@ export default function WeeklyReportPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">유선 응대율</p>
-                      <p className="text-lg font-bold text-slate-900">{productivity.voice.toFixed(1)}%</p>
+                      <p className="text-lg font-bold text-slate-900">{(productivity.voice ?? 0).toFixed(1)}%</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -254,7 +237,7 @@ export default function WeeklyReportPage() {
                     </div>
                     <div>
                       <p className="text-xs text-slate-500">채팅 응대율</p>
-                      <p className="text-lg font-bold text-slate-900">{productivity.chat.toFixed(1)}%</p>
+                      <p className="text-lg font-bold text-slate-900">{(productivity.chat ?? 0).toFixed(1)}%</p>
                     </div>
                   </div>
                 </div>

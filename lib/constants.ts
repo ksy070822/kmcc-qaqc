@@ -5,6 +5,89 @@
  */
 import type { EvaluationItem } from "./types"
 
+// ============================================================
+// P2-17: QC 오류율 공식 항목 수
+// 상담태도 오류율 = 태도오류건수 / (검수건수 × QC_ATTITUDE_ITEM_COUNT) × 100
+// 오상담 오류율   = 오상담오류건수 / (검수건수 × QC_CONSULTATION_ITEM_COUNT) × 100
+// ============================================================
+/** 상담태도 항목 수 (첫인사/끝인사, 공감표현, 사과표현, 추가문의, 불친절) */
+export const QC_ATTITUDE_ITEM_COUNT = 5
+/** 오상담/오처리 항목 수 */
+export const QC_CONSULTATION_ITEM_COUNT = 11
+/** 전체 QC 항목 수 (태도 + 오상담) */
+export const QC_TOTAL_ITEM_COUNT = QC_ATTITUDE_ITEM_COUNT + QC_CONSULTATION_ITEM_COUNT // 16
+
+// ============================================================
+// P2-17: 센터 목표율 (2026년 기준)
+// ============================================================
+export const CENTER_TARGET_RATES = {
+  용산: { attitude: 3.3, ops: 3.9 },
+  광주: { attitude: 2.7, ops: 1.7 },
+  전체: { attitude: 3.0, ops: 3.0 },
+} as const
+
+/** 센터별 QC 목표치를 반환하는 헬퍼 (기존 getCenterTargets 함수 대체) */
+export function getCenterQCTargets(center: string): { att: number; ops: number } {
+  if (center === "용산") return { att: CENTER_TARGET_RATES.용산.attitude, ops: CENTER_TARGET_RATES.용산.ops }
+  if (center === "광주") return { att: CENTER_TARGET_RATES.광주.attitude, ops: CENTER_TARGET_RATES.광주.ops }
+  return { att: CENTER_TARGET_RATES.전체.attitude, ops: CENTER_TARGET_RATES.전체.ops }
+}
+
+// ============================================================
+// P2-17: 목표 달성 판정 배수 (goal status 판정용)
+// ============================================================
+/** 목표의 90% 이하이면 "달성" */
+export const GOAL_ACHIEVED_MULTIPLIER = 0.9
+/** 목표의 110% 초과이면 "미달" */
+export const GOAL_MISSED_MULTIPLIER = 1.1
+
+// ============================================================
+// P2-17: 센터 순서 (UI 렌더링 순서)
+// ============================================================
+export const CENTER_ORDER = ["용산", "광주"] as const
+
+// ============================================================
+// P2-17: UX 임계값
+// ============================================================
+/** 주 초반 판단 일수 — 목~토(0~2일차)이면 이전 주차 선택 */
+export const WEEK_EARLY_DAYS_THRESHOLD = 3
+/** 트렌드 차트 일별 표시 일수 */
+export const TREND_CHART_DAYS = 14
+/** 주간 트렌드 표시 주수 */
+export const WEEKLY_TREND_WEEKS = 6
+/** 월 선택 드롭다운 개월 수 */
+export const MONTH_SELECTOR_COUNT = 6
+
+// ============================================================
+// P2-18: QC 평가항목 16개 매핑 (태도 5 + 오상담 11)
+// 기존 evaluationItems(BQ 컬럼 매핑)과 별도로,
+// 코칭·분석 UI에서 사용하는 간결한 key/label 매핑
+// ============================================================
+export const QC_ATTITUDE_ITEMS = [
+  { key: "greeting", label: "인사/종결어", columnKey: "첫인사끝인사누락" },
+  { key: "empathy", label: "공감표현", columnKey: "공감표현누락" },
+  { key: "apology", label: "사과표현", columnKey: "사과표현누락" },
+  { key: "additional", label: "추가문의", columnKey: "추가문의누락" },
+  { key: "unkind", label: "불친절", columnKey: "불친절" },
+] as const
+
+export const QC_CONSULTATION_ITEMS = [
+  { key: "consult_type", label: "상담유형 오설정", columnKey: "상담유형오설정" },
+  { key: "guide", label: "가이드 미준수", columnKey: "가이드미준수" },
+  { key: "identity", label: "본인확인 누락", columnKey: "본인확인누락" },
+  { key: "search", label: "필수탐색 누락", columnKey: "필수탐색누락" },
+  { key: "wrong_guide", label: "오안내", columnKey: "오안내" },
+  { key: "process_missing", label: "전산 처리 누락", columnKey: "전산처리누락" },
+  { key: "process_incomplete", label: "전산 처리 미흡/정정", columnKey: "전산처리미흡정정" },
+  { key: "system_error", label: "전산 조작 미흡/오류", columnKey: "전산조작미흡오류" },
+  { key: "id_mapping", label: "ID매핑 누락/오기재", columnKey: "콜픽트립ID매핑누락오기재" },
+  { key: "flag_keyword", label: "플래그/키워드 누락/오기재", columnKey: "플래그키워드누락오기재" },
+  { key: "history", label: "상담이력 기재 미흡", columnKey: "상담이력기재미흡" },
+] as const
+
+/** 전체 QC 항목 (태도 + 오상담) */
+export const QC_ALL_ITEMS = [...QC_ATTITUDE_ITEMS, ...QC_CONSULTATION_ITEMS] as const
+
 // 평가항목 16개 (로우데이터 컬럼과 매핑)
 export const evaluationItems: EvaluationItem[] = [
   // 상담태도 (5개)
@@ -248,10 +331,10 @@ export function getQAScoreGrade(score: number): typeof QA_SCORE_GRADES[number] {
 }
 
 // ============================================================
-// CSAT(상담평점) 상수
+// 상담평점 상수
 // ============================================================
 
-// CSAT 점수 분포 색상
+// 상담평점 점수 분포 색상
 export const CSAT_SCORE_COLORS: Record<number, string> = {
   5: "#22c55e",
   4: "#3b82f6",
@@ -260,10 +343,10 @@ export const CSAT_SCORE_COLORS: Record<number, string> = {
   1: "#ef4444",
 }
 
-// CSAT 목표 평점 (전체)
+// 상담평점 목표 평점 (전체)
 export const CSAT_TARGET_SCORE = 4.70
 
-// CSAT 서비스별 목표 평점
+// 상담평점 서비스별 목표 평점
 export const CSAT_SERVICE_TARGETS: Record<string, number> = {
   "택시": 4.53,
   "바이크": 4.90,
@@ -272,7 +355,7 @@ export const CSAT_SERVICE_TARGETS: Record<string, number> = {
   "퀵": 4.43,
 }
 
-// CSAT 태그 한글 매핑
+// 상담평점 태그 한글 매핑
 export const CSAT_TAG_LABELS: Record<string, string> = {
   FAST: "빠른 상담 연결",
   EASY: "알기쉬운 설명",
@@ -294,7 +377,7 @@ export const CSAT_TAG_LABELS: Record<string, string> = {
 export const RISK_WEIGHTS = {
   qa: 0.30,     // QA 점수 (30%)
   qc: 0.30,     // QC 오류율 (30%)
-  csat: 0.25,   // CSAT 평점 (25%)
+  csat: 0.25,   // 상담평점 (25%)
   knowledge: 0.15, // 직무테스트 (15%)
 } as const
 
@@ -522,7 +605,7 @@ export const TREND_CONFIG = {
 // 경보 임계값
 export const ALERT_THRESHOLDS = {
   deterioration: 0.50,     // 주간 오류율 전주 대비 50%↑
-  csatDrop: 0.3,           // CSAT 주간평균 0.3점↓
+  csatDrop: 0.3,           // 상담평점 주간평균 0.3점↓
   noImprovementWeeks: 2,   // 미개선 판정 주수
   coachingOverdueDays: 3,  // 코칭 미실시 일수
   cohortDelayWeeks: 2,     // 코호트 평균 대비 지연 주수
@@ -546,7 +629,7 @@ export const TENURE_MONITORING_POLICY: Record<TenureBand, {
   cadence: ReportCadence
   description: string
 }> = {
-  new_hire:    { cadence: 'daily',   description: '1개월 미만: 데일리 QC + CSAT(채팅) 취약점 밀접 모니터링' },
+  new_hire:    { cadence: 'daily',   description: '1개월 미만: 데일리 QC + 상담평점(채팅) 취약점 밀접 모니터링' },
   early:       { cadence: 'weekly',  description: '1~2개월: 부진 대상 1개월차 리포트 유지, 양호하면 주간 전환' },
   standard:    { cadence: 'weekly',  description: '3개월+: 주간(주차별 구성) + 월간 리포트' },
   experienced: { cadence: 'weekly',  description: '12개월+: 주간(주차별 구성) + 월간 리포트' },
@@ -602,7 +685,7 @@ export const UNDERPERFORMING_CRITERIA: UnderperformingCriterionConfig[] = [
   {
     id: 'csat_low_score',
     label: '상담평가 저점(1·2점)',
-    category: 'CSAT',
+    category: '상담평점',
     period: 'weekly',           // 주/월 모두 (주: ≥3건, 월: ≥12건)
     threshold: 3,               // 주 단위 기준
     direction: 'gte',           // ≥3건이면 적발

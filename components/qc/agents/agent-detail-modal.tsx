@@ -21,7 +21,7 @@ import {
   Cell,
   ReferenceLine,
 } from "recharts"
-import { evaluationItems } from "@/lib/constants"
+import { evaluationItems, QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT } from "@/lib/constants"
 import { useAgentDetail } from "@/hooks/use-agent-detail"
 
 interface AgentDetailModalProps {
@@ -31,12 +31,13 @@ interface AgentDetailModalProps {
     id: string
     name: string
     center: string
-    group: string
-    tenure: string
-    errorRate: number
-    trend: number
-    totalCalls: number
-    status: "양호" | "위험"
+    group?: string
+    tenure?: string
+    errorRate?: number
+    overallErrorRate?: number
+    trend?: number
+    totalCalls?: number
+    status?: string
   } | null
 }
 
@@ -108,12 +109,12 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
               <span className="text-xl">{agent.id} / {agent.name}</span>
               <Badge
                 className={cn(
-                  agent.status === "양호"
+                  (agent.status ?? "양호") === "양호"
                     ? "bg-green-100 text-green-700 border-green-300"
                     : "bg-red-100 text-red-700 border-red-300",
                 )}
               >
-                {agent.status}
+                {agent.status ?? "양호"}
               </Badge>
             </div>
           </DialogTitle>
@@ -142,7 +143,7 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                   <span>소속</span>
                 </div>
                 <p className="text-sm font-semibold text-slate-800 leading-tight">
-                  {agent.center}<br/>{agent.group}
+                  {agent.center}<br/>{agent.group ?? ''}
                 </p>
               </CardContent>
             </Card>
@@ -161,10 +162,10 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                 <p
                   className={cn(
                     "text-xl font-bold",
-                    agent.errorRate > 5 ? "text-red-600" : agent.errorRate > 3 ? "text-amber-600" : "text-green-600",
+                    (agent.errorRate ?? agent.overallErrorRate ?? 0) > 5 ? "text-red-600" : (agent.errorRate ?? agent.overallErrorRate ?? 0) > 3 ? "text-amber-600" : "text-green-600",
                   )}
                 >
-                  {agent.errorRate.toFixed(2)}%
+                  {(agent.errorRate ?? agent.overallErrorRate ?? 0).toFixed(2)}%
                 </p>
               </CardContent>
             </Card>
@@ -257,8 +258,11 @@ export function AgentDetailModal({ open, onOpenChange, agent }: AgentDetailModal
                       </TableHeader>
                       <TableBody>
                         {itemErrorData.map((item, index) => {
-                          const totalEvals = agentDetailData?.dailyTrend.length || agent.totalCalls || 1
-                          const errorRate = totalEvals > 0 ? ((item.count / totalEvals) * 100).toFixed(2) : "0.00"
+                          // 올바른 오류율 공식: 오류건수 / (검수건수 × 항목수) × 100
+                          const totalEvals = agentDetailData?.totalEvaluations || agent.totalCalls || 1
+                          const itemCount = item.category === "상담태도" ? QC_ATTITUDE_ITEM_COUNT : QC_CONSULTATION_ITEM_COUNT
+                          const denominator = totalEvals * itemCount
+                          const errorRate = denominator > 0 ? ((item.count / denominator) * 100).toFixed(2) : "0.00"
                           // 전일 대비 계산 (현재는 0으로 표시, 향후 API에서 전일 데이터를 받아서 계산)
                           const dailyChange = 0 // TODO: agent-detail API에서 전일 대비 데이터 제공 시 사용
                           const isIncrease = Number(dailyChange) > 0

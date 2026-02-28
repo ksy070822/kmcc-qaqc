@@ -1,13 +1,30 @@
 "use client"
 
 import { StatsCard } from "../stats-card"
+import { TrendingUp, TrendingDown } from "lucide-react"
+import { cn } from "@/lib/utils"
 import type { CSATDashboardStats } from "@/lib/types"
 import { CSAT_TARGET_SCORE } from "@/lib/constants"
 
 interface Props {
   stats: CSATDashboardStats | null
-  /** 관리자 스코핑: "용산" | "광주" 지정 시 단일 센터 뷰 */
   scopeCenter?: string
+}
+
+function TrendBadge({ value, label, invert }: { value?: number; label: string; invert?: boolean }) {
+  if (value === undefined || value === null) return null
+  // invert: 양수가 나쁜 경우 (저점비율, 저점건수 등)
+  const isGood = invert ? value <= 0 : value >= 0
+  const color = value === 0 ? "text-muted-foreground" : isGood ? "text-emerald-600" : "text-red-600"
+  const Icon = value > 0 ? TrendingUp : value < 0 ? TrendingDown : null
+
+  return (
+    <div className={cn("flex items-center gap-1 text-sm font-medium whitespace-nowrap", color)}>
+      {Icon && <Icon className="h-4 w-4" />}
+      <span>{value > 0 ? "+" : ""}{value.toFixed(2)}%p</span>
+      <span className="text-xs text-muted-foreground font-normal ml-0.5">{label}</span>
+    </div>
+  )
 }
 
 export function CSATOverviewSection({ stats, scopeCenter }: Props) {
@@ -42,19 +59,29 @@ export function CSATOverviewSection({ stats, scopeCenter }: Props) {
         trend={s.requestsTrend}
         trendLabel="요청 전주대비"
       />
-      <StatsCard
-        title="5점 비율"
-        value={`${s.score5Rate.toFixed(1)}%`}
-        variant={s.score5Rate >= 80 ? "success" : s.score5Rate >= 60 ? "default" : "warning"}
-      />
-      {/* 1·2점 비율 — 개별 Badge 분리 */}
-      <div className="border shadow-sm rounded-xl transition-colors border-border bg-card">
+      {/* 5점 비율 — 전주대비 추가 */}
+      <div className={cn(
+        "border shadow-sm rounded-xl transition-colors",
+        s.score5Rate >= 80 ? "border-emerald-500/40 bg-emerald-50" : s.score5Rate >= 60 ? "border-border bg-card" : "border-amber-500/40 bg-amber-50"
+      )}>
+        <div className="p-4 space-y-1">
+          <p className="text-sm font-medium text-muted-foreground">5점 비율</p>
+          <p className="text-2xl font-bold tracking-tight text-foreground">{s.score5Rate.toFixed(1)}%</p>
+          <TrendBadge value={s.score5Trend} label="전주 대비" />
+        </div>
+      </div>
+      {/* 1·2점 비율 — 전주대비 추가 */}
+      <div className={cn(
+        "border shadow-sm rounded-xl transition-colors",
+        lowRate > 10 ? "border-red-500/40 bg-red-50" : lowRate > 5 ? "border-amber-500/40 bg-amber-50" : "border-border bg-card"
+      )}>
         <div className="p-4 space-y-1">
           <p className="text-sm font-medium text-muted-foreground">1·2점 비율</p>
-          <p className={`text-2xl font-bold tracking-tight ${lowRate > 10 ? "text-red-600" : lowRate > 5 ? "text-orange-600" : "text-foreground"}`}>
+          <p className={cn("text-2xl font-bold tracking-tight", lowRate > 10 ? "text-red-600" : lowRate > 5 ? "text-orange-600" : "text-foreground")}>
             {lowRate.toFixed(1)}%
           </p>
-          <div className="flex gap-2 mt-1">
+          <TrendBadge value={s.lowScoreRateTrend} label="전주 대비" invert />
+          <div className="flex gap-2">
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
               1점 {s.score1Rate.toFixed(1)}%
             </span>
@@ -64,16 +91,20 @@ export function CSATOverviewSection({ stats, scopeCenter }: Props) {
           </div>
         </div>
       </div>
-      {/* 저점건수 — 1점/2점 개별 강조 */}
-      <div className={`border shadow-sm rounded-xl transition-colors ${
+      {/* 저점건수 — 통일된 TrendBadge */}
+      <div className={cn(
+        "border shadow-sm rounded-xl transition-colors",
         (s.lowScoreCount || 0) > 50 ? "border-red-500/40 bg-red-50" : (s.lowScoreCount || 0) > 30 ? "border-amber-500/40 bg-amber-50" : "border-emerald-500/40 bg-emerald-50"
-      }`}>
+      )}>
         <div className="p-4 space-y-1">
           <p className="text-sm font-medium text-muted-foreground">저점건수</p>
           <p className="text-2xl font-bold tracking-tight text-foreground">
             {(s.lowScoreCount || 0).toLocaleString("ko-KR")}건
           </p>
-          <div className="flex gap-2 mt-1">
+          {s.lowScoreTrend !== undefined && (
+            <TrendBadge value={s.lowScoreTrend} label="전주 대비" invert />
+          )}
+          <div className="flex gap-2">
             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700">
               1점 {(s.score1Count || 0)}건
             </span>
@@ -81,11 +112,6 @@ export function CSATOverviewSection({ stats, scopeCenter }: Props) {
               2점 {(s.score2Count || 0)}건
             </span>
           </div>
-          {s.lowScoreTrend !== undefined && (
-            <p className={`text-xs font-medium ${s.lowScoreTrend > 0 ? "text-red-600" : "text-blue-600"}`}>
-              {s.lowScoreTrend > 0 ? "▲" : "▼"}{Math.abs(s.lowScoreTrend).toFixed(1)}% 전주 대비
-            </p>
-          )}
         </div>
       </div>
     </div>

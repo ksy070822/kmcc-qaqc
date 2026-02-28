@@ -33,7 +33,7 @@ interface WeeklyReport {
   weekOpsRate: number
   improvement: string
   actionPlan: string
-  // 품질: QA + CSAT + Quiz (7도메인 확장 — optional)
+  // 품질: QA + 상담평점 + Quiz (7도메인 확장 — optional)
   qaAvgScore?: number | null
   csatAvgScore?: number | null
   quizAvgScore?: number | null
@@ -141,7 +141,7 @@ export default function InstructorReportsPage() {
                     </div>
                   </div>
 
-                  {/* ── 품질 지표: QA + CSAT + Quiz ── */}
+                  {/* ── 품질 지표: QA + 상담평점 + Quiz ── */}
                   <div>
                     <SectionLabel icon={ClipboardCheck} text="품질 지표" />
                     <div className="grid grid-cols-3 gap-4">
@@ -157,7 +157,7 @@ export default function InstructorReportsPage() {
                         icon={Star}
                         iconBg="bg-amber-50"
                         iconColor="text-amber-600"
-                        label="CSAT"
+                        label="상담평점"
                         value={report.csatAvgScore != null ? `${report.csatAvgScore.toFixed(2)}점` : "-"}
                         warn={report.csatAvgScore != null && report.csatAvgScore < 3.5}
                       />

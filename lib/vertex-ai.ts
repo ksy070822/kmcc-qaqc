@@ -15,7 +15,12 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 // Vertex AI 클라이언트 타입 (동적 import)
-type VertexAIClient = any;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic import type from @google-cloud/vertexai
+interface GenerativeModelLike {
+  generateContent: (prompt: string) => Promise<{ response: { text: () => string } }>;
+  generateContentStream: (prompt: string) => Promise<{ stream: AsyncIterable<{ text: () => string }> }>;
+}
+type VertexAIClient = { getGenerativeModel: (config: Record<string, unknown>) => GenerativeModelLike } | null;
 
 // 싱글톤 인스턴스
 let googleAIClient: GoogleGenerativeAI | null = null;
@@ -73,7 +78,7 @@ async function initializeVertexAI(): Promise<VertexAIClient> {
       location: location,
     });
 
-    return vertexAI;
+    return vertexAI as unknown as VertexAIClient;
   } catch (error) {
     console.error('[Vertex AI] Failed to initialize Vertex AI:', error);
     throw new Error(
@@ -193,6 +198,10 @@ async function callGeminiVertexAI(
     ? `${systemInstruction}\n\n${prompt}`
     : prompt;
 
+  if (!vertexAIClient) {
+    throw new Error('Vertex AI 클라이언트가 초기화되지 않았습니다.');
+  }
+
   const generativeModel = vertexAIClient.getGenerativeModel({
     model: finalModelName,
   });
@@ -293,6 +302,10 @@ async function* callGeminiStreamVertexAI(
   const fullPrompt = systemInstruction
     ? `${systemInstruction}\n\n${prompt}`
     : prompt;
+
+  if (!vertexAIClient) {
+    throw new Error('Vertex AI 클라이언트가 초기화되지 않았습니다.');
+  }
 
   const generativeModel = vertexAIClient.getGenerativeModel({
     model: finalModelName,

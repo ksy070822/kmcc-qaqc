@@ -5,24 +5,11 @@ const NOTICES = "`csopp-25f2.KMCC_QC.notices`"
 const NOTICE_READS = "`csopp-25f2.KMCC_QC.notice_reads`"
 const AGENTS = "`csopp-25f2.KMCC_QC.agents`"
 
-/* ───────────── Targeting filter (공통 WHERE 절) ───────────── */
-
-function buildTargetFilter(noticeAlias: string, agentAlias: string): string {
-  return `
-    (${noticeAlias}.center_scope = 'all' OR ${agentAlias}.center = ${noticeAlias}.center_scope)
-    AND (${noticeAlias}.service_scope IS NULL OR ${noticeAlias}.service_scope = '' OR ${agentAlias}.service = ${noticeAlias}.service_scope)
-    AND (${noticeAlias}.channel_scope IS NULL OR ${noticeAlias}.channel_scope = 'all' OR ${agentAlias}.channel = ${noticeAlias}.channel_scope)
-    AND (
-      ${noticeAlias}.target_type IS NULL OR ${noticeAlias}.target_type = 'all'
-      OR (${noticeAlias}.target_type = 'underperforming' AND ${agentAlias}.is_watch_list = TRUE)
-      OR (${noticeAlias}.target_type = 'new_hire' AND ${agentAlias}.tenure_months <= 3)
-      OR (${noticeAlias}.target_type = 'specific' AND ${agentAlias}.agent_id IN UNNEST(SPLIT(COALESCE(${noticeAlias}.target_agent_ids, ''), ',')))
-    )
-  `
-}
-
 /**
- * 사용자용 공지사항 목록 조회 (읽음 여부 포함, 타게팅 필터 적용)
+ * 사용자용 공지사항 목록 조회 (읽음 여부 포함)
+ *
+ * 전략: 먼저 간단한 center-based 쿼리를 시도하고,
+ * notice_reads 테이블이 없으면 읽음 상태 없이 재시도.
  */
 export async function getNoticesForUser(
   userId: string,
@@ -38,47 +25,80 @@ export async function getNoticesForUser(
     params.noticeType = type
   }
 
-  // agents 테이블에서 사용자 속성 조회 후 타게팅 필터 적용
-  const query = `
-    WITH my_agent AS (
-      SELECT agent_id, center, service, channel, is_watch_list, tenure_months
-      FROM ${AGENTS}
-      WHERE agent_id = @userId
-      LIMIT 1
-    )
-    SELECT
-      n.notice_id,
-      n.title,
-      n.content,
-      n.notice_type,
-      n.center_scope,
-      n.priority,
-      n.is_pinned,
-      n.created_by,
-      FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', n.created_at, 'Asia/Seoul') AS created_at,
-      FORMAT_TIMESTAMP('%Y-%m-%d', n.expires_at, 'Asia/Seoul') AS expires_at,
-      nr.read_at IS NOT NULL AS is_read,
-      FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', nr.read_at, 'Asia/Seoul') AS read_at
-    FROM ${NOTICES} n
-    LEFT JOIN ${NOTICE_READS} nr
-      ON nr.notice_id = n.notice_id AND nr.user_id = @userId
-    LEFT JOIN my_agent a ON TRUE
-    WHERE n.is_deleted = FALSE
-      AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
-      AND (
-        a.agent_id IS NULL  -- agents 테이블에 없으면 center_scope만 체크
-        OR (${buildTargetFilter("n", "a")})
-      )
-      AND (a.agent_id IS NOT NULL OR (n.center_scope = 'all' OR n.center_scope = @center))
-      ${typeFilter}
-    ORDER BY n.is_pinned DESC, n.priority DESC, n.created_at DESC
-    LIMIT 100
-  `
+  // 센터 필터: __unknown__이면 모든 공지 표시
+  const centerFilter =
+    center === "__unknown__"
+      ? ""
+      : " AND (n.center_scope = 'all' OR n.center_scope = @center)"
 
-  const [rows] = await bq.query({ query, params })
-  const typedRows = rows as Record<string, unknown>[]
+  // 1차 시도: notice_reads JOIN 포함 (읽음 상태)
+  try {
+    const query = `
+      SELECT
+        n.notice_id,
+        n.title,
+        n.content,
+        n.notice_type,
+        n.center_scope,
+        n.priority,
+        n.is_pinned,
+        n.created_by,
+        FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', n.created_at, 'Asia/Seoul') AS created_at,
+        FORMAT_TIMESTAMP('%Y-%m-%d', n.expires_at, 'Asia/Seoul') AS expires_at,
+        nr.read_at IS NOT NULL AS is_read,
+        FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', nr.read_at, 'Asia/Seoul') AS read_at
+      FROM ${NOTICES} n
+      LEFT JOIN ${NOTICE_READS} nr
+        ON nr.notice_id = n.notice_id AND nr.user_id = @userId
+      WHERE n.is_deleted = FALSE
+        AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
+        ${centerFilter}
+        ${typeFilter}
+      ORDER BY n.is_pinned DESC, n.priority DESC, n.created_at DESC
+      LIMIT 100
+    `
+    const [rows] = await bq.query({ query, params })
+    return mapNoticeRows(rows as Record<string, unknown>[])
+  } catch (err1) {
+    console.error("[notices] 1차 쿼리 실패 (notice_reads JOIN):", (err1 as Error).message)
 
-  const notices: Notice[] = typedRows.map((r) => ({
+    // 2차 시도: notice_reads 없이 (테이블 미생성 대비)
+    try {
+      const fallbackQuery = `
+        SELECT
+          n.notice_id,
+          n.title,
+          n.content,
+          n.notice_type,
+          n.center_scope,
+          n.priority,
+          n.is_pinned,
+          n.created_by,
+          FORMAT_TIMESTAMP('%Y-%m-%d %H:%M', n.created_at, 'Asia/Seoul') AS created_at,
+          FORMAT_TIMESTAMP('%Y-%m-%d', n.expires_at, 'Asia/Seoul') AS expires_at,
+          FALSE AS is_read,
+          CAST(NULL AS STRING) AS read_at
+        FROM ${NOTICES} n
+        WHERE n.is_deleted = FALSE
+          AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
+          ${centerFilter}
+          ${typeFilter}
+        ORDER BY n.is_pinned DESC, n.priority DESC, n.created_at DESC
+        LIMIT 100
+      `
+      const [rows] = await bq.query({ query: fallbackQuery, params })
+      return mapNoticeRows(rows as Record<string, unknown>[])
+    } catch (err2) {
+      console.error("[notices] 2차 쿼리도 실패:", (err2 as Error).message)
+      // 모든 쿼리 실패 → 실제 에러 메시지 전파
+      throw new Error(`공지 조회 실패: ${(err1 as Error).message}`)
+    }
+  }
+}
+
+/** 쿼리 결과 → Notice[] 변환 */
+function mapNoticeRows(rows: Record<string, unknown>[]): NoticeListResponse {
+  const notices: Notice[] = rows.map((r) => ({
     noticeId: String(r.notice_id),
     title: String(r.title),
     content: String(r.content || ""),
@@ -94,12 +114,11 @@ export async function getNoticesForUser(
   }))
 
   const unreadCount = notices.filter((n) => !n.isRead).length
-
   return { notices, unreadCount, total: notices.length }
 }
 
 /**
- * 미확인 공지 수 (벨 배지용 경량 카운트, 타게팅 반영)
+ * 미확인 공지 수 (벨 배지용 경량 카운트)
  */
 export async function getUnreadNoticeCount(
   userId: string,
@@ -107,30 +126,43 @@ export async function getUnreadNoticeCount(
 ): Promise<number> {
   const bq = getBigQueryClient()
 
-  const query = `
-    WITH my_agent AS (
-      SELECT agent_id, center, service, channel, is_watch_list, tenure_months
-      FROM ${AGENTS}
-      WHERE agent_id = @userId
-      LIMIT 1
-    )
-    SELECT COUNT(*) AS cnt
-    FROM ${NOTICES} n
-    LEFT JOIN ${NOTICE_READS} nr
-      ON nr.notice_id = n.notice_id AND nr.user_id = @userId
-    LEFT JOIN my_agent a ON TRUE
-    WHERE n.is_deleted = FALSE
-      AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
-      AND nr.read_id IS NULL
-      AND (
-        a.agent_id IS NULL
-        OR (${buildTargetFilter("n", "a")})
-      )
-      AND (a.agent_id IS NOT NULL OR (n.center_scope = 'all' OR n.center_scope = @center))
-  `
+  const centerFilter =
+    center === "__unknown__"
+      ? ""
+      : " AND (n.center_scope = 'all' OR n.center_scope = @center)"
 
-  const [rows] = await bq.query({ query, params: { userId, center } })
-  return Number((rows as Record<string, unknown>[])[0]?.cnt) || 0
+  try {
+    const query = `
+      SELECT COUNT(*) AS cnt
+      FROM ${NOTICES} n
+      LEFT JOIN ${NOTICE_READS} nr
+        ON nr.notice_id = n.notice_id AND nr.user_id = @userId
+      WHERE n.is_deleted = FALSE
+        AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
+        AND nr.read_id IS NULL
+        ${centerFilter}
+    `
+    const [rows] = await bq.query({ query, params: { userId, center } })
+    return Number((rows as Record<string, unknown>[])[0]?.cnt) || 0
+  } catch (err1) {
+    console.error("[notices] unread count 쿼리 실패:", (err1 as Error).message)
+
+    // notice_reads 테이블 없으면 → notices 전체 갯수 반환
+    try {
+      const fallbackQuery = `
+        SELECT COUNT(*) AS cnt
+        FROM ${NOTICES} n
+        WHERE n.is_deleted = FALSE
+          AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
+          ${centerFilter}
+      `
+      const [rows] = await bq.query({ query: fallbackQuery, params: { userId, center } })
+      return Number((rows as Record<string, unknown>[])[0]?.cnt) || 0
+    } catch (err2) {
+      console.error("[notices] unread count fallback도 실패:", (err2 as Error).message)
+      return 0 // 배지 숫자는 실패해도 0 반환 (사용자 경험 보호)
+    }
+  }
 }
 
 /**
@@ -164,6 +196,11 @@ export async function markAllNoticesAsRead(
 ): Promise<number> {
   const bq = getBigQueryClient()
 
+  const centerFilter =
+    center === "__unknown__"
+      ? ""
+      : " AND (n.center_scope = 'all' OR n.center_scope = @center)"
+
   const query = `
     INSERT INTO ${NOTICE_READS} (read_id, notice_id, user_id, read_at)
     SELECT
@@ -175,7 +212,7 @@ export async function markAllNoticesAsRead(
     LEFT JOIN ${NOTICE_READS} nr
       ON nr.notice_id = n.notice_id AND nr.user_id = @userId
     WHERE n.is_deleted = FALSE
-      AND (n.center_scope = 'all' OR n.center_scope = @center)
+      ${centerFilter}
       AND (n.expires_at IS NULL OR n.expires_at > CURRENT_TIMESTAMP())
       AND nr.read_id IS NULL
   `
@@ -188,6 +225,21 @@ export async function markAllNoticesAsRead(
 /* ═══════════════════════════════════════════════════════════════
    관리자/강사용 공지 관리 함수
    ═══════════════════════════════════════════════════════════════ */
+
+/* ───────────── Targeting filter (관리자 전용 통계 쿼리에서만 사용) ───────────── */
+
+function buildTargetFilter(noticeAlias: string, agentAlias: string): string {
+  return `
+    (${noticeAlias}.center_scope = 'all' OR ${agentAlias}.center = ${noticeAlias}.center_scope)
+    AND (${noticeAlias}.service_scope IS NULL OR ${noticeAlias}.service_scope = '' OR ${agentAlias}.service = ${noticeAlias}.service_scope)
+    AND (${noticeAlias}.channel_scope IS NULL OR ${noticeAlias}.channel_scope = 'all' OR ${agentAlias}.channel = ${noticeAlias}.channel_scope)
+    AND (
+      ${noticeAlias}.target_type IS NULL OR ${noticeAlias}.target_type = 'all'
+      OR (${noticeAlias}.target_type = 'new_hire' AND ${agentAlias}.tenure_months <= 3)
+      OR (${noticeAlias}.target_type = 'specific' AND ${agentAlias}.agent_id IN UNNEST(SPLIT(COALESCE(${noticeAlias}.target_agent_ids, ''), ',')))
+    )
+  `
+}
 
 interface CreateNoticeParams {
   title: string
@@ -240,6 +292,12 @@ export async function createNotice(params: CreateNoticeParams): Promise<string> 
       targetType: params.targetType || "all",
       targetAgentIds: params.targetAgentIds ? params.targetAgentIds.join(",") : null,
     },
+    types: {
+      serviceScope: "STRING",
+      channelScope: "STRING",
+      shiftScope: "STRING",
+      targetAgentIds: "STRING",
+    },
   })
 
   return noticeId
@@ -286,8 +344,7 @@ export async function getNoticesWithStats(
         COUNT(DISTINCT a.agent_id) AS total_count
       FROM notice_list n
       CROSS JOIN ${AGENTS} a
-      WHERE a.is_active = TRUE
-        AND ${buildTargetFilter("n", "a")}
+      WHERE ${buildTargetFilter("n", "a")}
       GROUP BY n.notice_id
     )
     SELECT
@@ -344,8 +401,7 @@ export async function getUnreadAgents(noticeId: string): Promise<UnreadAgent[]> 
       SELECT a.agent_id, a.agent_name, a.center, a.service
       FROM ${AGENTS} a
       CROSS JOIN notice n
-      WHERE a.is_active = TRUE
-        AND ${buildTargetFilter("n", "a")}
+      WHERE ${buildTargetFilter("n", "a")}
     )
     SELECT ta.agent_id, ta.agent_name, ta.center, ta.service
     FROM target_agents ta

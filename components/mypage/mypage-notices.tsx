@@ -167,7 +167,7 @@ export function MypageNotices() {
   const [tab, setTab] = useState("all")
   const [confirming, setConfirming] = useState<string | null>(null)
   const typeFilter = tab === "all" ? undefined : tab
-  const { data, loading, refetch } = useNotices(
+  const { data, loading, error, refetch } = useNotices(
     user?.userId ?? null,
     user?.center ?? null,
     typeFilter,
@@ -236,7 +236,14 @@ export function MypageNotices() {
         </TabsList>
       </Tabs>
 
-      {notices.length === 0 ? (
+      {error ? (
+        <div className="flex flex-col items-center justify-center py-16 text-red-400">
+          <AlertCircle className="h-10 w-10 mb-3 text-red-300" />
+          <p className="text-sm font-medium text-red-600">공지사항 로딩 오류</p>
+          <p className="text-xs text-red-400 mt-1 max-w-md text-center">{error}</p>
+          <button onClick={refetch} className="mt-3 px-4 py-1.5 text-xs bg-slate-100 hover:bg-slate-200 rounded-md text-slate-700 transition-colors">다시 시도</button>
+        </div>
+      ) : notices.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-slate-400">
           <Megaphone className="h-10 w-10 mb-3 text-slate-300" />
           <p className="text-sm">공지사항이 없습니다</p>

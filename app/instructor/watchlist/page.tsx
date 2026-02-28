@@ -191,7 +191,7 @@ export default function InstructorWatchlistPage() {
             icon={Star}
             iconBg="bg-amber-50"
             iconColor="text-amber-600"
-            label="CSAT 리뷰"
+            label="상담평점 리뷰"
             value={`${csatCount}명`}
             total={agents.length}
           />
@@ -206,7 +206,7 @@ export default function InstructorWatchlistPage() {
         </div>
         {!hasMultiDomain && (
           <p className="text-xs text-slate-400 mt-2">
-            QA/CSAT/Quiz 데이터는 API 확장 후 자동 표시됩니다.
+            QA/상담평점/Quiz 데이터는 API 확장 후 자동 표시됩니다.
           </p>
         )}
       </div>
@@ -242,7 +242,7 @@ export default function InstructorWatchlistPage() {
                   <ThSort label="태도 오류율" sortKey="attitudeRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <ThSort label="오상담 오류율" sortKey="opsRate" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <ThSort label="QA" sortKey="qaScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
-                  <ThSort label="CSAT" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
+                  <ThSort label="상담평점" sortKey="csatScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <ThSort label="직무테스트" sortKey="quizScore" currentKey={sortKey} desc={sortDesc} onClick={handleSort} />
                   <th className="py-2 px-3 text-left font-medium text-slate-500">상태</th>
                 </tr>

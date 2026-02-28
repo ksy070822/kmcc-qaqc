@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Loader2 } from "lucide-react"
 import { CSAT_SERVICE_TARGETS } from "@/lib/constants"
+import type { CSATServiceRow } from "@/lib/types"
 
 interface Props {
   center: string
@@ -13,7 +14,7 @@ interface Props {
 }
 
 export function CSATServiceTable({ center, service, startDate, endDate }: Props) {
-  const [data, setData] = useState<any[]>([])
+  const [data, setData] = useState<CSATServiceRow[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -56,7 +57,7 @@ export function CSATServiceTable({ center, service, startDate, endDate }: Props)
       <TableBody>
         {data.length === 0 ? (
           <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground text-xs py-8">데이터가 없습니다</TableCell></TableRow>
-        ) : data.map((row: any, i: number) => {
+        ) : data.map((row, i) => {
           const avg = Number(row.avgScore)
           const target = CSAT_SERVICE_TARGETS[row.service]
           const achieved = target !== undefined ? avg >= target : undefined

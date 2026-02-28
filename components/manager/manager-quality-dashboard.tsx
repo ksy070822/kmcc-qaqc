@@ -60,10 +60,10 @@ export function ManagerQualityDashboard({ center, service }: ManagerQualityDashb
 
   // 월간 탭(QA/Quiz): 전월 기본
   const [monthlyMonth, setMonthlyMonth] = useState(() => subMonths(new Date(), 1))
-  // 일간 탭(QC/CSAT): 당월 기본
+  // 일간 탭(QC/상담평점): 당월 기본
   const [dailyMonth, setDailyMonth] = useState(() => new Date())
 
-  // QC/CSAT 기간 모드
+  // QC/상담평점 기간 모드
   const [periodMode, setPeriodMode] = useState<PeriodMode>("weekly")
   const [selectedWeekIdx, setSelectedWeekIdx] = useState(-1)
   const [customStart, setCustomStart] = useState("")
@@ -118,7 +118,7 @@ export function ManagerQualityDashboard({ center, service }: ManagerQualityDashb
     return weeks.length - 1
   }, [weeks, selectedWeekIdx, monthStr])
 
-  // QC/CSAT 날짜 범위
+  // QC/상담평점 날짜 범위
   const dateRange = useMemo(() => {
     if (periodMode === "weekly" && weeks.length > 0) {
       const w = weeks[activeWeekIdx] || weeks[weeks.length - 1]
@@ -182,7 +182,7 @@ export function ManagerQualityDashboard({ center, service }: ManagerQualityDashb
             </button>
           </div>
 
-          {/* QC/CSAT: 기간 모드 */}
+          {/* QC/상담평점: 기간 모드 */}
           {isDailyTab && (
             <>
               <div className="h-4 w-px bg-gray-200" />
@@ -283,7 +283,7 @@ export function ManagerQualityDashboard({ center, service }: ManagerQualityDashb
         <QuizDashboard externalMonth={monthStr} scope={scope} />
       )}
       {activeTab === "productivity" && (
-        <ProductivityDashboard />
+        <ProductivityDashboard scope={scope} />
       )}
       {activeTab === "coaching" && (
         <CoachingDashboard

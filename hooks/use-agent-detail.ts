@@ -5,9 +5,11 @@ import { useState, useEffect, useCallback } from "react"
 interface AgentDetailStats {
   agentId: string
   agentName: string
+  totalEvaluations: number
   dailyTrend: Array<{
     date: string
     errorRate: number
+    totalEvaluations: number
   }>
   itemErrors: Array<{
     itemId: string

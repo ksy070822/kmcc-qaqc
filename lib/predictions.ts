@@ -1,4 +1,5 @@
 // 예측 모델 로직 (QC_PROJECT_CONTEXT 기반)
+import { CENTER_TARGET_RATES, GOAL_MISSED_MULTIPLIER } from "@/lib/constants"
 
 export interface WeeklyData {
   week: string
@@ -123,7 +124,7 @@ export function determineRiskLevel(
   if (achievementProb >= 70 && (trend === 'improving' || trend === 'stable')) {
     return 'low'
   }
-  if (achievementProb >= 40 && predicted <= target * 1.1) {
+  if (achievementProb >= 40 && predicted <= target * GOAL_MISSED_MULTIPLIER) {
     return 'medium'
   }
   if (achievementProb >= 20 || predicted <= target * 1.3) {
@@ -179,11 +180,11 @@ export function checkAgentWatchConditions(
   return reasons
 }
 
-// 목표 데이터 (2026년 기준)
+// 목표 데이터 (2026년 기준) — CENTER_TARGET_RATES에서 파생
 export const targets2026 = {
-  용산: { attitude: 3.3, process: 3.9 },
-  광주: { attitude: 2.7, process: 1.7 },
-  전체: { attitude: 3.0, process: 3.0 },
+  용산: { attitude: CENTER_TARGET_RATES.용산.attitude, process: CENTER_TARGET_RATES.용산.ops },
+  광주: { attitude: CENTER_TARGET_RATES.광주.attitude, process: CENTER_TARGET_RATES.광주.ops },
+  전체: { attitude: CENTER_TARGET_RATES.전체.attitude, process: CENTER_TARGET_RATES.전체.ops },
 }
 
 // 예측 결과 생성

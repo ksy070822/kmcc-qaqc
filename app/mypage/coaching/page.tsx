@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import { format, subMonths } from "date-fns"
-import { useAuth } from "@/hooks/use-auth"
+import { useMypageContext } from "@/contexts/mypage-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -37,7 +37,7 @@ import type {
 const TIER_COLORS: Record<CoachingTier, string> = {
   "일반": "#22c55e",
   "주의": "#0ea5e9",
-  "위험": "#eab308",
+  "위험": "#d97706",
   "심각": "#f97316",
   "긴급": "#ef4444",
 }
@@ -58,17 +58,16 @@ const TREND_LABEL: Record<string, { text: string; icon: typeof TrendingUp; color
 }
 
 export default function MypageCoachingPage() {
-  const { user } = useAuth()
+  const { agentId } = useMypageContext()
 
   const [month, setMonth] = useState(() => format(new Date(), "yyyy-MM"))
   const [plans, setPlans] = useState<AgentCoachingPlan[]>([])
   const [trendData, setTrendData] = useState<{ trend: Array<{ week: string; value: number }>; analysis: TrendAnalysis | null } | null>(null)
+  const [feedbacks, setFeedbacks] = useState<Array<Record<string, unknown>>>([])
   const [loading, setLoading] = useState(true)
   const [trendLoading, setTrendLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [expandedPlanIdx, setExpandedPlanIdx] = useState<number | null>(0)
-
-  const agentId = user?.agentId ?? user?.userId ?? null
 
   // 월 옵션 (최근 6개월)
   const monthOptions = Array.from({ length: 6 }, (_, i) =>
@@ -123,6 +122,19 @@ export default function MypageCoachingPage() {
     }
   }, [agentId])
 
+  // ── 관리자 피드백 조회 ──
+  const fetchFeedback = useCallback(async () => {
+    if (!agentId) return
+    try {
+      const params = new URLSearchParams({ action: "agent-feedback", agentId })
+      const res = await fetch(`/api/coaching?${params}`)
+      const json = await res.json()
+      if (json.success) setFeedbacks(json.data ?? [])
+    } catch {
+      // silent
+    }
+  }, [agentId])
+
   useEffect(() => {
     fetchPlans()
   }, [fetchPlans])
@@ -130,6 +142,10 @@ export default function MypageCoachingPage() {
   useEffect(() => {
     fetchTrend()
   }, [fetchTrend])
+
+  useEffect(() => {
+    fetchFeedback()
+  }, [fetchFeedback])
 
   // ── 로딩 상태 ──
   if (loading) {
@@ -231,7 +247,7 @@ export default function MypageCoachingPage() {
                     activeDot={{ r: 5 }}
                   />
                   <Tooltip
-                    formatter={(v: number) => [`${v.toFixed(1)}%`, "오류율"]}
+                    formatter={(v: number) => [`${(v ?? 0).toFixed(1)}%`, "오류율"]}
                     contentStyle={{ fontSize: 12, padding: "6px 10px", borderRadius: 8 }}
                   />
                 </LineChart>
@@ -244,10 +260,64 @@ export default function MypageCoachingPage() {
         </Card>
       )}
 
+      {/* 관리자 코칭 피드백 */}
+      {feedbacks.length > 0 && (
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-emerald-500" />
+              관리자 코칭 피드백 ({feedbacks.length}건)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {feedbacks.map((fb, i) => (
+              <div key={i} className="border border-slate-100 rounded-lg p-4 bg-slate-50/50">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className={
+                      fb.status === 'completed' ? "bg-green-50 text-green-700 border-green-200" :
+                      fb.status === 'in_progress' ? "bg-blue-50 text-blue-700 border-blue-200" :
+                      "bg-slate-50 text-slate-600 border-slate-200"
+                    }>
+                      {fb.status === 'completed' ? '완료' : fb.status === 'in_progress' ? '진행중' : String(fb.status ?? '대기')}
+                    </Badge>
+                    {fb.targetDate ? (
+                      <span className="text-xs text-slate-400">목표: {String(fb.targetDate)}</span>
+                    ) : null}
+                  </div>
+                  <span className="text-xs text-slate-400">{String(fb.createdAt ?? '')}</span>
+                </div>
+                {fb.issue ? (
+                  <p className="text-sm font-medium text-slate-800 mb-1">{String(fb.issue)}</p>
+                ) : null}
+                {fb.plan ? (
+                  <p className="text-sm text-slate-600 mb-2">{String(fb.plan)}</p>
+                ) : null}
+                {fb.managerFeedback ? (
+                  <div className="bg-emerald-50 border border-emerald-100 rounded-md p-3 mt-2">
+                    <p className="text-xs font-medium text-emerald-700 mb-1">관리자 피드백</p>
+                    <p className="text-sm text-emerald-800">{String(fb.managerFeedback)}</p>
+                    {fb.feedbackDate ? (
+                      <p className="text-xs text-emerald-500 mt-1">{String(fb.feedbackDate)}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {fb.result ? (
+                  <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mt-2">
+                    <p className="text-xs font-medium text-blue-700 mb-1">결과</p>
+                    <p className="text-sm text-blue-800">{String(fb.result)}</p>
+                  </div>
+                ) : null}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
       {/* 코칭 플랜 카드 목록 */}
-      {plans.length === 0 && !error ? (
+      {plans.length === 0 && feedbacks.length === 0 && !error ? (
         <EmptyState month={month} />
-      ) : (
+      ) : plans.length === 0 ? null : (
         <div className="space-y-4">
           {plans.map((plan, idx) => (
             <CoachingPlanCard

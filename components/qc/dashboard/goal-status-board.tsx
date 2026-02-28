@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { Target, TrendingDown, TrendingUp, CheckCircle, AlertTriangle, Calendar, Loader2 } from "lucide-react"
+import type { GoalApiResponse } from "@/lib/types"
 
 interface GoalStatus {
   id: string
@@ -18,6 +19,74 @@ interface GoalStatus {
   startDate: string
   endDate: string
 }
+
+// --- 비즈니스 로직 유틸 (useEffect 밖으로 분리: 테스트·디버깅 용이) ---
+
+/** goal type 정규화: API 응답 → 내부 타입 */
+function normalizeGoalType(type: string): "attitude" | "counseling" | "total" {
+  if (type === "태도" || type === "attitude") return "attitude"
+  if (type === "오상담/오처리" || type === "ops") return "counseling"
+  return "total"
+}
+
+/** 현재 오류율 기준 목표 달성 상태 판정 */
+function getGoalStatus(currentRate: number, targetRate: number): GoalStatus["status"] {
+  if (targetRate <= 0) return "on-track"
+  if (currentRate <= targetRate * 0.9) return "achieved"
+  if (currentRate <= targetRate) return "on-track"
+  if (currentRate > targetRate * 1.1) return "missed"
+  return "at-risk"
+}
+
+/** 센터별 attitude/counseling 목표를 우선순위 기반으로 그룹화하고, 합계(total) 자동 생성 */
+function prioritizeGoals(
+  viewFilteredGoals: GoalApiResponse[]
+): GoalApiResponse[] {
+  const PERIOD_PRIORITY: Record<string, number> = { monthly: 3, quarterly: 2, yearly: 1 }
+  const centerGoalMap = new Map<string, { attitude?: GoalApiResponse; counseling?: GoalApiResponse }>()
+
+  for (const goal of viewFilteredGoals) {
+    const goalType = normalizeGoalType(goal.type)
+    if (goalType !== "attitude" && goalType !== "counseling") continue
+    const centerKey = goal.center || "전체"
+    const existing = centerGoalMap.get(centerKey) || {}
+    const prev = existing[goalType]
+    if (!prev || (PERIOD_PRIORITY[goal.periodType] || 0) > (PERIOD_PRIORITY[prev.periodType] || 0)) {
+      existing[goalType] = { ...goal, normalizedType: goalType }
+    }
+    centerGoalMap.set(centerKey, existing)
+  }
+
+  const result: GoalApiResponse[] = []
+  centerGoalMap.forEach((goalsForCenter, center) => {
+    if (goalsForCenter.attitude) result.push(goalsForCenter.attitude)
+    if (goalsForCenter.counseling) result.push(goalsForCenter.counseling)
+    // 합계: 태도+오상담 모두 있으면 가중평균 합산 목표 자동 생성
+    if (goalsForCenter.attitude && goalsForCenter.counseling) {
+      const att = goalsForCenter.attitude
+      const csl = goalsForCenter.counseling
+      const weightedTarget = Number(((att.targetRate * 5 + csl.targetRate * 11) / 16).toFixed(2))
+      result.push({
+        id: `${att.id}__total`,
+        name: `${center} 합계`,
+        center: att.center,
+        type: "total",
+        normalizedType: "total" as const,
+        targetRate: weightedTarget,
+        attitudeTargetRate: att.targetRate,
+        businessTargetRate: csl.targetRate,
+        periodType: att.periodType,
+        periodStart: att.periodStart,
+        periodEnd: att.periodEnd,
+        isActive: true,
+        _isSynthetic: true,
+      })
+    }
+  })
+  return result
+}
+
+// --- 컴포넌트 ---
 
 interface GoalStatusBoardProps {
   selectedDate?: string
@@ -50,101 +119,39 @@ export function GoalStatusBoard({ selectedDate }: GoalStatusBoardProps) {
         console.log('[GoalStatusBoard] Goals fetch result:', result)
 
         if (result.success && result.data) {
-          const goalsData = result.data
+          const goalsData = result.data as GoalApiResponse[]
           console.log('[GoalStatusBoard] Goals data:', goalsData)
 
           // 선택된 날짜에 해당하는 목표만 필터링 (월간/연간/분기 모두 포함)
           const targetDate = selectedDate ? new Date(selectedDate) : new Date()
           const targetDateStr = targetDate.toISOString().split('T')[0]
 
-          const activeGoals = goalsData.filter((goal: any) => {
+          const activeGoals = goalsData.filter((goal) => {
             return goal.periodStart <= targetDateStr && goal.periodEnd >= targetDateStr
           })
 
           // periodView에 따라 필터링 (연간/월간)
-          let viewFilteredGoals: any[]
+          let viewFilteredGoals: GoalApiResponse[]
           let usingYearlyFallback = false
           if (periodView === "yearly") {
-            viewFilteredGoals = activeGoals.filter((goal: any) => goal.periodType === "yearly")
+            viewFilteredGoals = activeGoals.filter((goal) => goal.periodType === "yearly")
           } else {
             // 월간 목표 우선 탐색
-            const monthlyGoals = activeGoals.filter((goal: any) => goal.periodType === "monthly")
+            const monthlyGoals = activeGoals.filter((goal) => goal.periodType === "monthly")
             if (monthlyGoals.length > 0) {
               viewFilteredGoals = monthlyGoals
             } else {
               // 월간 목표가 없으면 연간 목표를 가져와서 월간 기간으로 표시
-              viewFilteredGoals = activeGoals.filter((goal: any) => goal.periodType === "yearly")
+              viewFilteredGoals = activeGoals.filter((goal) => goal.periodType === "yearly")
               usingYearlyFallback = true
             }
           }
 
-          // type 정규화 (attitude/ops → attitude/counseling)
-          const normalizeType = (type: string): "attitude" | "counseling" | "total" => {
-            if (type === "태도" || type === "attitude") return "attitude"
-            if (type === "오상담/오처리" || type === "ops") return "counseling"
-            if (type === "합계" || type === "total") return "total"
-            return "total"
-          }
-
-          // 센터별로 attitude/counseling 목표를 그룹화
-          const centerGoalMap = new Map<string, { attitude?: any, counseling?: any }>()
-
-          viewFilteredGoals.forEach((goal: any) => {
-            const goalType = normalizeType(goal.type)
-            const centerKey = goal.center || '전체'
-
-            // 같은 센터+타입 중 우선순위 높은 것만 유지 (monthly > quarterly > yearly)
-            const existing = centerGoalMap.get(centerKey)
-            const priority: Record<string, number> = { 'monthly': 3, 'quarterly': 2, 'yearly': 1 }
-
-            if (goalType === "attitude" || goalType === "counseling") {
-              if (!existing) {
-                centerGoalMap.set(centerKey, { [goalType]: { ...goal, normalizedType: goalType } })
-              } else {
-                const prev = existing[goalType]
-                if (!prev || (priority[goal.periodType] || 0) > (priority[prev.periodType] || 0)) {
-                  existing[goalType] = { ...goal, normalizedType: goalType }
-                }
-              }
-            }
-          })
-
-          // 각 센터에서 attitude, counseling, total(합산) 목표 생성
-          const prioritizedGoals: any[] = []
-
-          centerGoalMap.forEach((goalsForCenter, center) => {
-            if (goalsForCenter.attitude) {
-              prioritizedGoals.push(goalsForCenter.attitude)
-            }
-            if (goalsForCenter.counseling) {
-              prioritizedGoals.push(goalsForCenter.counseling)
-            }
-            // 합계: attitude + counseling 모두 있으면 합산 목표 자동 생성
-            // 합계 목표 = (태도목표×5 + 오상담목표×11) / 16 (가중평균)
-            if (goalsForCenter.attitude && goalsForCenter.counseling) {
-              const att = goalsForCenter.attitude
-              const csl = goalsForCenter.counseling
-              const weightedTarget = Number(((att.targetRate * 5 + csl.targetRate * 11) / 16).toFixed(2))
-              prioritizedGoals.push({
-                id: `${att.id}__total`,
-                name: `${center} 합계`,
-                center: att.center,
-                type: 'total',
-                normalizedType: 'total' as const,
-                targetRate: weightedTarget,
-                attitudeTargetRate: att.targetRate,
-                businessTargetRate: csl.targetRate,
-                periodType: att.periodType,
-                periodStart: att.periodStart,
-                periodEnd: att.periodEnd,
-                isActive: true,
-                _isSynthetic: true,
-              })
-            }
-          })
+          // 센터별 목표 그룹화 + 합계 자동 생성 (로직은 컴포넌트 밖 유틸 함수로 분리)
+          const prioritizedGoals = prioritizeGoals(viewFilteredGoals)
 
           // 월간 뷰에서 연간 목표를 사용할 경우, 기간을 해당 월로 조정
-          const getDisplayDates = (goal: any) => {
+          const getDisplayDates = (goal: GoalApiResponse) => {
             if (periodView === "monthly" && usingYearlyFallback) {
               const monthStart = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1)
               const monthEnd = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0)
@@ -189,19 +196,10 @@ export function GoalStatusBoard({ selectedDate }: GoalStatusBoardProps) {
 
           setGoalCurrentRates(rates)
 
-          // GoalStatus 형식으로 변환
+          // GoalStatus 형식으로 변환 (getGoalStatus는 컴포넌트 밖 유틸 함수 사용)
           const today = selectedDate ? new Date(selectedDate) : new Date()
 
-          // 상태 판정 함수
-          const getGoalStatus = (currentRate: number, targetRate: number): GoalStatus["status"] => {
-            if (targetRate <= 0) return "on-track"
-            if (currentRate <= targetRate * 0.9) return "achieved"
-            if (currentRate <= targetRate) return "on-track"
-            if (currentRate > targetRate * 1.1) return "missed"
-            return "at-risk"
-          }
-
-          const goalStatuses: GoalStatus[] = prioritizedGoals.map((goal: any) => {
+          const goalStatuses: GoalStatus[] = prioritizedGoals.map((goal: GoalApiResponse) => {
             const displayDates = getDisplayDates(goal)
             const goalStart = new Date(displayDates.startDate)
             const goalEnd = new Date(displayDates.endDate)
@@ -215,7 +213,7 @@ export function GoalStatusBoard({ selectedDate }: GoalStatusBoardProps) {
               id: goal.id,
               title: goal.name,
               center: goal.center || "전체",
-              type: goal.normalizedType,
+              type: goal.normalizedType ?? "total",
               targetRate: goal.targetRate,
               currentRate: currentErrorRate,
               status: getGoalStatus(currentErrorRate, goal.targetRate),

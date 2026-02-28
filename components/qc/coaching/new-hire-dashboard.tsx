@@ -44,7 +44,7 @@ export function NewHireDashboard({ newHires }: NewHireDashboardProps) {
               <th className="text-center px-3 py-3 font-medium text-gray-600">근속</th>
               <th className="text-center px-3 py-3 font-medium text-gray-600">QC 오류율</th>
               <th className="text-center px-3 py-3 font-medium text-gray-600" title="동일 입사 주차의 과거 신입 상담사 평균 오류율">동기 평균</th>
-              <th className="text-center px-3 py-3 font-medium text-gray-600">CSAT</th>
+              <th className="text-center px-3 py-3 font-medium text-gray-600">상담평점</th>
               <th className="text-left px-3 py-3 font-medium text-gray-600">취약 카테고리</th>
               <th className="text-center px-3 py-3 font-medium text-gray-600">상태</th>
             </tr>

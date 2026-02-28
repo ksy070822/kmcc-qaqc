@@ -3,14 +3,17 @@
 import { useState, useMemo, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { GoalCard, type GoalData } from "./goal-card"
 import { GoalFormModal } from "./goal-form-modal"
 import { GoalAchievementChart } from "./goal-achievement-chart"
 import { GoalSummary } from "./goal-summary"
+import { MultiDomainGoalManagement } from "./multi-domain-goals"
 import { Plus, Filter, Loader2 } from "lucide-react"
 import { useGoals } from "@/hooks/use-goals"
 
-export function GoalManagement() {
+// 기존 QC 목표 관리 컴포넌트 (내부용)
+function LegacyGoalManagement() {
   const [filterCenter, setFilterCenter] = useState("all")
   const [filterStatus, setFilterStatus] = useState("all")
   const [filterType, setFilterType] = useState("all")
@@ -63,7 +66,7 @@ export function GoalManagement() {
   const goals: GoalData[] = useMemo(() => {
     if (!goalsData) return []
 
-    return goalsData.map((goal: any) => {
+    return goalsData.map((goal) => {
       // 현재 실적과 progress는 별도로 계산 (useEffect에서)
       const today = new Date()
       const goalStart = new Date(goal.periodStart)
@@ -90,13 +93,13 @@ export function GoalManagement() {
       return {
         id: goal.id,
         title: goal.name,
-        center: goal.center || "전체",
-        service: goal.service || undefined,
-        channel: goal.channel || undefined,
+        center: (goal.center || "전체") as "전체" | "용산" | "광주",
+        service: goal.service ?? undefined,
+        channel: goal.channel ?? undefined,
         type: goal.type === "attitude" ? "attitude" : goal.type === "ops" ? "counseling" : "total",
         targetErrorRate: goal.targetRate,
         currentErrorRate,
-        period: goal.periodType as any || "monthly",
+        period: (goal.periodType || "monthly") as "monthly" | "quarterly" | "yearly",
         startDate: goal.periodStart,
         endDate: goal.periodEnd,
         progress,
@@ -120,10 +123,10 @@ export function GoalManagement() {
       return []
     }
 
-    const centerData: Record<string, any> = {}
+    const centerData: Record<string, { name: string; attitudePlans: number[]; counselingPlans: number[]; totalPlans: number[] }> = {}
 
     // Group goals by center
-    goalsData.forEach((goal: any) => {
+    goalsData.forEach((goal) => {
       const center = goal.center || "전체"
       if (!centerData[center]) {
         centerData[center] = {
@@ -146,7 +149,7 @@ export function GoalManagement() {
     })
 
     // Calculate averages for each center
-    const result = Object.values(centerData).map((center: any) => {
+    const result = Object.values(centerData).map((center) => {
       const attitudeRate =
         center.attitudePlans.length > 0
           ? Number(
@@ -337,5 +340,25 @@ export function GoalManagement() {
 
       <GoalFormModal open={formModalOpen} onOpenChange={setFormModalOpen} goal={editingGoal} onSave={handleSave} />
     </div>
+  )
+}
+
+// 외부 export: 통합 탭 (기본 = 통합 목표관리, 두 번째 = 기존 QC 목표)
+export function GoalManagement() {
+  return (
+    <Tabs defaultValue="multi-domain" className="space-y-4">
+      <TabsList>
+        <TabsTrigger value="multi-domain">통합 목표관리</TabsTrigger>
+        <TabsTrigger value="legacy-qc">기존 QC 목표</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="multi-domain">
+        <MultiDomainGoalManagement />
+      </TabsContent>
+
+      <TabsContent value="legacy-qc">
+        <LegacyGoalManagement />
+      </TabsContent>
+    </Tabs>
   )
 }

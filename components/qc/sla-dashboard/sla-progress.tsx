@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, memo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Line,
@@ -278,7 +278,7 @@ function AtRiskMetrics({ tracking }: { tracking: SLADailyTrackingData }) {
   )
 }
 
-export function SLAProgress() {
+export const SLAProgress = memo(function SLAProgress() {
   const { data, loading, error } = useSLADailyTracking()
   const [selectedCenter, setSelectedCenter] = useState<CenterName>("용산")
 
@@ -382,4 +382,4 @@ export function SLAProgress() {
       </Card>
     </div>
   )
-}
+})

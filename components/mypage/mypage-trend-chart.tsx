@@ -1,5 +1,6 @@
 "use client"
 
+import { memo } from "react"
 import {
   ComposedChart,
   Line,
@@ -11,6 +12,8 @@ import {
   ResponsiveContainer,
   ReferenceLine,
 } from "recharts"
+import { ChartABToggle } from "@/components/ui/chart-ab-toggle"
+import { MypageTrendChartB } from "./mypage-trend-chart-b"
 
 interface TrendDataItem {
   month: string
@@ -23,9 +26,10 @@ interface TrendDataItem {
 interface MypageTrendChartProps {
   data: TrendDataItem[]
   height?: number
+  hideCSAT?: boolean
 }
 
-export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) {
+const MypageTrendChartA = memo(function MypageTrendChartA({ data, height = 320, hideCSAT }: MypageTrendChartProps) {
   if (!data || data.length === 0) {
     return (
       <div className="flex items-center justify-center h-40 text-sm text-slate-400">
@@ -38,7 +42,7 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
     <div className="bg-white border border-slate-200 rounded-xl p-5">
       <p className="text-sm font-medium text-slate-700 mb-4">
         통합 품질 성과 추이
-        <span className="text-xs text-slate-400 ml-2">QC · 평점 · QA · 테스트</span>
+        <span className="text-xs text-slate-400 ml-2">{hideCSAT ? "QC · QA · 테스트" : "QC · 평점 · QA · 테스트"}</span>
       </p>
       <ResponsiveContainer width="100%" height={height}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
@@ -94,17 +98,19 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
             activeDot={{ r: 5 }}
             connectNulls
           />
-          <Line
-            yAxisId="right"
-            type="monotone"
-            dataKey="csatScore"
-            name="상담 평점"
-            stroke="#6B93D6"
-            strokeWidth={2}
-            dot={{ r: 3, fill: "#6B93D6" }}
-            activeDot={{ r: 5 }}
-            connectNulls
-          />
+          {!hideCSAT && (
+            <Line
+              yAxisId="right"
+              type="monotone"
+              dataKey="csatScore"
+              name="상담 평점"
+              stroke="#6B93D6"
+              strokeWidth={2}
+              dot={{ r: 3, fill: "#6B93D6" }}
+              activeDot={{ r: 5 }}
+              connectNulls
+            />
+          )}
           <Line
             yAxisId="right"
             type="monotone"
@@ -131,4 +137,13 @@ export function MypageTrendChart({ data, height = 320 }: MypageTrendChartProps) 
       </ResponsiveContainer>
     </div>
   )
-}
+})
+
+export const MypageTrendChart = memo(function MypageTrendChart(props: MypageTrendChartProps) {
+  return (
+    <ChartABToggle
+      chartA={<MypageTrendChartA {...props} />}
+      chartB={<MypageTrendChartB {...props} />}
+    />
+  )
+})

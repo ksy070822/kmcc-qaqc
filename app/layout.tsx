@@ -1,6 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
+import { QueryProvider } from "./providers"
 
 export const metadata: Metadata = {
   title: "KMCC 통합 관리 시스템",
@@ -19,7 +20,7 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body className={`font-sans antialiased`}>
-        {children}
+        <QueryProvider>{children}</QueryProvider>
       </body>
     </html>
   )

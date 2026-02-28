@@ -8,17 +8,17 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils"
 import { Calendar, CheckCircle, Clock, AlertTriangle, ChevronRight, TrendingDown, MessageSquare } from "lucide-react"
 
-interface ActionPlanHistoryItem {
-  id: string
+export interface ActionPlanHistoryItem {
+  id?: string
   agentId?: string
-  agentName: string
-  center: string
-  group: string
+  agentName?: string
+  center?: string
+  group?: string
   issue: string
   plan: string
-  createdAt: string
+  createdAt?: string
   targetDate: string
-  status: "pending" | "in-progress" | "completed" | "delayed"
+  status: string
   result?: string
   improvement?: number
   managerFeedback?: string
@@ -59,6 +59,12 @@ export function ActionPlanHistory({ plans, onViewDetail }: ActionPlanHistoryProp
           icon: AlertTriangle,
           label: "지연",
           className: "bg-red-100 text-red-700 border-red-300",
+        }
+      default:
+        return {
+          icon: Clock,
+          label: status || "미정",
+          className: "bg-gray-100 text-gray-600 border-gray-300",
         }
     }
   }

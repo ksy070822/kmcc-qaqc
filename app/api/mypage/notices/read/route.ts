@@ -1,22 +1,20 @@
 import { NextRequest, NextResponse } from "next/server"
 import { markNoticeAsRead, markAllNoticesAsRead } from "@/lib/bigquery-notices"
+import { requireAuth, AuthError } from "@/lib/auth-server"
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = requireAuth(req)
+
     const body = await req.json()
-    const { noticeId, userId, center, markAll } = body as {
+    const { noticeId, center, markAll } = body as {
       noticeId?: string
-      userId?: string
       center?: string
       markAll?: boolean
     }
 
-    if (!userId) {
-      return NextResponse.json(
-        { success: false, error: "userId required" },
-        { status: 400 },
-      )
-    }
+    // Use authenticated userId instead of body.userId
+    const userId = auth.userId
 
     if (markAll) {
       if (!center) {
@@ -39,6 +37,12 @@ export async function POST(req: NextRequest) {
     await markNoticeAsRead(noticeId, userId)
     return NextResponse.json({ success: true })
   } catch (error) {
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { success: false, error: error.message },
+        { status: error.statusCode },
+      )
+    }
     console.error("[API] mypage/notices/read error:", error)
     return NextResponse.json(
       { success: false, error: "읽음 처리 중 오류가 발생했습니다." },

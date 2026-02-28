@@ -173,7 +173,7 @@ export function UnderperformingTable({ center, service, onViewDetail }: Underper
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-slate-900">
               <UserX className="h-5 w-5 text-red-500" />
-              부진상담사 목록
+              집중관리상담사 목록
               <span className="text-sm font-normal text-slate-500">
                 ({agents?.length || 0}명)
               </span>
@@ -200,7 +200,7 @@ export function UnderperformingTable({ center, service, onViewDetail }: Underper
                   {(!agents || agents.length === 0) ? (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center py-8 text-slate-400">
-                        등록된 부진상담사가 없습니다.
+                        등록된 집중관리상담사가 없습니다.
                       </TableCell>
                     </TableRow>
                   ) : (

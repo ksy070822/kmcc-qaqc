@@ -2,34 +2,9 @@
 
 import { useState, useEffect, useCallback } from "react"
 
-interface PredictionData {
-  center: string
-  serviceChannel: string
-  currentChecks: number
-  currentAttitudeRate: number
-  currentOpsRate: number
-  predictedAttitudeRate: number
-  predictedOpsRate: number
-  w4PredictedAttitude: number
-  w4PredictedOps: number
-  targetAttitudeRate: number
-  targetOpsRate: number
-  attitudeGap: number
-  opsGap: number
-  attitudeAchievementProb: number
-  opsAchievementProb: number
-  attitudeTrend: "improving" | "stable" | "worsening"
-  opsTrend: "improving" | "stable" | "worsening"
-  attitudeRiskLevel: "low" | "medium" | "high" | "critical"
-  opsRiskLevel: "low" | "medium" | "high" | "critical"
-  overallRiskLevel: "low" | "medium" | "high" | "critical"
-  alertFlag: boolean
-  weeklyMetrics: Array<{
-    week: string
-    attitudeRate: number
-    opsRate: number
-  }>
-}
+import type { PredictionApiData } from "@/lib/types"
+
+type PredictionData = PredictionApiData
 
 interface UsePredictionsOptions {
   month?: string

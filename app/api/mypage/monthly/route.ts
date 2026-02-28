@@ -8,6 +8,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { BigQuery } from '@google-cloud/bigquery'
+import { QC_ATTITUDE_ITEM_COUNT, QC_CONSULTATION_ITEM_COUNT, CENTER_TARGET_RATES } from '@/lib/constants'
+import { requireAuth, AuthError, authErrorResponse } from '@/lib/auth-server'
 
 const bq = new BigQuery({
   projectId: 'csopp-25f2',
@@ -15,30 +17,32 @@ const bq = new BigQuery({
 })
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url)
-  const agentId = searchParams.get('agentId')
-  let month = searchParams.get('month')
-
-  if (!agentId) {
-    return NextResponse.json(
-      { success: false, error: 'agentId는 필수입니다.' },
-      { status: 400 },
-    )
-  }
-
-  // 기본값: 이번 달
-  if (!month) {
-    const now = new Date()
-    month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  }
-
-  // 전월 계산
-  const monthDate = new Date(month + '-01')
-  const prevMonthDate = new Date(monthDate)
-  prevMonthDate.setMonth(prevMonthDate.getMonth() - 1)
-  const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
-
   try {
+    const auth = requireAuth(request)
+    // agent role: force own agentId; admin/instructor/manager: allow query param
+    const { searchParams } = new URL(request.url)
+    const agentId = auth.role === 'agent' ? auth.agentId : (searchParams.get('agentId') || auth.agentId)
+    let month = searchParams.get('month')
+
+    if (!agentId) {
+      return NextResponse.json(
+        { success: false, error: 'agentId는 필수입니다.' },
+        { status: 400 },
+      )
+    }
+
+    // 기본값: 이번 달
+    if (!month) {
+      const now = new Date()
+      month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+    }
+
+    // 전월 계산
+    const monthDate = new Date(month + '-01')
+    const prevMonthDate = new Date(monthDate)
+    prevMonthDate.setMonth(prevMonthDate.getMonth() - 1)
+    const prevMonth = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`
+
     const params = { agentId, month, prevMonth }
 
     // 이번 달 + 전월 집계 + 주간 추이 + 항목별 요약
@@ -46,16 +50,16 @@ export async function GET(request: NextRequest) {
       WITH this_month AS (
         SELECT
           COUNT(*) AS evals,
-          SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-          SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+          SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+          SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
         FROM \`csopp-25f2.KMCC_QC.evaluations\`
         WHERE agent_id = @agentId
           AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
       ),
       prev_month AS (
         SELECT
-          SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-          SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+          SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+          SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
         FROM \`csopp-25f2.KMCC_QC.evaluations\`
         WHERE agent_id = @agentId
           AND FORMAT_DATE('%Y-%m', evaluation_date) = @prevMonth
@@ -79,8 +83,8 @@ export async function GET(request: NextRequest) {
       SELECT
         DATE_SUB(evaluation_date, INTERVAL MOD(EXTRACT(DAYOFWEEK FROM evaluation_date) + 2, 7) DAY) AS week_start,
         COUNT(*) AS evals,
-        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * 5) * 100 AS att_rate,
-        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * 11) * 100 AS ops_rate
+        SAFE_DIVIDE(SUM(attitude_error_count), COUNT(*) * ${QC_ATTITUDE_ITEM_COUNT}) * 100 AS att_rate,
+        SAFE_DIVIDE(SUM(business_error_count), COUNT(*) * ${QC_CONSULTATION_ITEM_COUNT}) * 100 AS ops_rate
       FROM \`csopp-25f2.KMCC_QC.evaluations\`
       WHERE agent_id = @agentId
         AND FORMAT_DATE('%Y-%m', evaluation_date) = @month
@@ -130,10 +134,10 @@ export async function GET(request: NextRequest) {
 
     // 센터별 목표
     const targets: Record<string, { attitude: number; ops: number }> = {
-      '용산': { attitude: 3.3, ops: 3.9 },
-      '광주': { attitude: 2.7, ops: 1.7 },
+      '용산': { attitude: CENTER_TARGET_RATES.용산.attitude, ops: CENTER_TARGET_RATES.용산.ops },
+      '광주': { attitude: CENTER_TARGET_RATES.광주.attitude, ops: CENTER_TARGET_RATES.광주.ops },
     }
-    const target = targets[center] || { attitude: 3.0, ops: 3.0 }
+    const target = targets[center] || { attitude: CENTER_TARGET_RATES.전체.attitude, ops: CENTER_TARGET_RATES.전체.ops }
 
     const weeklyTrend = (trendRows as Record<string, unknown>[]).map(row => {
       const wsRaw = row.week_start
@@ -170,8 +174,9 @@ export async function GET(request: NextRequest) {
     }
 
     return NextResponse.json({ success: true, detail })
-  } catch (error) {
-    console.error('[API] Mypage monthly error:', error)
+  } catch (err) {
+    if (err instanceof AuthError) return authErrorResponse(err)
+    console.error('[API] Mypage monthly error:', err)
     return NextResponse.json(
       { success: false, error: '월간 리포트 조회 중 오류가 발생했습니다.' },
       { status: 500 },
